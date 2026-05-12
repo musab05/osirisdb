@@ -109,9 +109,36 @@ pub enum Token {
     Comma,
     Semicolon,
     Dot,
+    LBracket,
+    RBracket,
+    LBrace,
+    RBrace,
+
+    At,
+    AtGt,
+    LtAt,
+    AtAt,
+
+    Hash,
+    HashArrow,
+    HashDoubleArrow,
+
+    RegexMatch,
+    RegexIMatch,
+    RegexNotMatch,
+    RegexNotIMatch,
+
+    Parameter(u32),
+
+    BitStringLit(String),
+    HexStringLit(String),
+
+    UnterminatedString(usize, usize),
+    UnterminatedComment(usize, usize),
+    UnexpectedChar(char, usize, usize),
 
     // Control
     Eof,
 
-    Illegal(char),
+    Illegal(char, usize, usize),
 }
