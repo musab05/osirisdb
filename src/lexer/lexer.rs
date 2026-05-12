@@ -1,4 +1,8 @@
-use crate::lexer::{lookup_keyword::lookup_keyword, token::Token};
+use crate::lexer::{
+    lookup_keyword::lookup_keyword,
+    spanned_token::{Span, SpannedToken},
+    token::Token,
+};
 
 pub struct Lexer {
     input: Vec<char>,
@@ -155,9 +159,15 @@ impl Lexer {
         }
 
         if has_dot || has_exp {
-            Token::FloatLit(number.parse::<f64>().unwrap())
+            match number.parse::<f64>() {
+                Ok(f) => Token::FloatLit(f),
+                Err(_) => Token::UnexpectedChar('0', self.line, self.column),
+            }
         } else {
-            Token::IntLit(number.parse::<i64>().unwrap())
+            match number.parse::<i64>() {
+                Ok(i) => Token::IntLit(i),
+                Err(_) => Token::UnexpectedChar('0', self.line, self.column),
+            }
         }
     }
 
@@ -516,8 +526,9 @@ impl Lexer {
                         self.advance();
                         return Token::Concat;
                     } else {
+                        let (line, col) = self.current_position();
                         self.advance();
-                        return Token::UnexpectedChar('|', self.line, self.column);
+                        return Token::UnexpectedChar('|', line, col);
                     }
                 }
 
@@ -527,8 +538,9 @@ impl Lexer {
                         self.advance();
                         return Token::DoubleColon;
                     } else {
+                        let (line, col) = self.current_position();
                         self.advance();
-                        return Token::UnexpectedChar(':', self.line, self.column);
+                        return Token::UnexpectedChar(':', line, col);
                     }
                 }
 
@@ -596,7 +608,7 @@ impl Lexer {
                     // return Token::Parameter(digits.parse().unwrap());
                     return match digits.parse::<u32>() {
                         Ok(n) => Token::Parameter(n),
-                        Err(_) => return Token::Illegal('$', self.line, self.column),
+                        Err(_) => Token::Illegal('$', self.line, self.column),
                     };
                 }
 
@@ -610,15 +622,29 @@ impl Lexer {
 
         Token::Eof
     }
+
+    pub fn next_spanned(&mut self) -> SpannedToken {
+        let start = self.position;
+        let line = self.line;
+        let column = self.column;
+
+        let token = self.next_token();
+
+        let end = self.position;
+
+        SpannedToken::new(token, Span::new(start, end, line, column))
+    }
 }
 
 impl Iterator for Lexer {
-    type Item = Token;
+    type Item = SpannedToken;
 
-    fn next(&mut self) -> Option<Token> {
-        match self.next_token() {
-            Token::Eof => None,
-            t => Some(t),
+    fn next(&mut self) -> Option<SpannedToken> {
+        match self.next_spanned() {
+            SpannedToken {
+                token: Token::Eof, ..
+            } => None,
+            st => Some(st),
         }
     }
 }
