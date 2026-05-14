@@ -1,3 +1,4 @@
+use crate::ast::*;
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColumnDef {
     pub name: String,
@@ -6,7 +7,8 @@ pub struct ColumnDef {
 
     pub collation: Option<String>,
 
-    pub constraints: Vec<ColumnCOnstraint>,
+    pub constraints: Vec<ColumnConstraint>,
 
     pub generated: Option<GeneratedColumn>,
 }
+

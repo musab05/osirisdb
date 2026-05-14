@@ -1,3 +1,4 @@
+use crate::ast::*;
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateTableStmt {
     pub if_not_exist: bool,
@@ -10,7 +11,7 @@ pub struct CreateTableStmt {
     pub constraints: Vec<TableConstraint>,
 
     pub inherits: Vec<Vec<String>>,
-    pub partitions: Vec<PartionsClause>,
+    pub partitions: Vec<PartitionClause>,
 
     pub with_options: Vec<SqlOption>,
 
@@ -20,3 +21,4 @@ pub struct CreateTableStmt {
 
     pub as_query: Option<SelectStmt>,
 }
+

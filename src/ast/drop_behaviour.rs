@@ -1,9 +1,6 @@
 use crate::ast::*;
 #[derive(Debug, Clone, PartialEq)]
-pub enum ReferentialAction {
+pub enum DropBehavior {
     Cascade,
     Restrict,
-    NoAction,
-    SetNull,
-    SetDefault,
 }

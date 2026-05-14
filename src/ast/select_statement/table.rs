@@ -1,3 +1,5 @@
+use crate::ast::*;
+#[derive(Debug, Clone, PartialEq)]
 pub enum TableRef {
     Named {
         name: Vec<String>,
@@ -9,3 +11,4 @@ pub enum TableRef {
         alias: Option<String>,
     },
 }
+

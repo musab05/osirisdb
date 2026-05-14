@@ -1,3 +1,5 @@
+use crate::ast::*;
+#[derive(Debug, Clone, PartialEq)]
 pub enum BinOpKind {
         Eq,
     Ne,
@@ -20,6 +22,7 @@ pub enum BinOpKind {
     Between,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOpKind {
     Not,
     Plus,

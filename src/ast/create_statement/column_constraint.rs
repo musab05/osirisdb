@@ -1,3 +1,4 @@
+use crate::ast::*;
 #[derive(Debug, Clone, PartialEq)]
 pub enum ColumnConstraint {
     Null,
@@ -20,3 +21,4 @@ pub enum ColumnConstraint {
 
     AutoIncrement,
 }
+

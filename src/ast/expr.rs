@@ -1,3 +1,5 @@
+use crate::ast::*;
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Value),
     Column {
@@ -53,3 +55,4 @@ pub enum Expr {
     Subquery(Box<SelectStmt>),
     Wildcard,
 }
+

@@ -1,3 +1,4 @@
+use crate::ast::*;
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartitionClause {
     pub kind: PartitionKind,
@@ -10,3 +11,4 @@ pub enum PartitionKind {
     List,
     Hash,
 }
+
