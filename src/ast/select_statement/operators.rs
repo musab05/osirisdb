@@ -1,7 +1,7 @@
 use crate::ast::*;
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOpKind {
-        Eq,
+    Eq,
     Ne,
     Lt,
     Le,
