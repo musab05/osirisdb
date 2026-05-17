@@ -1,6 +1,6 @@
 use crate::{
     ast::{BinOpKind, DataType, Expr, UnaryOpKind, Value},
-    lexer::{token::Token},
+    lexer::token::Token,
     parser::{
         binding_power::{infix_binding_power, prefix_binding_power},
         parser::Parser,
@@ -213,9 +213,9 @@ impl Parser {
         };
 
         if self.consume(&Token::Between) {
-            let low = self.parser_expr_bp(0)?;
+            let low = self.parser_expr_bp(4)?;
             self.expect(Token::And)?;
-            let high = self.parser_expr_bp(0)?;
+            let high = self.parser_expr_bp(4)?;
             return Ok(Some(Expr::Between {
                 expr: Box::new(lhs),
                 low: Box::new(low),
@@ -246,9 +246,25 @@ impl Parser {
             return Ok(Some(expr));
         }
 
+        if self.consume(&Token::Like) {
+            let pattern = self.parser_expr_bp(4)?;
+            let like_expr = Expr::BinOp {
+                lhs: Box::new(lhs),
+                op: BinOpKind::Like,
+                rhs: Box::new(pattern),
+            };
+            if negated {
+                return Ok(Some(Expr::UnaryOp {
+                    op: UnaryOpKind::Not,
+                    expr: Box::new(like_expr),
+                }));
+            }
+            return Ok(Some(like_expr));
+        }
+
         if negated {
             return Err(ParserError::new(
-                "Expected BETWEEN or IN after NOT",
+                "Expected BETWEEN, IN, or LIKE after NOT",
                 self.current.span.clone(),
             ));
         }
@@ -382,7 +398,11 @@ impl Parser {
 
         self.expect(Token::End)?;
 
-        Ok(Expr::Case { operand, when_thens, else_ })
+        Ok(Expr::Case {
+            operand,
+            when_thens,
+            else_,
+        })
     }
 
     fn token_to_binop(&self, token: &Token) -> Result<BinOpKind, ParserError> {

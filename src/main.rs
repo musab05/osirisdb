@@ -110,6 +110,17 @@ fn main() {
 ",
     );
 
+    // loop {
+    //     let st = parser.next_spanned();
+    //     println!(
+    //         "{:?} @ line {}, col {}, bytes {}..{}",
+    //         st.token, st.span.line, st.span.column, st.span.start, st.span.end
+    //     );
+    //     if st.token == Token::Eof {
+    //         break;
+    //     }
+    // }
+
     match parser.parse() {
         Ok(stmts) => {
             for stmt in stmts {

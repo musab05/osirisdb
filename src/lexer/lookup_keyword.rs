@@ -70,6 +70,7 @@ pub fn lookup_keyword(word: &str) -> Token {
         "THEN" => Token::Then,
         "ELSE" => Token::Else,
         "END" => Token::End,
+        "CAST" => Token::Cast,
 
         "ASC" => Token::Asc,
         "DESC" => Token::Desc,
