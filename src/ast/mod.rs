@@ -11,6 +11,7 @@ pub mod null_ordering;
 pub mod object_name;
 pub mod order;
 pub mod value;
+pub mod stmt;
 
 pub use create_statement::*;
 pub use insert_statement::*;
