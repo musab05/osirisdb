@@ -1,7 +1,10 @@
 use crate::{
-    ast::{Cte, Expr, SelectModifier, SelectStmt, UnaryOpKind, Value},
+    ast::{
+        Cte, Expr, JoinClause, JoinType, OrderItem, SelectItem, SelectModifier, SelectStmt, SetOp,
+        SetOperation, TableRef,
+    },
     lexer::token::Token,
-    parser::{binding_power::{infix_binding_power, prefix_binding_power}, parser::Parser, parser_error::ParserError},
+    parser::{parser::Parser, parser_error::ParserError},
 };
 
 impl Parser {
@@ -104,6 +107,7 @@ impl Parser {
         }
         Ok(ctes)
     }
+
     fn parse_select_modifier(&mut self) -> Result<Option<SelectModifier>, ParserError> {
         if self.consume(&Token::All) {
             return Ok(Some(SelectModifier::All));
@@ -122,91 +126,283 @@ impl Parser {
         Ok(None)
     }
 
-    fn parse_expr_lists(&mut self) -> Result<Vec<Expr>, ParserError> {
-        let mut exprs = vec![];
+    fn parse_select_column(&mut self) -> Result<Vec<SelectItem>, ParserError> {
+        let mut items = vec![];
 
         loop {
-            exprs.push(self.parse_expr()?);
+            let item = if self.consume(&Token::Star) {
+                SelectItem::Wildcard
+            } else {
+                let expr = self.parse_expr()?;
+
+                let item = match &expr {
+                    Expr::Column {
+                        table: Some(t),
+                        name,
+                    } if name == "*" => SelectItem::QualifiedWildcard(vec![t.clone()]),
+
+                    _ => {
+                        let alias = if self.consume(&Token::As) {
+                            Some(self.expect_identifier()?)
+                        } else if matches!(self.current_token(), Token::Ident(_)) {
+                            Some(self.expect_identifier()?)
+                        } else {
+                            None
+                        };
+                        SelectItem::Expr { expr, alias }
+                    }
+                };
+                item
+            };
+
+            items.push(item);
+
+            if !self.consume(&Token::Comma) || self.is_select_column_end() {
+                break;
+            }
+        }
+
+        Ok(items)
+    }
+
+    fn parse_table_refs(&mut self) -> Result<Vec<TableRef>, ParserError> {
+        let mut refs = vec![];
+
+        loop {
+            let tref = if self.consume(&Token::LParen) {
+                let query = self.parse_select()?;
+                self.expect(Token::RParen)?;
+
+                let alias = if self.consume(&Token::As) {
+                    Some(self.expect_identifier()?)
+                } else if matches!(self.current_token(), Token::Ident(_)) {
+                    Some(self.expect_identifier()?)
+                } else {
+                    None
+                };
+                TableRef::Subquery {
+                    query: Box::new(query),
+                    alias,
+                }
+            } else {
+                let mut name = vec![self.expect_identifier()?];
+                while self.consume(&Token::Dot) {
+                    name.push(self.expect_identifier()?);
+                }
+
+                let alias = if self.consume(&Token::As) {
+                    Some(self.expect_identifier()?)
+                } else if matches!(self.current_token(), Token::Ident(_)) {
+                    Some(self.expect_identifier()?)
+                } else {
+                    None
+                };
+                TableRef::Named { name, alias }
+            };
+            refs.push(tref);
+
             if !self.consume(&Token::Comma) {
                 break;
             }
         }
 
-        Ok(exprs)
+        Ok(refs)
     }
 
-    fn parse_expr(&mut self) -> Result<Expr, ParserError> {
-        self.parser_expr_bp(0)
-    }
-
-    fn parser_expr_bp(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
-        let mut lhs = self.parse_prefix()?;
+    fn parse_joins(&mut self) -> Result<Vec<JoinClause>, ParserError> {
+        let mut joins = vec![];
 
         loop {
-            if let Some(expr) = self.try_parse_prefix(lhs.clone())? {
-                lhs = expr;
-                continue;
-            }
+            let join_type = match self.current_token() {
+                Token::Join => {
+                    self.advance();
+                    JoinType::Inner
+                }
+                Token::Ident(kw) if kw.eq_ignore_ascii_case("INNER") => {
+                    self.advance();
+                    self.expect(Token::Join)?;
+                    JoinType::Inner
+                }
+                Token::Ident(kw) if kw.eq_ignore_ascii_case("LEFT") => {
+                    self.advance();
 
-            let token = self.current_token().clone();
-            let Some((l_bp, r_bp)) = infix_binding_power(&token) else {
-                break;
-            };
-
-            if l_bp < min_bp {
-                break;
-            }
-
-            self.advance();
-
-            if token == Token::Dot {
-                let name = self.expect_identifier()?;
-                let table = match lhs {
-                    Expr::Column { name: t, .. } => Some(t),
-                    _ => {
-                        return Err(ParserError::new(
-                            "Expected table name before '.'".into(),
-                            self.current.span.clone(),
-                        ));
+                    if matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("OUTER"))
+                    {
+                        self.advance();
                     }
-                };
-                lhs = Expr::Column { table, name };
-                continue;
-            }
+                    self.expect(Token::Join)?;
+                    JoinType::Left
+                }
+                Token::Ident(kw) if kw.eq_ignore_ascii_case("RIGHT") => {
+                    self.advance();
 
-            if token == Token::DoubleColon {
-                let ty = self.parse_data_type()?;
-                lhs Expr::Cast {expr: Box::new(lhs), ty};
-                continue;
-            }
+                    if matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("OUTER"))
+                    {
+                        self.advance();
+                    }
+                    self.expect(Token::Join)?;
+                    JoinType::Right
+                }
+                Token::Ident(kw) if kw.eq_ignore_ascii_case("FULL") => {
+                    self.advance();
 
-            let op = token_to_binop(&token)?;
-            let rhs = self.parser_expr_bp(r_bp)?;
-            lhs = Expr::BinOp { op, lhs: Box::new(lhs), rhs: Box::new(rhs) };
-        }
+                    if matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("OUTER"))
+                    {
+                        self.advance();
+                    }
+                    self.expect(Token::Join)?;
+                    JoinType::Full
+                }
+                Token::Ident(kw) if kw.eq_ignore_ascii_case("CROSS") => {
+                    self.advance();
+                    self.expect(Token::Join)?;
+                    JoinType::Cross
+                }
 
-        Ok(lhs)
-    }
-
-    fn parse_prefix(&mut self) -> Result<Expr, ParserError> {
-        let token = self.current_token().clone();
-
-        if let Some(r_bp) = prefix_binding_power(&token) {
-            self.advance();
-            let op = match token {
-                Token::Not => UnaryOpKind::Not,
-                Token::Minus => UnaryOpKind::Minus,
-                _ => unreachable!(),
+                _ => break,
             };
 
-            let expr = self.parser_expr_bp(r_bp)?;
-            return Ok(Expr::UnaryOp { op, expr: Box::new(expr) });
+            let table = self.parse_single_table_ref()?;
+
+            let condition = if join_type != JoinType::Cross {
+                if self.consume(&Token::On) {
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            joins.push(JoinClause {
+                join_type,
+                table,
+                condition,
+            });
         }
 
-        match token {
-            Token::IntLit(n) => {self.advance(); Ok(Expr::Literal(Value::Int(n)))}
+        Ok(joins)
+    }
+
+    // helper used by parse_joins — parses one table ref without comma loop
+    fn parse_single_table_ref(&mut self) -> Result<TableRef, ParserError> {
+        if self.consume(&Token::LParen) {
+            let query = self.parse_select()?;
+            self.expect(Token::RParen)?;
+
+            let alias = if self.consume(&Token::As) {
+                Some(self.expect_identifier()?)
+            } else if matches!(self.current_token(), Token::Ident(_)) {
+                Some(self.expect_identifier()?)
+            } else {
+                None
+            };
+            Ok(TableRef::Subquery {
+                query: Box::new(query),
+                alias,
+            })
+        } else {
+            let mut name = vec![self.expect_identifier()?];
+
+            while self.consume(&Token::Dot) {
+                name.push(self.expect_identifier()?);
+            }
+
+            let alias = if self.consume(&Token::As) {
+                Some(self.expect_identifier()?)
+            } else if matches!(self.current_token(), Token::Ident(_)) {
+                Some(self.expect_identifier()?)
+            } else {
+                None
+            };
+            Ok(TableRef::Named { name, alias })
         }
     }
 
-    fn parse_select_column(&mut self) {}
+    fn parse_order_items(&mut self) -> Result<Vec<OrderItem>, ParserError> {
+        let mut items = vec![];
+
+        loop {
+            let expr = self.parse_expr()?;
+
+            let asc = if self.consume(&Token::Asc) {
+                true
+            } else if self.consume(&Token::Desc) {
+                false
+            } else {
+                true
+            };
+
+            items.push(OrderItem { expr, asc });
+
+            if !self.consume(&Token::Comma) {
+                break;
+            }
+        }
+
+        Ok(items)
+    }
+
+    fn parse_set_op(&mut self) -> Result<Option<Box<SetOperation>>, ParserError> {
+        let op = match self.current_token() {
+            Token::Union => SetOp::Union,
+            Token::Intersect => SetOp::Intersect,
+            Token::Except => SetOp::Except,
+            _ => return Ok(None),
+        };
+
+        self.advance();
+
+        let all = self.consume(&Token::All);
+
+        let right = self.parse_select()?;
+
+        Ok(Some(Box::new(SetOperation {
+            op,
+            all,
+            right: Box::new(right),
+        })))
+    }
+
+    // Check current token matches without consuming
+    fn current_is(&self, token: &Token) -> bool {
+        self.current_token() == token
+    }
+
+    // Consume current token if it's an identifier, return the name
+    fn consume_ident(&mut self) -> Option<String> {
+        match self.current_token().clone() {
+            Token::Ident(name) | Token::QuotedIdent(name) => {
+                self.advance();
+                Some(name)
+            }
+            _ => None,
+        }
+    }
+
+    // Expect a sequence of tokens in order, fail if any doesn't match
+    fn expect_keyword_sequence(&mut self, tokens: &[Token]) -> Result<(), ParserError> {
+        for token in tokens {
+            self.expect(token.clone())?;
+        }
+        Ok(())
+    }
+
+    fn is_select_column_end(&self) -> bool {
+        matches!(
+            self.current_token(),
+            Token::From
+                | Token::Where
+                | Token::Group
+                | Token::Having
+                | Token::Order
+                | Token::Limit
+                | Token::Offset
+                | Token::Eof
+                | Token::Semicolon
+                | Token::Union
+                | Token::Intersect
+                | Token::Except
+        )
+    }
 }

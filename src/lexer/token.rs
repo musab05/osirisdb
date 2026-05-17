@@ -141,4 +141,5 @@ pub enum Token {
     Eof,
 
     Illegal(char, usize, usize),
+    Cast,
 }
