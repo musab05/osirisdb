@@ -1,11 +1,9 @@
 use crate::{
-    ast::stmt::Stmt,
-    lexer::token::Token,
-    parser::{parser::Parser, parser_error::ParserError},
+    ast::Statement, lexer::token::Token, parser::{parser::Parser, parser_error::ParserError}
 };
 
 impl Parser {
-    pub fn parse(&mut self) -> Result<Vec<Stmt>, ParserError> {
+    pub fn parse(&mut self) -> Result<Vec<Statement>, ParserError> {
         let mut stmts = vec![];
 
         while !self.is_at_end() {
@@ -18,9 +16,10 @@ impl Parser {
         Ok(stmts)
     }
 
-    fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
+    fn parse_statement(&mut self) -> Result<Statement, ParserError> {
         let stmt = match self.current_token() {
-            Token::Select | Token::With => Stmt::Select(self.parse_select()?),
+            Token::Select | Token::With => Statement::Select(self.parse_select()?),
+            Token::Create => Statement::CreateTable(self.parse_create()?),
 
             _ => {
                 return Err(ParserError::new(

@@ -1,6 +1,6 @@
 use crate::ast::*;
 #[derive(Debug, Clone, PartialEq)]
-pub struct CreateTableStmt {
+pub struct CreateStmt {
     pub if_not_exist: bool,
     pub temporary: bool,
     pub unlogged: bool,

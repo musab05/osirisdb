@@ -2,7 +2,7 @@ use crate::ast::*;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Select(SelectStmt),
-    CreateTable(CreateTableStmt),
+    CreateTable(CreateStmt),
     Insert(InsertStmt),
     Update(UpdateStmt),
     Delete(DeleteStmt),
