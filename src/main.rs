@@ -52,61 +52,26 @@ fn main() {
 
     let mut parser = Parser::new(
         "
-    WITH 
-        active_users AS (
-            SELECT id, name, city
-            FROM users
-            WHERE active = true
-        ),
-        order_counts AS (
-            SELECT user_id, COUNT(*) AS total_orders
-            FROM orders
-            GROUP BY user_id
-            HAVING COUNT(*) > 5
-        )
-    SELECT DISTINCT ON (u.city)
-        u.id,
-        u.name,
-        u.city,
-        o.total_orders,
-        CASE 
-            WHEN o.total_orders > 100 THEN 'platinum'
-            WHEN o.total_orders > 50  THEN 'gold'
-            ELSE 'silver'
-        END AS tier,
-        CAST(u.id AS bigint),
-        u.created_at::timestamp,
-        COUNT(*) AS user_count,
-        SUM(o.total_orders) AS sum_orders
-    FROM active_users u
-    LEFT JOIN order_counts o ON u.id = o.user_id
-    INNER JOIN cities c ON u.city = c.name
-    WHERE
-        u.id IN (SELECT user_id FROM vip_list)
-        AND u.city = 'Mumbai'
-        AND o.total_orders BETWEEN 10 AND 200
-        AND u.name LIKE 'A%'
-        AND u.deleted_at IS NULL
-        AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id)
-        AND NOT u.banned
-    GROUP BY u.city, u.id, u.name, o.total_orders
-    HAVING COUNT(*) > 1
-    ORDER BY o.total_orders DESC, u.name ASC
-    LIMIT 50
-    OFFSET 10
-    UNION ALL
-    SELECT DISTINCT
-        u.id,
-        u.name,
-        u.city,
-        0,
-        'bronze',
-        CAST(u.id AS bigint),
-        u.created_at::timestamp,
-        1,
-        0
-    FROM users u
-    WHERE u.active = false
+    CREATE TEMPORARY TABLE IF NOT EXISTS public.users (
+        id UUID PRIMARY KEY,
+        username VARCHAR(255) NOT NULL UNIQUE,
+        email CHARACTER VARYING(255) UNIQUE,
+        age INT CHECK (age >= 18),
+        balance DECIMAL(10, 2) DEFAULT 0.0,
+        score DOUBLE PRECISION,
+        is_active BOOLEAN DEFAULT true,
+        tags TEXT[][],
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        virtual_col INT GENERATED ALWAYS AS (age * 2) STORED,
+        org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+        CONSTRAINT email_check CHECK (email LIKE '%@%'),
+        CONSTRAINT fk_org FOREIGN KEY (org_id) REFERENCES organizations(id) ON UPDATE SET NULL
+    )
+    INHERITS (base_users)
+    PARTITION BY RANGE (created_at)
+    WITH (fillfactor = 70)
+    TABLESPACE fastspace
+    ON COMMIT PRESERVE ROWS;
 ",
     );
 

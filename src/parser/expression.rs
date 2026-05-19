@@ -272,37 +272,55 @@ impl Parser {
         Ok(None)
     }
 
-    fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
-        match self.current_token().clone() {
+    pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
+        let mut base_type = match self.current_token().clone() {
             Token::Ident(name) => {
                 self.advance();
                 match name.to_uppercase().as_str() {
-                    "SMALLINT" | "INT2" => Ok(DataType::SmallInt),
-                    "INT" | "INTEGER" | "INT4" => Ok(DataType::Int),
-                    "BIGINT" | "INT8" => Ok(DataType::BigInt),
-                    "BOOLEAN" | "BOOL" => Ok(DataType::Boolean),
-                    "FLOAT" | "FLOAT4" | "REAL" => Ok(DataType::Float),
-                    "FLOAT8" | "DOUBLE" => Ok(DataType::Double),
-                    "TEXT" => Ok(DataType::Text),
-                    "JSON" => Ok(DataType::Json),
-                    "JSONB" => Ok(DataType::JsonB),
-                    "DATE" => Ok(DataType::Date),
-                    "TIME" => Ok(DataType::Time),
-                    "TIMESTAMP" | "TIMESTAMPTZ" => Ok(DataType::Timestamp),
-                    "UUID" => Ok(DataType::UUID),
-                    "BINARY" => Ok(DataType::Binary),
-
-                    "CHAR" | "CHARACTER" => {
-                        let n = self.parse_optional_length()?;
-                        Ok(DataType::Char(n))
+                    "SMALLINT" | "INT2" => DataType::SmallInt,
+                    "INT" | "INTEGER" | "INT4" => DataType::Int,
+                    "BIGINT" | "INT8" => DataType::BigInt,
+                    "BOOLEAN" | "BOOL" => DataType::Boolean,
+                    "FLOAT" | "FLOAT4" | "REAL" => DataType::Float,
+                    "DOUBLE" => {
+                        if matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("precision"))
+                        {
+                            self.advance();
+                        }
+                        DataType::Double
                     }
-                    "VARCHAR" | "CHARACTER VARYING" => {
+                    "FLOAT8" => DataType::Double,
+                    "TEXT" => DataType::Text,
+                    "JSON" => DataType::Json,
+                    "JSONB" => DataType::JsonB,
+                    "DATE" => DataType::Date,
+                    "TIME" => DataType::Time,
+                    "TIMESTAMP" | "TIMESTAMPTZ" => DataType::Timestamp,
+                    "UUID" => DataType::UUID,
+                    "BINARY" => DataType::Binary,
+
+                    "CHAR" => {
                         let n = self.parse_optional_length()?;
-                        Ok(DataType::VarChar(n))
+                        DataType::Char(n)
+                    }
+                    "CHARACTER" => {
+                        if matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("varying"))
+                        {
+                            self.advance();
+                            let n = self.parse_optional_length()?;
+                            DataType::VarChar(n)
+                        } else {
+                            let n = self.parse_optional_length()?;
+                            DataType::Char(n)
+                        }
+                    }
+                    "VARCHAR" => {
+                        let n = self.parse_optional_length()?;
+                        DataType::VarChar(n)
                     }
                     "VARBINARY" => {
                         let n = self.parse_optional_length()?;
-                        Ok(DataType::VarBinary(n))
+                        DataType::VarBinary(n)
                     }
                     "DECIMAL" | "NUMERIC" => {
                         // DECIMAL(precision, scale) — both optional
@@ -314,9 +332,9 @@ impl Parser {
                                 None
                             };
                             self.expect(Token::RParen)?;
-                            Ok(DataType::Decimal(Some(precision), scale))
+                            DataType::Decimal(Some(precision), scale)
                         } else {
-                            Ok(DataType::Decimal(None, None))
+                            DataType::Decimal(None, None)
                         }
                     }
                     // Multi-part custom types: schema.type_name
@@ -325,20 +343,26 @@ impl Parser {
                         while self.consume(&Token::Dot) {
                             parts.push(self.expect_identifier()?);
                         }
-                        Ok(DataType::Custom(parts))
+                        DataType::Custom(parts)
                     }
                 }
             }
 
-            // Array: base_type[]
             _ => {
-                // If nothing matched, try as custom single ident
-                Err(ParserError::new(
+                return Err(ParserError::new(
                     format!("Expected data type, found {:?}", self.current_token()),
                     self.current.span.clone(),
-                ))
+                ));
             }
+        };
+
+        // Handle Array types like int[] or text[][]
+        while self.consume(&Token::LBracket) {
+            self.expect(Token::RBracket)?;
+            base_type = DataType::Array(Box::new(base_type));
         }
+
+        Ok(base_type)
     }
 
     // Helper — parses (n) returning Some(n), or None if no paren
@@ -353,7 +377,7 @@ impl Parser {
     }
 
     // Helper — expects current token to be an integer literal
-    fn expect_int_literal(&mut self) -> Result<u64, ParserError> {
+    pub fn expect_int_literal(&mut self) -> Result<u64, ParserError> {
         match self.current_token().clone() {
             Token::IntLit(n) if n >= 0 => {
                 self.advance();
