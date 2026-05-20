@@ -8,6 +8,7 @@ pub enum Statement {
     Delete(DeleteStmt),
     DropTable(DropTableStmt),
     CreateIndex(CreateIndexStmt),
-    Begin, Commit, Rollback,
+    Begin,
+    Commit,
+    Rollback,
 }
-

@@ -1,5 +1,19 @@
 #[derive(Debug, Clone, PartialEq)]
+pub enum Modifier {
+    Temporary,
+    Temp,
+    Unlogged,
+    Global,
+    Local,
+    Materialized,
+    Replace,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
+    // Modifier
+    Modifier(Modifier),
+
     // Keywords
     Select,
     From,

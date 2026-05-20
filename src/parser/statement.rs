@@ -19,7 +19,7 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<Statement, ParserError> {
         let stmt = match self.current_token() {
             Token::Select | Token::With => Statement::Select(self.parse_select()?),
-            Token::Create => Statement::CreateTable(self.parse_create()?),
+            Token::Create => self.parse_create()?,
 
             _ => {
                 return Err(ParserError::new(

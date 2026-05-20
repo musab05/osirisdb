@@ -1,34 +1,79 @@
 use crate::{
     ast::{
         ColumnConstraint, ColumnDef, CreateStmt, GeneratedColumn, OnCommit, PartitionClause,
-        PartitionKind, ReferentialAction, SqlOption, TableConstraint,
+        PartitionKind, ReferentialAction, SqlOption, Statement, TableConstraint,
     },
+    lexer::token::Modifier,
     lexer::token::Token,
     parser::{parser::Parser, parser_error::ParserError},
 };
 
 impl Parser {
-    pub fn parse_create(&mut self) -> Result<CreateStmt, ParserError> {
+    pub fn parse_create(&mut self) -> Result<Statement, ParserError> {
         self.consume(&Token::Create);
 
+        let mut or_replace = false;
         let mut temporary = false;
         let mut unlogged = false;
+        let mut unique = false;
+        let mut materialized = false;
 
-        match self.current_token() {
-            Token::Ident(k)
-                if k.eq_ignore_ascii_case("temporary") || k.eq_ignore_ascii_case("temp") =>
-            {
-                temporary = true;
-                self.advance();
+        loop {
+            match self.current_token() {
+                Token::Modifier(Modifier::Replace) => {
+                    self.advance();
+                    or_replace = true;
+                }
+                Token::Unique => {
+                    self.advance();
+                    unique = true;
+                }
+                Token::Modifier(Modifier::Temporary) | Token::Modifier(Modifier::Temp) => {
+                    self.advance();
+                    temporary = true;
+                }
+                Token::Modifier(Modifier::Unlogged) => {
+                    self.advance();
+                    unlogged = true;
+                }
+                Token::Modifier(Modifier::Materialized) => {
+                    self.advance();
+                    materialized = true;
+                }
+                Token::Modifier(Modifier::Local) | Token::Modifier(Modifier::Global) => {
+                    self.advance(); // ignore
+                }
+                Token::Ident(k) if k.eq_ignore_ascii_case("or") => {
+                    self.advance();
+                    if let Token::Modifier(Modifier::Replace) = self.current_token() {
+                        self.advance();
+                        or_replace = true;
+                    }
+                }
+                _ => break,
             }
-            Token::Ident(k) if k.eq_ignore_ascii_case("unlogged") => {
-                unlogged = true;
-                self.advance();
-            }
-
-            _ => {}
         }
 
+        match self.current_token() {
+            Token::Table => {
+                let stmt = self.parse_create_table(temporary, unlogged)?;
+                Ok(Statement::CreateTable(stmt))
+            }
+            _ => Err(ParserError::new(
+                format!(
+                    "Expected TABLE after CREATE, got {:?}",
+                    self.current_token()
+                ),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    pub fn parse_create_table(
+        &mut self,
+        temporary: bool,
+        unlogged: bool,
+    ) -> Result<CreateStmt, ParserError> {
         self.expect(Token::Table)?;
 
         let if_not_exist = self.parse_if_not_exist()?;

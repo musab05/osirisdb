@@ -1,4 +1,4 @@
-use crate::lexer::token::Token;
+use crate::lexer::token::{Modifier, Token};
 
 pub fn lookup_keyword(word: &str) -> Token {
     match word.to_uppercase().as_str() {
@@ -17,6 +17,14 @@ pub fn lookup_keyword(word: &str) -> Token {
         "SET" => Token::Set,
 
         "DELETE" => Token::Delete,
+
+        "TEMPORARY" => Token::Modifier(Modifier::Temporary),
+        "TEMP" => Token::Modifier(Modifier::Temp),
+        "UNLOGGED" => Token::Modifier(Modifier::Unlogged),
+        "GLOBAL" => Token::Modifier(Modifier::Global),
+        "LOCAL" => Token::Modifier(Modifier::Local),
+        "MATERIALIZED" => Token::Modifier(Modifier::Materialized),
+        "REPLACE" => Token::Modifier(Modifier::Replace),
 
         "CREATE" => Token::Create,
         "TABLE" => Token::Table,
