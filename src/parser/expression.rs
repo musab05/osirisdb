@@ -1,5 +1,5 @@
 use crate::{
-    ast::{BinOpKind, DataType, Expr, UnaryOpKind, Value},
+    ast::{BinOpKind, DataType, DropBehavior, Expr, UnaryOpKind, Value},
     lexer::token::Token,
     parser::{
         binding_power::{infix_binding_power, prefix_binding_power},
@@ -186,6 +186,15 @@ impl Parser {
                 }
             }
 
+            // Allow contextual keywords to be used as identifiers in expressions
+            // (e.g., column named "action", "zone", "time", etc.)
+            Token::Current => {
+                self.advance();
+                // Handle CURRENT_TIMESTAMP and similar
+                let name = "CURRENT".to_string();
+                Ok(Expr::Column { table: None, name })
+            }
+
             _ => Err(ParserError::new(
                 format!("Unexpected token in expression: {:?}", token),
                 self.current.span.clone(),
@@ -283,10 +292,7 @@ impl Parser {
                     "BOOLEAN" | "BOOL" => DataType::Boolean,
                     "FLOAT" | "FLOAT4" | "REAL" => DataType::Float,
                     "DOUBLE" => {
-                        if matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("precision"))
-                        {
-                            self.advance();
-                        }
+                        self.consume(&Token::Precision);
                         DataType::Double
                     }
                     "FLOAT8" => DataType::Double,
@@ -294,7 +300,6 @@ impl Parser {
                     "JSON" => DataType::Json,
                     "JSONB" => DataType::JsonB,
                     "DATE" => DataType::Date,
-                    "TIME" => DataType::Time,
                     "TIMESTAMP" | "TIMESTAMPTZ" => DataType::Timestamp,
                     "UUID" => DataType::UUID,
                     "BINARY" => DataType::Binary,
@@ -304,8 +309,7 @@ impl Parser {
                         DataType::Char(n)
                     }
                     "CHARACTER" => {
-                        if matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("varying"))
-                        {
+                        if *self.current_token() == Token::Varying {
                             self.advance();
                             let n = self.parse_optional_length()?;
                             DataType::VarChar(n)
@@ -346,6 +350,12 @@ impl Parser {
                         DataType::Custom(parts)
                     }
                 }
+            }
+
+            // Handle TIME as a data type (it's now a keyword token)
+            Token::Time => {
+                self.advance();
+                DataType::Time
             }
 
             _ => {
@@ -449,6 +459,29 @@ impl Parser {
                 format!("Token {:?} is not a binary operator", token),
                 self.current.span.clone(),
             )),
+        }
+    }
+
+    pub fn parse_qualified_name(&mut self) -> Result<Vec<String>, ParserError> {
+        let mut parts = vec![self.expect_identifier()?];
+
+        while self.consume(&Token::Dot) {
+            parts.push(self.expect_identifier()?);
+        }
+        Ok(parts)
+    }
+
+    pub fn parse_drop_behaviour(&mut self) -> Option<DropBehavior> {
+        match self.current_token() {
+            Token::Cascade => {
+                self.advance();
+                Some(DropBehavior::Cascade)
+            }
+            Token::Restrict => {
+                self.advance();
+                Some(DropBehavior::Restrict)
+            }
+            _ => None,
         }
     }
 }

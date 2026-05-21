@@ -218,42 +218,30 @@ impl Parser {
                     self.advance();
                     JoinType::Inner
                 }
-                Token::Ident(kw) if kw.eq_ignore_ascii_case("INNER") => {
+                Token::Inner => {
                     self.advance();
                     self.expect(Token::Join)?;
                     JoinType::Inner
                 }
-                Token::Ident(kw) if kw.eq_ignore_ascii_case("LEFT") => {
+                Token::Left => {
                     self.advance();
-
-                    if matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("OUTER"))
-                    {
-                        self.advance();
-                    }
+                    self.consume(&Token::Outer);
                     self.expect(Token::Join)?;
                     JoinType::Left
                 }
-                Token::Ident(kw) if kw.eq_ignore_ascii_case("RIGHT") => {
+                Token::Right => {
                     self.advance();
-
-                    if matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("OUTER"))
-                    {
-                        self.advance();
-                    }
+                    self.consume(&Token::Outer);
                     self.expect(Token::Join)?;
                     JoinType::Right
                 }
-                Token::Ident(kw) if kw.eq_ignore_ascii_case("FULL") => {
+                Token::Full => {
                     self.advance();
-
-                    if matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("OUTER"))
-                    {
-                        self.advance();
-                    }
+                    self.consume(&Token::Outer);
                     self.expect(Token::Join)?;
                     JoinType::Full
                 }
-                Token::Ident(kw) if kw.eq_ignore_ascii_case("CROSS") => {
+                Token::Cross => {
                     self.advance();
                     self.expect(Token::Join)?;
                     JoinType::Cross

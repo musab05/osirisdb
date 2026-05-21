@@ -5,3 +5,7 @@ pub mod binding_power;
 pub mod expression;
 pub mod statement;
 pub mod create;
+pub mod drop;
+pub mod table;
+pub mod modifiers;
+pub mod truncate;
