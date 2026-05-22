@@ -20,6 +20,7 @@ pub fn lookup_keyword(word: &str) -> Token {
         "DROP" => Token::Drop,
         "TRUNCATE" => Token::Truncate,
         "ALTER" => Token::Alter,
+        "RESET" => Token::Reset,
         "RESTART" => Token::Restart,
         "IDENTITY" => Token::Identity,
         "CONTINUE" => Token::Continue,
@@ -31,6 +32,10 @@ pub fn lookup_keyword(word: &str) -> Token {
         "TO" => Token::To,
         "OWNER" => Token::Owner,
         "TYPE" => Token::Type,
+        "STATISTICS" => Token::Statistics,
+        "STORAGE" => Token::Storage,
+        "OPTIONS" => Token::Options,
+        "DATA" => Token::Data,
 
         // ── Constraints & References ──
         "CONSTRAINT" => Token::Constraint,

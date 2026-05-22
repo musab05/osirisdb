@@ -21,9 +21,10 @@ impl Parser {
     fn parse_statement(&mut self) -> Result<Statement, ParserError> {
         let stmt = match self.current_token() {
             Token::Select | Token::With => Statement::Select(self.parse_select()?),
+            Token::Truncate => Statement::TruncateTable(self.parse_truncate()?),
             Token::Create => self.parse_create()?,
             Token::Drop => self.parse_drop()?,
-            Token::Truncate => Statement::TruncateTable(self.parse_truncate()?),
+            Token::Alter => self.parse_alter()?,
 
             _ => {
                 return Err(ParserError::new(

@@ -9,3 +9,4 @@ pub mod drop;
 pub mod table;
 pub mod modifiers;
 pub mod truncate;
+pub mod alter;

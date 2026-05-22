@@ -1,5 +1,5 @@
 use crate::{
-    ast::{BinOpKind, DataType, DropBehavior, Expr, UnaryOpKind, Value},
+    ast::{BinOpKind, DataType, DropBehavior, Expr, SqlOption, UnaryOpKind, Value},
     lexer::token::Token,
     parser::{
         binding_power::{infix_binding_power, prefix_binding_power},
@@ -483,5 +483,21 @@ impl Parser {
             }
             _ => None,
         }
+    }
+
+    pub fn parse_options_list(&mut self) -> Result<Vec<SqlOption>, ParserError> {
+        self.expect(Token::LParen)?;
+        let mut options = vec![];
+        loop {
+            let name = self.expect_identifier()?;
+            self.expect(Token::Eq)?;
+            let value = self.parse_expr()?;
+            options.push(SqlOption { name, value });
+            if !self.consume(&Token::Comma) {
+                break;
+            }
+        }
+        self.expect(Token::RParen)?;
+        Ok(options)
     }
 }

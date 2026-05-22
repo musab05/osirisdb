@@ -509,4 +509,253 @@ impl Parser {
             Ok(false)
         }
     }
+
+    // Alter table
+    pub fn parse_alter_table(&mut self) -> Result<AlterTableStmt, ParserError> {
+        self.consume(&Token::Table);
+
+        let if_exist = self.parse_if_exist()?;
+
+        let name = ObjectName(self.parse_qualified_name()?);
+
+        let mut actions = vec![];
+
+        loop {
+            actions.push(self.parse_alter_table_actions()?);
+
+            if !self.consume(&Token::Comma) {
+                break;
+            }
+        }
+
+        Ok(AlterTableStmt {
+            if_exist,
+            name,
+            actions,
+        })
+    }
+
+    fn parse_alter_table_actions(&mut self) -> Result<AlterTableAction, ParserError> {
+        match self.current_token().clone() {
+            Token::Add => self.parse_alter_table_add(),
+            Token::Drop => self.parse_alter_table_drop(),
+            Token::Alter => self.parse_alter_table_alter(),
+            Token::Set => self.parse_alter_table_set(),
+            _ => Err(ParserError::new(
+                format!(
+                    "Unexpected token in ALTER TABLE: {:?}",
+                    self.current_token()
+                ),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    fn parse_alter_table_add(&mut self) -> Result<AlterTableAction, ParserError> {
+        self.consume(&Token::Add);
+
+        if self.consume(&Token::Column) {
+            let if_not_exist = self.parse_if_not_exist()?;
+            let column = self.parse_column_def()?;
+            Ok(AlterTableAction::AddColumn {
+                if_not_exist,
+                column,
+            })
+        } else if self.is_table_constraint() {
+            let constraint = self.parse_table_constraint()?;
+            Ok(AlterTableAction::AddConstraint(constraint))
+        } else {
+            Err(ParserError::new(
+                format!(
+                    "Expected COLUMN or constraint after ADD, got {:?}",
+                    self.current_token()
+                ),
+                self.current.span.clone(),
+            ))
+        }
+    }
+
+    fn parse_alter_table_drop(&mut self) -> Result<AlterTableAction, ParserError> {
+        self.consume(&Token::Drop);
+
+        if self.consume(&Token::Column) {
+            let if_exist = self.parse_if_exist()?;
+            let name = self.expect_identifier()?;
+            let behaviour = self.parse_drop_behaviour();
+            Ok(AlterTableAction::DropColumn {
+                if_exist,
+                name,
+                behaviour,
+            })
+        } else if self.is_table_constraint() {
+            let if_exist = self.parse_if_exist()?;
+            let name = self.expect_identifier()?;
+            let behaviour = self.parse_drop_behaviour();
+            Ok(AlterTableAction::DropConstraint {
+                if_exist,
+                name,
+                behaviour,
+            })
+        } else {
+            Err(ParserError::new(
+                format!(
+                    "Expected COLUMN or constraint after DROP, got {:?}",
+                    self.current_token()
+                ),
+                self.current.span.clone(),
+            ))
+        }
+    }
+
+    fn parse_alter_table_alter(&mut self) -> Result<AlterTableAction, ParserError> {
+        self.consume(&Token::Alter);
+
+        self.expect(Token::Column)?;
+
+        let name = self.expect_identifier()?;
+        let action = self.parse_alter_column_actions()?;
+
+        Ok(AlterTableAction::AlterColumn { name, action })
+    }
+
+    fn parse_alter_column_actions(&mut self) -> Result<AlterColumnAction, ParserError> {
+        match self.current_token().clone() {
+            Token::Set => self.parse_alter_column_set(),
+            Token::Drop => self.parse_alter_column_drop(),
+            Token::Reset => self.parse_alter_column_reset(),
+            Token::Type => self.parse_alter_column_type(),
+            _ => Err(ParserError::new(
+                format!(
+                    "Unexpected token in ALTER COLUMN: {:?}",
+                    self.current_token()
+                ),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    fn parse_alter_column_set(&mut self) -> Result<AlterColumnAction, ParserError> {
+        self.consume(&Token::Set);
+        match self.current_token().clone() {
+            Token::Default => {
+                self.advance();
+                Ok(AlterColumnAction::SetDefault(self.parse_expr()?))
+            }
+            Token::Not => {
+                self.advance();
+                self.expect(Token::Null)?;
+                Ok(AlterColumnAction::SetNotNull)
+            }
+            Token::Statistics => {
+                self.advance();
+                let n = self.expect_int_literal()?;
+                Ok(AlterColumnAction::SetStatistics(n as i64))
+            }
+            Token::Storage => {
+                self.advance();
+                Ok(AlterColumnAction::SetStorage(self.parse_column_storage()?))
+            }
+            Token::Options => {
+                self.advance();
+                Ok(AlterColumnAction::SetOptions(self.parse_options_list()?))
+            }
+            Token::Data => {
+                self.advance();
+                self.expect(Token::Type)?;
+                self.parse_alter_column_type()
+            }
+            Token::Type => {
+                self.advance();
+                self.parse_alter_column_type()
+            }
+            _ => Err(ParserError::new(
+                format!("Unexpected token after SET: {:?}", self.current_token()),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    fn parse_alter_column_drop(&mut self) -> Result<AlterColumnAction, ParserError> {
+        self.consume(&Token::Drop);
+        match self.current_token().clone() {
+            Token::Default => {
+                self.advance();
+                Ok(AlterColumnAction::DropDefault)
+            }
+            Token::Not => {
+                self.advance();
+                self.expect(Token::Null)?;
+                Ok(AlterColumnAction::DropNotNull)
+            }
+            _ => Err(ParserError::new(
+                format!("Unexpected token after DROP: {:?}", self.current_token()),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    fn parse_alter_column_reset(&mut self) -> Result<AlterColumnAction, ParserError> {
+        self.consume(&Token::Reset);
+        self.expect(Token::LParen)?;
+        let mut names = vec![];
+        loop {
+            names.push(self.expect_identifier()?);
+            if !self.consume(&Token::Comma) {
+                break;
+            }
+        }
+        self.expect(Token::RParen)?;
+        Ok(AlterColumnAction::ResetOptions(names))
+    }
+
+    fn parse_alter_column_type(&mut self) -> Result<AlterColumnAction, ParserError> {
+        let data_type = self.parse_data_type()?;
+
+        let collation = if self.consume(&Token::Collate) {
+            Some(self.expect_identifier()?)
+        } else {
+            None
+        };
+
+        let using = if self.consume(&Token::Using) {
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
+        Ok(AlterColumnAction::SetType {
+            data_type,
+            collation,
+            using,
+        })
+    }
+
+    fn parse_column_storage(&mut self) -> Result<ColumnStorage, ParserError> {
+        match self.current_token().clone() {
+            Token::Ident(s) => {
+                let storage = match s.to_uppercase().as_str() {
+                    "PLAIN" => ColumnStorage::Plain,
+                    "EXTERNAL" => ColumnStorage::External,
+                    "EXTENDED" => ColumnStorage::Extended,
+                    "MAIN" => ColumnStorage::Main,
+                    _ => {
+                        return Err(ParserError::new(
+                            format!("Unknown storage type: {}", s),
+                            self.current.span.clone(),
+                        ));
+                    }
+                };
+                self.advance();
+                Ok(storage)
+            }
+            _ => Err(ParserError::new(
+                format!("Expected storage type, got {:?}", self.current_token()),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    fn parse_alter_table_set(&mut self) -> Result<AlterTableAction, ParserError> {
+        todo!()
+    }
 }

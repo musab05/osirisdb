@@ -33,6 +33,7 @@ pub enum Token {
     Drop,
     Truncate,
     Alter,
+    Reset,
     Restart,
     Identity,
     Continue,
@@ -44,6 +45,10 @@ pub enum Token {
     To,
     Owner,
     Type,
+    Statistics,
+    Storage,
+    Options,
+    Data,
 
     // ─────────────────────────────────────────────────
     // Keywords — Constraints & References
