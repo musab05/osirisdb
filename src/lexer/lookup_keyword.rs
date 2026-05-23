@@ -17,6 +17,7 @@ pub fn lookup_keyword(word: &str) -> Token {
         // ── DDL ──
         "CREATE" => Token::Create,
         "TABLE" => Token::Table,
+        "SCHEMA" => Token::Schema,
         "DROP" => Token::Drop,
         "TRUNCATE" => Token::Truncate,
         "ALTER" => Token::Alter,
@@ -27,6 +28,7 @@ pub fn lookup_keyword(word: &str) -> Token {
         "INDEX" => Token::Index,
         "VIEW" => Token::View,
         "ADD" => Token::Add,
+        "ATTACH" => Token::Attach,
         "COLUMN" => Token::Column,
         "RENAME" => Token::Rename,
         "TO" => Token::To,
@@ -130,6 +132,7 @@ pub fn lookup_keyword(word: &str) -> Token {
 
         // ── Table Options & Clauses ──
         "INHERITS" => Token::Inherits,
+        "INHERIT" => Token::Inherit,
         "PARTITION" => Token::Partition,
         "RANGE" => Token::Range,
         "LIST" => Token::List,
@@ -139,7 +142,10 @@ pub fn lookup_keyword(word: &str) -> Token {
         "GENERATED" => Token::Generated,
         "ALWAYS" => Token::Always,
         "STORED" => Token::Stored,
-        "AUTOINCREMENT" | "AUTO_INCREMENT" => Token::AutoIncrement,
+        "AUTOINCREMENT" => Token::AutoIncrement,
+        "DETACH" => Token::Detach,
+        "MINVALUE" => Token::Minvalue,
+        "MAXVALUE" => Token::Maxvalue,
 
         // ── ON COMMIT Options ──
         "PRESERVE" => Token::Preserve,

@@ -541,6 +541,45 @@ impl Parser {
             Token::Drop => self.parse_alter_table_drop(),
             Token::Alter => self.parse_alter_table_alter(),
             Token::Set => self.parse_alter_table_set(),
+            Token::Reset => {
+                self.advance();
+                Ok(AlterTableAction::ResetOptions(
+                    self.parse_reset_options_list()?,
+                ))
+            }
+            Token::Rename => self.parse_alter_table_rename(),
+            Token::Inherit => {
+                self.advance();
+                Ok(AlterTableAction::Inherit(ObjectName(
+                    self.parse_qualified_name()?,
+                )))
+            }
+            Token::No => {
+                self.advance();
+                self.expect(Token::Inherit)?;
+                Ok(AlterTableAction::NoInherit(ObjectName(
+                    self.parse_qualified_name()?,
+                )))
+            }
+            Token::Attach => {
+                self.advance();
+                self.expect(Token::Partition)?;
+                let partition = ObjectName(self.parse_qualified_name()?);
+                self.expect(Token::For)?;
+                self.expect(Token::Values)?;
+                let for_values = self.parse_partition_bound()?;
+                Ok(AlterTableAction::AttachPartition {
+                    partition,
+                    for_values,
+                })
+            }
+            Token::Detach => {
+                self.advance();
+                self.expect(Token::Partition)?;
+                Ok(AlterTableAction::DetachPartition(ObjectName(
+                    self.parse_qualified_name()?,
+                )))
+            }
             _ => Err(ParserError::new(
                 format!(
                     "Unexpected token in ALTER TABLE: {:?}",
@@ -756,6 +795,138 @@ impl Parser {
     }
 
     fn parse_alter_table_set(&mut self) -> Result<AlterTableAction, ParserError> {
-        todo!()
+        self.consume(&Token::Set);
+
+        match self.current_token().clone() {
+            Token::Schema => {
+                self.advance();
+                Ok(AlterTableAction::SetSchema(self.expect_identifier()?))
+            }
+            Token::Tablespace => {
+                self.advance();
+                Ok(AlterTableAction::SetTableSpace(self.expect_identifier()?))
+            }
+            Token::Owner => {
+                self.advance();
+                self.expect(Token::To)?;
+                Ok(AlterTableAction::SetOwner(self.expect_identifier()?))
+            }
+            Token::Options => {
+                self.advance();
+                Ok(AlterTableAction::SetOptions(self.parse_options_list()?))
+            }
+            _ => Err(ParserError::new(
+                format!("Unexpected token after SET: {:?}", self.current_token()),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    fn parse_alter_table_rename(&mut self) -> Result<AlterTableAction, ParserError> {
+        self.consume(&Token::Rename);
+
+        match self.current_token().clone() {
+            Token::To => {
+                self.advance();
+                Ok(AlterTableAction::RenameTable(self.expect_identifier()?))
+            }
+            Token::Column => {
+                self.advance();
+                let old_name = self.expect_identifier()?;
+                self.expect(Token::To)?;
+                let new_name = self.expect_identifier()?;
+                Ok(AlterTableAction::RenameColumn { old_name, new_name })
+            }
+            Token::Constraint => {
+                self.advance();
+                let old_name = self.expect_identifier()?;
+                self.expect(Token::To)?;
+                let new_name = self.expect_identifier()?;
+                Ok(AlterTableAction::RenameConstraint { old_name, new_name })
+            }
+            _ => Err(ParserError::new(
+                format!(
+                    "Expected TO, COLUMN or CONSTRAINT after RENAME, got {:?}",
+                    self.current_token()
+                ),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    fn parse_reset_options_list(&mut self) -> Result<Vec<String>, ParserError> {
+        self.expect(Token::LParen)?;
+        let mut names = vec![];
+        loop {
+            names.push(self.expect_identifier()?);
+            if !self.consume(&Token::Comma) {
+                break;
+            }
+        }
+        self.expect(Token::RParen)?;
+        Ok(names)
+    }
+
+    fn parse_partition_bound(&mut self) -> Result<PartitionBound, ParserError> {
+        match self.current_token().clone() {
+            Token::In => {
+                self.advance();
+                self.expect(Token::LParen)?;
+                let exprs = self.parse_expr_lists()?;
+                self.expect(Token::RParen)?;
+                Ok(PartitionBound::In(exprs))
+            }
+            Token::From => {
+                self.advance();
+                self.expect(Token::LParen)?;
+                let from = self.parse_partition_bound_values()?;
+                self.expect(Token::RParen)?;
+                self.expect(Token::To)?;
+                self.expect(Token::LParen)?;
+                let to = self.parse_partition_bound_values()?;
+                self.expect(Token::RParen)?;
+                Ok(PartitionBound::FromTo { from, to })
+            }
+            Token::With => {
+                self.advance();
+                self.expect(Token::LParen)?;
+                let exprs = self.parse_expr_lists()?;
+                self.expect(Token::RParen)?;
+                Ok(PartitionBound::With(exprs))
+            }
+            Token::Default => {
+                self.advance();
+                Ok(PartitionBound::Default)
+            }
+            _ => Err(ParserError::new(
+                format!(
+                    "Expected IN, FROM, WITH or DEFAULT for partition bound, got {:?}",
+                    self.current_token()
+                ),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    fn parse_partition_bound_values(&mut self) -> Result<Vec<PartitionBoundValue>, ParserError> {
+        let mut values = vec![];
+        loop {
+            let val = match self.current_token().clone() {
+                Token::Minvalue => {
+                    self.advance();
+                    PartitionBoundValue::Minvalue
+                }
+                Token::Maxvalue => {
+                    self.advance();
+                    PartitionBoundValue::Maxvalue
+                }
+                _ => PartitionBoundValue::Expr(self.parse_expr()?),
+            };
+            values.push(val);
+            if !self.consume(&Token::Comma) {
+                break;
+            }
+        }
+        Ok(values)
     }
 }

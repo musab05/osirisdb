@@ -30,6 +30,7 @@ pub enum Token {
     // ─────────────────────────────────────────────────
     Create,
     Table,
+    Schema,
     Drop,
     Truncate,
     Alter,
@@ -40,6 +41,7 @@ pub enum Token {
     Index,
     View,
     Add,
+    Attach,
     Column,
     Rename,
     To,
@@ -161,6 +163,7 @@ pub enum Token {
     // Keywords — Table Options & Clauses
     // ─────────────────────────────────────────────────
     Inherits,
+    Inherit,
     Partition,
     Range,
     List,
@@ -170,6 +173,9 @@ pub enum Token {
     Always,
     Stored,
     AutoIncrement,
+    Detach,
+    Minvalue,
+    Maxvalue,
 
     // ─────────────────────────────────────────────────
     // Keywords — ON COMMIT Options
