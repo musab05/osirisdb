@@ -1,24 +1,20 @@
-use crate::lexer::{
-    lookup_keyword::lookup_keyword,
-    spanned_token::{Span, SpannedToken},
-    token::Token,
-};
+﻿use crate::lexer::{TokenKind, lookup_keyword::lookup_keyword, spanned_token::Span, token::Token};
 
-pub struct Lexer {
-    input: Vec<char>,
+pub struct Lexer<'a> {
+    input: &'a [u8],
     position: usize,
-    current_char: Option<char>,
+    current_char: Option<u8>,
     line: usize,
     column: usize,
 }
 
-impl Lexer {
-    pub fn new(input: &str) -> Self {
-        let chars: Vec<char> = input.chars().collect();
+impl<'a> Lexer<'a> {
+    pub fn new(input: &'a str) -> Self {
+        let bytes = input.as_bytes();
 
         Self {
-            current_char: chars.get(0).copied(),
-            input: chars,
+            current_char: bytes.first().copied(),
+            input: bytes,
             position: 0,
             line: 1,
             column: 1,
@@ -31,7 +27,7 @@ impl Lexer {
 
     fn advance(&mut self) {
         if let Some(ch) = self.current_char {
-            if ch == '\n' {
+            if ch == b'\n' {
                 self.line += 1;
                 self.column = 1;
             } else {
@@ -44,13 +40,13 @@ impl Lexer {
         self.current_char = self.input.get(self.position).copied();
     }
 
-    fn peek(&self) -> Option<char> {
+    fn peek(&self) -> Option<u8> {
         self.input.get(self.position + 1).copied()
     }
 
     fn skip_whitespace(&mut self) {
         while let Some(ch) = self.current_char {
-            if ch.is_whitespace() {
+            if ch.is_ascii_whitespace() {
                 self.advance();
             } else {
                 break;
@@ -58,32 +54,30 @@ impl Lexer {
         }
     }
 
-    fn skip_comment(&mut self) -> Result<(), Token> {
+    fn skip_comment(&mut self) -> Option<TokenKind> {
         if let Some(ch) = self.current_char {
-            if ch == '-' && self.peek() == Some('-') {
+            if ch == b'-' && self.peek() == Some(b'-') {
                 self.advance();
                 self.advance();
 
                 while let Some(c) = self.current_char {
-                    if c == '\n' {
+                    if c == b'\n' {
                         break;
                     }
                     self.advance();
                 }
-            } else if ch == '/' && self.peek() == Some('*') {
-                let start_line = self.line;
-                let start_col = self.column;
+            } else if ch == b'/' && self.peek() == Some(b'*') {
                 let mut depth = 1;
 
                 self.advance();
                 self.advance();
 
                 while let Some(c) = self.current_char {
-                    if c == '/' && self.peek() == Some('*') {
+                    if c == b'/' && self.peek() == Some(b'*') {
                         depth += 1;
                         self.advance();
                         self.advance();
-                    } else if c == '*' && self.peek() == Some('/') {
+                    } else if c == b'*' && self.peek() == Some(b'/') {
                         depth -= 1;
                         self.advance();
                         self.advance();
@@ -97,57 +91,55 @@ impl Lexer {
                 }
 
                 if depth > 0 {
-                    return Err(Token::UnterminatedComment(start_line, start_col));
+                    return Some(TokenKind::UnterminatedComment);
                 }
             }
         }
-        Ok(())
+        None
     }
 
-    fn read_identifier(&mut self) -> Token {
-        let mut word = String::new();
+    fn read_identifier(&mut self) -> TokenKind {
+        let start = self.position;
 
         while let Some(ch) = self.current_char {
-            if ch.is_alphanumeric() || ch == '_' {
-                word.push(ch);
+            if ch.is_ascii_alphanumeric() || ch == b'_' {
                 self.advance();
             } else {
                 break;
             }
         }
 
-        lookup_keyword(&word)
+        let word = std::str::from_utf8(&self.input[start..self.position]).unwrap_or("");
+        lookup_keyword(word)
     }
 
-    fn read_number(&mut self) -> Token {
-        let mut number = String::new();
+    fn read_number(&mut self) -> TokenKind {
+        let start = self.position;
 
         let mut has_dot = false;
         let mut has_exp = false;
 
         while let Some(ch) = self.current_char {
             if ch.is_ascii_digit() {
-                number.push(ch);
                 self.advance();
-            } else if ch == '.' && !has_dot {
-                if self.peek() == Some('.') {
+            } else if ch == b'.' && !has_dot {
+                if self.peek() == Some(b'.') {
                     break;
                 }
                 has_dot = true;
-                number.push(ch);
                 self.advance();
-            } else if (ch == 'e' || ch == 'E') && !has_exp {
+            } else if (ch == b'e' || ch == b'E') && !has_exp {
                 has_exp = true;
-                number.push(ch);
                 self.advance();
-                if self.current_char == Some('+') || self.current_char == Some('-') {
-                    number.push(self.current_char.unwrap());
+                if self.current_char == Some(b'+') || self.current_char == Some(b'-') {
                     self.advance();
                 }
             } else {
                 break;
             }
         }
+
+        let number = unsafe { std::str::from_utf8_unchecked(&self.input[start..self.position]) };
 
         if has_exp
             && (number.ends_with('e')
@@ -155,195 +147,166 @@ impl Lexer {
                 || number.ends_with('+')
                 || number.ends_with('-'))
         {
-            return Token::UnexpectedChar('e', self.line, self.column);
+            return TokenKind::UnexpectedChar(b'e');
         }
 
         if has_dot || has_exp {
             match number.parse::<f64>() {
-                Ok(f) => Token::FloatLit(f),
-                Err(_) => Token::UnexpectedChar('0', self.line, self.column),
+                Ok(f) => TokenKind::FloatLit(f),
+                Err(_) => TokenKind::UnexpectedChar(b'0'),
             }
         } else {
             match number.parse::<i64>() {
-                Ok(i) => Token::IntLit(i),
-                Err(_) => Token::UnexpectedChar('0', self.line, self.column),
+                Ok(i) => TokenKind::IntLit(i),
+                Err(_) => TokenKind::UnexpectedChar(b'0'),
             }
         }
     }
 
-    fn read_string(&mut self) -> Token {
-        let mut value = String::new();
-
+    fn read_string(&mut self) -> TokenKind {
         self.advance();
 
         while let Some(ch) = self.current_char {
-            if ch == '\'' && self.peek() == Some('\'') {
-                value.push('\'');
+            if ch == b'\'' && self.peek() == Some(b'\'') {
                 self.advance();
                 self.advance();
-            } else if ch == '\'' {
+            } else if ch == b'\'' {
                 break;
             } else {
-                value.push(ch);
                 self.advance();
             }
         }
         if self.current_char.is_none() {
-            return Token::UnterminatedString(self.line, self.column);
+            return TokenKind::UnterminatedString;
         }
         self.advance();
 
-        Token::StringLit(value)
+        TokenKind::StringLit
     }
 
-    fn read_quoted_identifier(&mut self) -> Token {
-        let mut value = String::new();
-
+    fn read_quoted_identifier(&mut self) -> TokenKind {
         self.advance();
 
         while let Some(ch) = self.current_char {
-            if ch == '\"' && self.peek() == Some('\"') {
-                value.push('\"');
+            if ch == b'\"' && self.peek() == Some(b'\"') {
                 self.advance();
                 self.advance();
-            } else if ch == '\"' {
+            } else if ch == b'\"' {
                 break;
             } else {
-                value.push(ch);
                 self.advance();
             }
         }
         if self.current_char.is_none() {
-            return Token::UnterminatedString(self.line, self.column);
+            return TokenKind::UnterminatedString;
         }
         self.advance();
 
-        Token::QuotedIdent(value)
+        TokenKind::QuotedIdent
     }
 
-    fn read_escape_string(&mut self) -> Token {
-        let mut value = String::new();
+    fn read_escape_string(&mut self) -> TokenKind {
         self.advance(); // consume 'E'
         self.advance(); // consume '\''
 
         while let Some(ch) = self.current_char {
-            if ch == '\\' {
+            if ch == b'\\' {
                 self.advance();
-                if let Some(esc) = self.current_char {
-                    match esc {
-                        'n' => value.push('\n'),
-                        't' => value.push('\t'),
-                        'r' => value.push('\r'),
-                        '\\' => value.push('\\'),
-                        '\'' => value.push('\''),
-                        _ => {
-                            value.push('\\');
-                            value.push(esc);
-                        }
-                    }
+                if self.current_char.is_some() {
                     self.advance();
                 }
-            } else if ch == '\'' && self.peek() == Some('\'') {
-                value.push('\'');
+            } else if ch == b'\'' && self.peek() == Some(b'\'') {
                 self.advance();
                 self.advance();
-            } else if ch == '\'' {
+            } else if ch == b'\'' {
                 break;
             } else {
-                value.push(ch);
                 self.advance();
             }
         }
 
         if self.current_char.is_none() {
-            return Token::UnterminatedString(self.line, self.column);
+            return TokenKind::UnterminatedString;
         }
         self.advance(); // consume closing '\''
 
-        Token::StringLit(value)
+        TokenKind::StringLit
     }
 
-    fn read_backtick_identifier(&mut self) -> Token {
-        let mut value = String::new();
+    fn read_backtick_identifier(&mut self) -> TokenKind {
         self.advance();
 
         while let Some(ch) = self.current_char {
-            if ch == '`' && self.peek() == Some('`') {
-                value.push('`');
+            if ch == b'`' && self.peek() == Some(b'`') {
                 self.advance();
                 self.advance();
-            } else if ch == '`' {
+            } else if ch == b'`' {
                 break;
             } else {
-                value.push(ch);
                 self.advance();
             }
         }
         if self.current_char.is_none() {
-            return Token::UnterminatedString(self.line, self.column);
+            return TokenKind::UnterminatedString;
         }
         self.advance();
 
-        Token::QuotedIdent(value)
+        TokenKind::QuotedIdent
     }
 
-    fn read_bit_string(&mut self) -> Token {
-        let mut value = String::new();
+    fn read_bit_string(&mut self) -> TokenKind {
         self.advance(); // consume B
         self.advance(); // consume '
 
         while let Some(ch) = self.current_char {
-            if ch == '\'' {
+            if ch == b'\'' {
                 break;
             }
-            if ch != '0' && ch != '1' {
-                return Token::UnexpectedChar(ch, self.line, self.column);
+            if ch != b'0' && ch != b'1' {
+                return TokenKind::UnexpectedChar(ch);
             }
-            value.push(ch);
             self.advance();
         }
         if self.current_char.is_none() {
-            return Token::UnterminatedString(self.line, self.column);
+            return TokenKind::UnterminatedString;
         }
         self.advance();
 
-        Token::BitStringLit(value)
+        TokenKind::BitStringLit
     }
 
-    fn read_hex_string(&mut self) -> Token {
-        let mut value = String::new();
+    fn read_hex_string(&mut self) -> TokenKind {
         self.advance(); // consume X
         self.advance(); // consume '
 
         while let Some(ch) = self.current_char {
-            if ch == '\'' {
+            if ch == b'\'' {
                 break;
             }
 
             if ch.is_ascii_hexdigit() {
-                value.push(ch);
                 self.advance();
             } else {
-                return Token::UnexpectedChar(ch, self.line, self.column);
+                return TokenKind::UnexpectedChar(ch);
             }
         }
         if self.current_char.is_none() {
-            return Token::UnterminatedString(self.line, self.column);
+            return TokenKind::UnterminatedString;
         }
         self.advance();
 
-        Token::HexStringLit(value)
+        TokenKind::HexStringLit
     }
 
-    pub fn next_token(&mut self) -> Token {
+    fn next_token_kind(&mut self) -> TokenKind {
         loop {
             self.skip_whitespace();
 
-            let is_comment = (self.current_char == Some('-') && self.peek() == Some('-'))
-                || (self.current_char == Some('/') && self.peek() == Some('*'));
+            let is_comment = (self.current_char == Some(b'-') && self.peek() == Some(b'-'))
+                || (self.current_char == Some(b'/') && self.peek() == Some(b'*'));
 
             if is_comment {
-                if let Err(err_token) = self.skip_comment() {
+                if let Some(err_token) = self.skip_comment() {
                     return err_token;
                 }
             } else {
@@ -353,17 +316,17 @@ impl Lexer {
 
         if let Some(ch) = self.current_char {
             match ch {
-                'E' | 'e' if self.peek() == Some('\'') => {
+                b'E' | b'e' if self.peek() == Some(b'\'') => {
                     return self.read_escape_string();
                 }
-                'B' | 'b' if self.peek() == Some('\'') => {
+                b'B' | b'b' if self.peek() == Some(b'\'') => {
                     return self.read_bit_string();
                 }
-                'X' | 'x' if self.peek() == Some('\'') => {
+                b'X' | b'x' if self.peek() == Some(b'\'') => {
                     return self.read_hex_string();
                 }
                 // Identifier or Keywords
-                c if c.is_alphabetic() || c == '_' => {
+                c if c.is_ascii_alphabetic() || c == b'_' => {
                     return self.read_identifier();
                 }
                 // Numbers
@@ -371,230 +334,226 @@ impl Lexer {
                     return self.read_number();
                 }
                 // Strings
-                '\'' => {
+                b'\'' => {
                     return self.read_string();
                 }
-                '\"' => {
+                b'\"' => {
                     return self.read_quoted_identifier();
                 }
-                '`' => {
+                b'`' => {
                     return self.read_backtick_identifier();
                 }
                 // Operators
-                '=' => {
+                b'=' => {
                     self.advance();
-                    return Token::Eq;
+                    return TokenKind::Eq;
                 }
-                '!' => {
-                    if self.peek() == Some('=') {
+                b'!' => {
+                    if self.peek() == Some(b'=') {
                         self.advance();
                         self.advance();
-                        return Token::Ne;
-                    } else if self.peek() == Some('~') {
+                        return TokenKind::Ne;
+                    } else if self.peek() == Some(b'~') {
                         self.advance();
                         self.advance();
 
-                        if self.current_char == Some('*') {
+                        if self.current_char == Some(b'*') {
                             self.advance();
-                            return Token::RegexNotIMatch;
+                            return TokenKind::RegexNotIMatch;
                         }
 
-                        return Token::RegexNotMatch;
-                    }
-
-                    // let (line, col) = (self.line, self.column);
-                    let (line, col) = self.current_position();
-                    self.advance();
-                    return Token::Illegal('!', line, col);
-                }
-                '<' => {
-                    if self.peek() == Some('=') {
-                        self.advance();
-                        self.advance();
-                        return Token::Le;
-                    } else if self.peek() == Some('>') {
-                        self.advance();
-                        self.advance();
-                        return Token::Ne;
-                    } else if self.peek() == Some('@') {
-                        self.advance();
-                        self.advance();
-                        return Token::LtAt;
+                        return TokenKind::RegexNotMatch;
                     }
 
                     self.advance();
-                    return Token::Lt;
+                    return TokenKind::Illegal(b'!');
                 }
-
-                '>' => {
-                    if self.peek() == Some('=') {
+                b'<' => {
+                    if self.peek() == Some(b'=') {
                         self.advance();
                         self.advance();
-                        return Token::Ge;
+                        return TokenKind::Le;
+                    } else if self.peek() == Some(b'>') {
+                        self.advance();
+                        self.advance();
+                        return TokenKind::Ne;
+                    } else if self.peek() == Some(b'@') {
+                        self.advance();
+                        self.advance();
+                        return TokenKind::LtAt;
                     }
 
                     self.advance();
-                    return Token::Gt;
+                    return TokenKind::Lt;
                 }
 
-                '+' => {
-                    self.advance();
-                    return Token::Plus;
-                }
-
-                '-' => {
-                    if self.peek() == Some('>') {
+                b'>' => {
+                    if self.peek() == Some(b'=') {
                         self.advance();
-                        if self.peek() == Some('>') {
+                        self.advance();
+                        return TokenKind::Ge;
+                    }
+
+                    self.advance();
+                    return TokenKind::Gt;
+                }
+
+                b'+' => {
+                    self.advance();
+                    return TokenKind::Plus;
+                }
+
+                b'-' => {
+                    if self.peek() == Some(b'>') {
+                        self.advance();
+                        if self.peek() == Some(b'>') {
                             self.advance();
                             self.advance();
-                            return Token::DoubleArrow;
+                            return TokenKind::DoubleArrow;
                         } else {
                             self.advance();
-                            return Token::Arrow;
+                            return TokenKind::Arrow;
                         }
                     } else {
                         self.advance();
-                        return Token::Minus;
+                        return TokenKind::Minus;
                     }
                 }
 
-                '*' => {
+                b'*' => {
                     self.advance();
-                    return Token::Star;
+                    return TokenKind::Star;
                 }
 
-                '/' => {
+                b'/' => {
                     self.advance();
-                    return Token::Slash;
+                    return TokenKind::Slash;
                 }
 
-                '%' => {
+                b'%' => {
                     self.advance();
-                    return Token::Percent;
+                    return TokenKind::Percent;
                 }
 
                 // punctuation
-                '(' => {
+                b'(' => {
                     self.advance();
-                    return Token::LParen;
+                    return TokenKind::LParen;
                 }
 
-                ')' => {
+                b')' => {
                     self.advance();
-                    return Token::RParen;
+                    return TokenKind::RParen;
                 }
 
-                '[' => {
+                b'[' => {
                     self.advance();
-                    return Token::LBracket;
+                    return TokenKind::LBracket;
                 }
 
-                ']' => {
+                b']' => {
                     self.advance();
-                    return Token::RBracket;
+                    return TokenKind::RBracket;
                 }
 
-                '{' => {
+                b'{' => {
                     self.advance();
-                    return Token::LBrace;
+                    return TokenKind::LBrace;
                 }
 
-                '}' => {
+                b'}' => {
                     self.advance();
-                    return Token::RBrace;
+                    return TokenKind::RBrace;
                 }
 
-                ',' => {
+                b',' => {
                     self.advance();
-                    return Token::Comma;
+                    return TokenKind::Comma;
                 }
 
-                ';' => {
+                b';' => {
                     self.advance();
-                    return Token::Semicolon;
+                    return TokenKind::Semicolon;
                 }
 
-                '.' => {
+                b'.' => {
                     self.advance();
-                    return Token::Dot;
+                    return TokenKind::Dot;
                 }
 
-                '|' => {
-                    if self.peek() == Some('|') {
+                b'|' => {
+                    if self.peek() == Some(b'|') {
                         self.advance();
                         self.advance();
-                        return Token::Concat;
+                        return TokenKind::Concat;
                     } else {
-                        let (line, col) = self.current_position();
                         self.advance();
-                        return Token::UnexpectedChar('|', line, col);
+                        return TokenKind::UnexpectedChar(b'|');
                     }
                 }
 
-                ':' => {
-                    if self.peek() == Some(':') {
+                b':' => {
+                    if self.peek() == Some(b':') {
                         self.advance();
                         self.advance();
-                        return Token::DoubleColon;
+                        return TokenKind::DoubleColon;
                     } else {
-                        let (line, col) = self.current_position();
                         self.advance();
-                        return Token::UnexpectedChar(':', line, col);
+                        return TokenKind::UnexpectedChar(b':');
                     }
                 }
 
-                '@' => {
-                    if self.peek() == Some('>') {
+                b'@' => {
+                    if self.peek() == Some(b'>') {
                         self.advance();
                         self.advance();
-                        return Token::AtGt;
-                    } else if self.peek() == Some('@') {
+                        return TokenKind::AtGt;
+                    } else if self.peek() == Some(b'@') {
                         self.advance();
                         self.advance();
-                        return Token::AtAt;
+                        return TokenKind::AtAt;
                     }
 
                     self.advance();
-                    return Token::At;
+                    return TokenKind::At;
                 }
 
-                '#' => {
+                b'#' => {
                     self.advance();
 
-                    if self.current_char == Some('>') {
+                    if self.current_char == Some(b'>') {
                         self.advance();
 
-                        if self.current_char == Some('>') {
+                        if self.current_char == Some(b'>') {
                             self.advance();
-                            return Token::HashDoubleArrow;
+                            return TokenKind::HashDoubleArrow;
                         }
 
-                        return Token::HashArrow;
+                        return TokenKind::HashArrow;
                     }
 
-                    return Token::Hash;
+                    return TokenKind::HashToken;
                 }
 
-                '~' => {
+                b'~' => {
                     self.advance();
 
-                    if self.current_char == Some('*') {
+                    if self.current_char == Some(b'*') {
                         self.advance();
-                        return Token::RegexIMatch;
+                        return TokenKind::RegexIMatch;
                     }
 
-                    return Token::RegexMatch;
+                    return TokenKind::RegexMatch;
                 }
 
-                '$' => {
+                b'$' => {
                     self.advance();
 
                     let mut digits = String::new();
 
                     while let Some(ch) = self.current_char {
                         if ch.is_ascii_digit() {
-                            digits.push(ch);
+                            digits.push(ch as char);
                             self.advance();
                         } else {
                             break;
@@ -602,49 +561,55 @@ impl Lexer {
                     }
 
                     if digits.is_empty() {
-                        return Token::Illegal('$', self.line, self.column);
+                        return TokenKind::Illegal(b'$');
                     }
 
-                    // return Token::Parameter(digits.parse().unwrap());
                     return match digits.parse::<u32>() {
-                        Ok(n) => Token::Parameter(n),
-                        Err(_) => Token::Illegal('$', self.line, self.column),
+                        Ok(n) => TokenKind::Parameter(n),
+                        Err(_) => TokenKind::Illegal(b'$'),
                     };
                 }
 
                 // unknown character
                 _ => {
                     self.advance();
-                    return Token::UnexpectedChar(ch, self.line, self.column);
+                    return TokenKind::UnexpectedChar(ch);
                 }
             }
         }
 
-        Token::Eof
+        TokenKind::Eof
     }
 
-    pub fn next_spanned(&mut self) -> SpannedToken {
+    pub fn next_token(&mut self) -> Token {
         let start = self.position;
         let line = self.line;
         let column = self.column;
 
-        let token = self.next_token();
+        let kind = self.next_token_kind();
 
         let end = self.position;
 
-        SpannedToken::new(token, Span::new(start, end, line, column))
+        Token {
+            kind,
+            span: Span {
+                start,
+                end,
+                line,
+                column,
+            },
+        }
     }
 }
 
-impl Iterator for Lexer {
-    type Item = SpannedToken;
+impl<'a> Iterator for Lexer<'a> {
+    type Item = Token;
 
-    fn next(&mut self) -> Option<SpannedToken> {
-        match self.next_spanned() {
-            SpannedToken {
-                token: Token::Eof, ..
-            } => None,
-            st => Some(st),
+    fn next(&mut self) -> Option<Token> {
+        let token = self.next_token();
+        match token.kind {
+            TokenKind::Eof => None,
+            _ => Some(token),
         }
     }
 }

@@ -1,3 +1,5 @@
+use crate::lexer::spanned_token::Span;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Modifier {
     Temporary,
@@ -10,10 +12,8 @@ pub enum Modifier {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token {
-    // ─────────────────────────────────────────────────
-    // Keywords — DML
-    // ─────────────────────────────────────────────────
+pub enum TokenKind {
+    // DML
     Select,
     From,
     Where,
@@ -24,10 +24,7 @@ pub enum Token {
     Set,
     Delete,
     Returning,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — DDL
-    // ─────────────────────────────────────────────────
+    // DDL
     Create,
     Table,
     Schema,
@@ -51,10 +48,7 @@ pub enum Token {
     Storage,
     Options,
     Data,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Constraints & References
-    // ─────────────────────────────────────────────────
+    // Constraints
     Constraint,
     Primary,
     Key,
@@ -68,10 +62,7 @@ pub enum Token {
     Cascade,
     Restrict,
     Action,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Logical & Comparison
-    // ─────────────────────────────────────────────────
+    // Logical
     And,
     Or,
     In,
@@ -84,16 +75,10 @@ pub enum Token {
     Any,
     Some,
     Escape,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Boolean Literals
-    // ─────────────────────────────────────────────────
+    // Boolean
     True,
     False,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Grouping, Ordering & Pagination
-    // ─────────────────────────────────────────────────
+    // Grouping / Ordering
     Group,
     Order,
     By,
@@ -112,27 +97,18 @@ pub enum Token {
     PercentKw,
     Tie,
     Ties,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Set Operations
-    // ─────────────────────────────────────────────────
+    // Set ops
     Union,
     Intersect,
     Except,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Transaction
-    // ─────────────────────────────────────────────────
+    // Transaction
     Begin,
     Commit,
     Rollback,
     Transaction,
     Savepoint,
     Release,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — CTE & Conditional
-    // ─────────────────────────────────────────────────
+    // CTE / Conditional
     With,
     Recursive,
     Case,
@@ -142,10 +118,7 @@ pub enum Token {
     End,
     Cast,
     If,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Joins
-    // ─────────────────────────────────────────────────
+    // Joins
     Join,
     On,
     As,
@@ -158,15 +131,13 @@ pub enum Token {
     Natural,
     Using,
     Lateral,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Table Options & Clauses
-    // ─────────────────────────────────────────────────
+    // Table options
     Inherits,
     Inherit,
     Partition,
     Range,
     List,
+    Hash,
     Tablespace,
     Collate,
     Generated,
@@ -176,16 +147,10 @@ pub enum Token {
     Detach,
     Minvalue,
     Maxvalue,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — ON COMMIT Options
-    // ─────────────────────────────────────────────────
+    // ON COMMIT
     Preserve,
     Rows,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Locking
-    // ─────────────────────────────────────────────────
+    // Locking
     For,
     Share,
     UpdateKw,
@@ -194,10 +159,7 @@ pub enum Token {
     Skip,
     Locked,
     Only,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Window Functions
-    // ─────────────────────────────────────────────────
+    // Window
     Over,
     Filter,
     Window,
@@ -207,110 +169,77 @@ pub enum Token {
     Current,
     Row,
     Unbounded,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — UPSERT / Conflict
-    // ─────────────────────────────────────────────────
+    // Upsert
     Conflict,
     Do,
     Nothing,
     Excluded,
-
-    // ─────────────────────────────────────────────────
-    // Keywords — Data Type Names (used contextually)
-    // ─────────────────────────────────────────────────
+    // Data types
     Varying,
     Precision,
     Zone,
     Time,
-
-    // ─────────────────────────────────────────────────
     // Modifiers
-    // ─────────────────────────────────────────────────
     Modifier(Modifier),
 
-    // ─────────────────────────────────────────────────
-    // Identifiers
-    // ─────────────────────────────────────────────────
-    Ident(String),
-    QuotedIdent(String),
+    // Identifiers — zero-copy, resolved via span
+    Ident,
+    QuotedIdent,
 
-    // ─────────────────────────────────────────────────
-    // Literals / Constants
-    // ─────────────────────────────────────────────────
+    // Literals
     IntLit(i64),
     FloatLit(f64),
-    StringLit(String),
-    BitStringLit(String),
-    HexStringLit(String),
-    ByteaLit(Vec<u8>),
-    DollarStringLit(String),
+    StringLit, // content resolved via span (or post-processed string for escapes)
+    BitStringLit,
+    HexStringLit,
+    ByteaLit,
+    DollarStringLit,
     Parameter(u32),
 
-    // ─────────────────────────────────────────────────
     // Operators — Comparison
-    // ─────────────────────────────────────────────────
     Eq,
     Ne,
     Lt,
     Le,
     Gt,
     Ge,
-
-    // ─────────────────────────────────────────────────
     // Operators — Arithmetic
-    // ─────────────────────────────────────────────────
     Plus,
     Minus,
     Star,
     Slash,
     Percent,
-
-    // ─────────────────────────────────────────────────
-    // Operators — String / JSON / Cast
-    // ─────────────────────────────────────────────────
+    // Operators — String/JSON/Cast
     Concat,
     Arrow,
     DoubleArrow,
     DoubleColon,
     MinusGt,
-
-    // ─────────────────────────────────────────────────
     // Operators — Bitwise
-    // ─────────────────────────────────────────────────
     Pipe,
     Caret,
     Ampersand,
     Tilde,
     ShiftLeft,
     ShiftRight,
-
-    // ─────────────────────────────────────────────────
     // Operators — Regex
-    // ─────────────────────────────────────────────────
     RegexMatch,
     RegexIMatch,
     RegexNotMatch,
     RegexNotIMatch,
-
-    // ─────────────────────────────────────────────────
-    // Operators — Containment / JSONB
-    // ─────────────────────────────────────────────────
+    // Operators — JSONB
     At,
     AtGt,
     LtAt,
     AtAt,
-    Hash,
+    HashToken,
     HashArrow,
     HashDoubleArrow,
     HashMinus,
     Question,
     QuestionPipe,
     QuestionAmp,
-
-    // ─────────────────────────────────────────────────
-    // Delimiters / Separators / Punctuation
-    // ─────────────────────────────────────────────────
+    // Punctuation
     LParen,
     RParen,
     LBracket,
@@ -321,16 +250,18 @@ pub enum Token {
     Semicolon,
     Dot,
 
-    // ─────────────────────────────────────────────────
-    // End Of File
-    // ─────────────────────────────────────────────────
+    // EOF
     Eof,
 
-    // ─────────────────────────────────────────────────
-    // Invalid / Unknown / Error Tokens
-    // ─────────────────────────────────────────────────
-    Illegal(char, usize, usize),
-    UnexpectedChar(char, usize, usize),
-    UnterminatedString(usize, usize),
-    UnterminatedComment(usize, usize),
+    // Errors — span holds position, payload holds the bad byte
+    Illegal(u8),
+    UnexpectedChar(u8),
+    UnterminatedString,
+    UnterminatedComment,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: Span,
 }
