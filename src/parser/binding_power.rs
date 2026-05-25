@@ -1,24 +1,24 @@
-use crate::lexer::token::Token;
+use crate::lexer::token::TokenKind;
 
-pub fn infix_binding_power(token: &Token) -> Option<(u8, u8)> {
+pub fn infix_binding_power(token: &TokenKind) -> Option<(u8, u8)> {
     match token {
-        Token::Or => Some((1, 2)),
-        Token::And => Some((3, 4)),
-        Token::Eq | Token::Ne => Some((5, 6)),
-        Token::Lt | Token::Le | Token::Gt | Token::Ge => Some((7, 8)),
-        Token::Plus | Token::Minus => Some((9, 10)),
-        Token::Star | Token::Slash | Token::Percent => Some((11, 12)),
-        Token::Concat => Some((13, 14)),
-        Token::DoubleColon => Some((15, 16)), // cast
-        Token::Dot => Some((17, 18)),         // table.col
+        TokenKind::Or => Some((1, 2)),
+        TokenKind::And => Some((3, 4)),
+        TokenKind::Eq | TokenKind::Ne => Some((5, 6)),
+        TokenKind::Lt | TokenKind::Le | TokenKind::Gt | TokenKind::Ge => Some((7, 8)),
+        TokenKind::Plus | TokenKind::Minus => Some((9, 10)),
+        TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Some((11, 12)),
+        TokenKind::Concat => Some((13, 14)),
+        TokenKind::DoubleColon => Some((15, 16)), // cast
+        TokenKind::Dot => Some((17, 18)),         // table.col
         _ => None,
     }
 }
 
-pub fn prefix_binding_power(token: &Token) -> Option<u8> {
+pub fn prefix_binding_power(token: &TokenKind) -> Option<u8> {
     match token {
-        Token::Not => Some(5),
-        Token::Minus => Some(13),
+        TokenKind::Not => Some(5),
+        TokenKind::Minus => Some(13),
         _ => None,
     }
 }

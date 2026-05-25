@@ -3,25 +3,25 @@ use crate::{
         Cte, Expr, JoinClause, JoinType, OrderItem, SelectItem, SelectModifier, SelectStmt, SetOp,
         SetOperation, TableRef,
     },
-    lexer::token::Token,
+    lexer::{TokenKind, token::Token},
     parser::{parser::Parser, parser_error::ParserError},
 };
 
-impl Parser {
+impl<'a> Parser<'a> {
     pub fn parse_select(&mut self) -> Result<SelectStmt, ParserError> {
-        let ctes = if self.consume(&Token::With) {
+        let ctes = if self.consume(&TokenKind::With) {
             self.parse_ctes()?
         } else {
             vec![]
         };
 
-        self.expect(Token::Select)?;
+        self.expect(TokenKind::Select)?;
 
         let modifier = self.parse_select_modifier()?;
 
         let columns = self.parse_select_column()?;
 
-        let from = if self.consume(&Token::From) {
+        let from = if self.consume(&TokenKind::From) {
             self.parse_table_refs()?
         } else {
             vec![]
@@ -29,39 +29,39 @@ impl Parser {
 
         let joins = self.parse_joins()?;
 
-        let where_ = if self.consume(&Token::Where) {
+        let where_ = if self.consume(&TokenKind::Where) {
             Some(self.parse_expr()?)
         } else {
             None
         };
 
-        let group_by = if self.consume(&Token::Group) {
-            self.expect(Token::By)?;
+        let group_by = if self.consume(&TokenKind::Group) {
+            self.expect(TokenKind::By)?;
             self.parse_expr_lists()?
         } else {
             vec![]
         };
 
-        let having = if self.consume(&Token::Having) {
+        let having = if self.consume(&TokenKind::Having) {
             Some(self.parse_expr()?)
         } else {
             None
         };
 
-        let order_by = if self.consume(&Token::Order) {
-            self.expect(Token::By)?;
+        let order_by = if self.consume(&TokenKind::Order) {
+            self.expect(TokenKind::By)?;
             self.parse_order_items()?
         } else {
             vec![]
         };
 
-        let limit = if self.consume(&Token::Limit) {
+        let limit = if self.consume(&TokenKind::Limit) {
             Some(self.parse_expr()?)
         } else {
             None
         };
 
-        let offset = if self.consume(&Token::Offset) {
+        let offset = if self.consume(&TokenKind::Offset) {
             Some(self.parse_expr()?)
         } else {
             None
@@ -91,17 +91,17 @@ impl Parser {
         loop {
             let name = self.expect_identifier()?;
 
-            self.expect(Token::As)?;
+            self.expect(TokenKind::As)?;
 
-            self.expect(Token::LParen)?;
+            self.expect(TokenKind::LParen)?;
 
             let query = self.parse_select()?;
 
-            self.expect(Token::RParen)?;
+            self.expect(TokenKind::RParen)?;
 
             ctes.push(Cte { name, query });
 
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
@@ -109,15 +109,15 @@ impl Parser {
     }
 
     fn parse_select_modifier(&mut self) -> Result<Option<SelectModifier>, ParserError> {
-        if self.consume(&Token::All) {
+        if self.consume(&TokenKind::All) {
             return Ok(Some(SelectModifier::All));
         }
 
-        if self.consume(&Token::Distinct) {
-            if self.consume(&Token::On) {
-                self.expect(Token::LParen)?;
+        if self.consume(&TokenKind::Distinct) {
+            if self.consume(&TokenKind::On) {
+                self.expect(TokenKind::LParen)?;
                 let exprs = self.parse_expr_lists()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 return Ok(Some(SelectModifier::DistinctOn(exprs)));
             }
             return Ok(Some(SelectModifier::Distinct));
@@ -130,7 +130,7 @@ impl Parser {
         let mut items = vec![];
 
         loop {
-            let item = if self.consume(&Token::Star) {
+            let item = if self.consume(&TokenKind::Star) {
                 SelectItem::Wildcard
             } else {
                 let expr = self.parse_expr()?;
@@ -142,9 +142,9 @@ impl Parser {
                     } if name == "*" => SelectItem::QualifiedWildcard(vec![t.clone()]),
 
                     _ => {
-                        let alias = if self.consume(&Token::As) {
+                        let alias = if self.consume(&TokenKind::As) {
                             Some(self.expect_identifier()?)
-                        } else if matches!(self.current_token(), Token::Ident(_)) {
+                        } else if matches!(self.current_token(), TokenKind::Ident) {
                             Some(self.expect_identifier()?)
                         } else {
                             None
@@ -157,7 +157,7 @@ impl Parser {
 
             items.push(item);
 
-            if !self.consume(&Token::Comma) || self.is_select_column_end() {
+            if !self.consume(&TokenKind::Comma) || self.is_select_column_end() {
                 break;
             }
         }
@@ -169,13 +169,13 @@ impl Parser {
         let mut refs = vec![];
 
         loop {
-            let tref = if self.consume(&Token::LParen) {
+            let tref = if self.consume(&TokenKind::LParen) {
                 let query = self.parse_select()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
 
-                let alias = if self.consume(&Token::As) {
+                let alias = if self.consume(&TokenKind::As) {
                     Some(self.expect_identifier()?)
-                } else if matches!(self.current_token(), Token::Ident(_)) {
+                } else if matches!(self.current_token(), TokenKind::Ident) {
                     Some(self.expect_identifier()?)
                 } else {
                     None
@@ -186,13 +186,13 @@ impl Parser {
                 }
             } else {
                 let mut name = vec![self.expect_identifier()?];
-                while self.consume(&Token::Dot) {
+                while self.consume(&TokenKind::Dot) {
                     name.push(self.expect_identifier()?);
                 }
 
-                let alias = if self.consume(&Token::As) {
+                let alias = if self.consume(&TokenKind::As) {
                     Some(self.expect_identifier()?)
-                } else if matches!(self.current_token(), Token::Ident(_)) {
+                } else if matches!(self.current_token(), TokenKind::Ident) {
                     Some(self.expect_identifier()?)
                 } else {
                     None
@@ -201,7 +201,7 @@ impl Parser {
             };
             refs.push(tref);
 
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
@@ -214,36 +214,36 @@ impl Parser {
 
         loop {
             let join_type = match self.current_token() {
-                Token::Join => {
+                TokenKind::Join => {
                     self.advance();
                     JoinType::Inner
                 }
-                Token::Inner => {
+                TokenKind::Inner => {
                     self.advance();
-                    self.expect(Token::Join)?;
+                    self.expect(TokenKind::Join)?;
                     JoinType::Inner
                 }
-                Token::Left => {
+                TokenKind::Left => {
                     self.advance();
-                    self.consume(&Token::Outer);
-                    self.expect(Token::Join)?;
+                    self.consume(&TokenKind::Outer);
+                    self.expect(TokenKind::Join)?;
                     JoinType::Left
                 }
-                Token::Right => {
+                TokenKind::Right => {
                     self.advance();
-                    self.consume(&Token::Outer);
-                    self.expect(Token::Join)?;
+                    self.consume(&TokenKind::Outer);
+                    self.expect(TokenKind::Join)?;
                     JoinType::Right
                 }
-                Token::Full => {
+                TokenKind::Full => {
                     self.advance();
-                    self.consume(&Token::Outer);
-                    self.expect(Token::Join)?;
+                    self.consume(&TokenKind::Outer);
+                    self.expect(TokenKind::Join)?;
                     JoinType::Full
                 }
-                Token::Cross => {
+                TokenKind::Cross => {
                     self.advance();
-                    self.expect(Token::Join)?;
+                    self.expect(TokenKind::Join)?;
                     JoinType::Cross
                 }
 
@@ -253,7 +253,7 @@ impl Parser {
             let table = self.parse_single_table_ref()?;
 
             let condition = if join_type != JoinType::Cross {
-                if self.consume(&Token::On) {
+                if self.consume(&TokenKind::On) {
                     Some(self.parse_expr()?)
                 } else {
                     None
@@ -274,13 +274,13 @@ impl Parser {
 
     // helper used by parse_joins — parses one table ref without comma loop
     fn parse_single_table_ref(&mut self) -> Result<TableRef, ParserError> {
-        if self.consume(&Token::LParen) {
+        if self.consume(&TokenKind::LParen) {
             let query = self.parse_select()?;
-            self.expect(Token::RParen)?;
+            self.expect(TokenKind::RParen)?;
 
-            let alias = if self.consume(&Token::As) {
+            let alias = if self.consume(&TokenKind::As) {
                 Some(self.expect_identifier()?)
-            } else if matches!(self.current_token(), Token::Ident(_)) {
+            } else if matches!(self.current_token(), TokenKind::Ident) {
                 Some(self.expect_identifier()?)
             } else {
                 None
@@ -292,13 +292,13 @@ impl Parser {
         } else {
             let mut name = vec![self.expect_identifier()?];
 
-            while self.consume(&Token::Dot) {
+            while self.consume(&TokenKind::Dot) {
                 name.push(self.expect_identifier()?);
             }
 
-            let alias = if self.consume(&Token::As) {
+            let alias = if self.consume(&TokenKind::As) {
                 Some(self.expect_identifier()?)
-            } else if matches!(self.current_token(), Token::Ident(_)) {
+            } else if matches!(self.current_token(), TokenKind::Ident) {
                 Some(self.expect_identifier()?)
             } else {
                 None
@@ -313,9 +313,9 @@ impl Parser {
         loop {
             let expr = self.parse_expr()?;
 
-            let asc = if self.consume(&Token::Asc) {
+            let asc = if self.consume(&TokenKind::Asc) {
                 true
-            } else if self.consume(&Token::Desc) {
+            } else if self.consume(&TokenKind::Desc) {
                 false
             } else {
                 true
@@ -323,7 +323,7 @@ impl Parser {
 
             items.push(OrderItem { expr, asc });
 
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
@@ -333,15 +333,15 @@ impl Parser {
 
     fn parse_set_op(&mut self) -> Result<Option<Box<SetOperation>>, ParserError> {
         let op = match self.current_token() {
-            Token::Union => SetOp::Union,
-            Token::Intersect => SetOp::Intersect,
-            Token::Except => SetOp::Except,
+            TokenKind::Union => SetOp::Union,
+            TokenKind::Intersect => SetOp::Intersect,
+            TokenKind::Except => SetOp::Except,
             _ => return Ok(None),
         };
 
         self.advance();
 
-        let all = self.consume(&Token::All);
+        let all = self.consume(&TokenKind::All);
 
         let right = self.parse_select()?;
 
@@ -353,23 +353,24 @@ impl Parser {
     }
 
     // Check current token matches without consuming
-    fn current_is(&self, token: &Token) -> bool {
+    fn current_is(&self, token: &TokenKind) -> bool {
         self.current_token() == token
     }
 
     // Consume current token if it's an identifier, return the name
     fn consume_ident(&mut self) -> Option<String> {
-        match self.current_token().clone() {
-            Token::Ident(name) | Token::QuotedIdent(name) => {
+        match self.current_token() {
+            TokenKind::Ident | TokenKind::QuotedIdent => {
+                let s = self.source[self.current_span().start..self.current_span().end].to_string();
                 self.advance();
-                Some(name)
+                Some(s)
             }
             _ => None,
         }
     }
 
     // Expect a sequence of tokens in order, fail if any doesn't match
-    fn expect_keyword_sequence(&mut self, tokens: &[Token]) -> Result<(), ParserError> {
+    fn expect_keyword_sequence(&mut self, tokens: &[TokenKind]) -> Result<(), ParserError> {
         for token in tokens {
             self.expect(token.clone())?;
         }
@@ -379,18 +380,18 @@ impl Parser {
     fn is_select_column_end(&self) -> bool {
         matches!(
             self.current_token(),
-            Token::From
-                | Token::Where
-                | Token::Group
-                | Token::Having
-                | Token::Order
-                | Token::Limit
-                | Token::Offset
-                | Token::Eof
-                | Token::Semicolon
-                | Token::Union
-                | Token::Intersect
-                | Token::Except
+            TokenKind::From
+                | TokenKind::Where
+                | TokenKind::Group
+                | TokenKind::Having
+                | TokenKind::Order
+                | TokenKind::Limit
+                | TokenKind::Offset
+                | TokenKind::Eof
+                | TokenKind::Semicolon
+                | TokenKind::Union
+                | TokenKind::Intersect
+                | TokenKind::Except
         )
     }
 }

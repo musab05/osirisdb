@@ -299,21 +299,6 @@ impl<'a> Lexer<'a> {
     }
 
     fn next_token_kind(&mut self) -> TokenKind {
-        loop {
-            self.skip_whitespace();
-
-            let is_comment = (self.current_char == Some(b'-') && self.peek() == Some(b'-'))
-                || (self.current_char == Some(b'/') && self.peek() == Some(b'*'));
-
-            if is_comment {
-                if let Some(err_token) = self.skip_comment() {
-                    return err_token;
-                }
-            } else {
-                break;
-            }
-        }
-
         if let Some(ch) = self.current_char {
             match ch {
                 b'E' | b'e' if self.peek() == Some(b'\'') => {
@@ -582,21 +567,46 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn next_token(&mut self) -> Token {
+        let kind = loop {
+            self.skip_whitespace();
+            let is_comment = (self.current_char == Some(b'-') && self.peek() == Some(b'-'))
+                || (self.current_char == Some(b'/') && self.peek() == Some(b'*'));
+
+            if is_comment {
+                if let Some(err_token) = self.skip_comment() {
+                    break err_token;
+                }
+            } else {
+                let start = self.position;
+                let line = self.line;
+                let column = self.column;
+
+                let kind = self.next_token_kind();
+
+                let end = self.position;
+
+                return Token {
+                    kind,
+                    span: Span {
+                        start,
+                        end,
+                        line,
+                        column,
+                    },
+                };
+            }
+        };
+
+        // If we break with err_token
         let start = self.position;
-        let line = self.line;
-        let column = self.column;
-
-        let kind = self.next_token_kind();
-
         let end = self.position;
-
         Token {
             kind,
             span: Span {
                 start,
                 end,
-                line,
-                column,
+                line: self.line,
+                column: self.column,
             },
         }
     }

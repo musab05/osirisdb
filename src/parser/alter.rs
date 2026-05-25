@@ -1,15 +1,15 @@
 use crate::{
     ast::Statement,
-    lexer::Token,
+    lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
 };
 
-impl Parser {
+impl<'a> Parser<'a> {
     pub fn parse_alter(&mut self) -> Result<Statement, ParserError> {
-        self.consume(&Token::Alter);
+        self.consume(&TokenKind::Alter);
 
         match self.current_token().clone() {
-            Token::Table => Ok(Statement::AlterTable(self.parse_alter_table()?)),
+            TokenKind::Table => Ok(Statement::AlterTable(self.parse_alter_table()?)),
 
             _ => Err(ParserError::new(
                 format!("Expected TABLE after Alter, got {:?}", self.current_token()),

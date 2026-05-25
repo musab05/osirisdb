@@ -1,30 +1,30 @@
 use crate::{
-    ast::{ObjectName, Statement, TruncateStmt},
-    lexer::Token,
+    ast::{ObjectName, TruncateStmt},
+    lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
 };
 
-impl Parser {
+impl<'a> Parser<'a> {
     pub fn parse_truncate(&mut self) -> Result<TruncateStmt, ParserError> {
-        self.consume(&Token::Truncate);
+        self.consume(&TokenKind::Truncate);
 
-        self.consume(&Token::Table);
+        self.consume(&TokenKind::Table);
 
         let mut tables = vec![];
 
         loop {
             tables.push(ObjectName(self.parse_qualified_name()?));
 
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
 
-        let restart_identity = if self.consume(&Token::Restart) {
-            self.expect(Token::Identity)?;
+        let restart_identity = if self.consume(&TokenKind::Restart) {
+            self.expect(TokenKind::Identity)?;
             true
-        } else if self.consume(&Token::Continue) {
-            self.expect(Token::Identity)?;
+        } else if self.consume(&TokenKind::Continue) {
+            self.expect(TokenKind::Identity)?;
             false
         } else {
             false

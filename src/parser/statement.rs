@@ -1,15 +1,15 @@
 use crate::{
     ast::Statement,
-    lexer::{Modifier, token::Token},
+    lexer::{Modifier, TokenKind, token::Token},
     parser::{modifiers::CreateModifiers, parser::Parser, parser_error::ParserError},
 };
 
-impl Parser {
+impl<'a> Parser<'a> {
     pub fn parse(&mut self) -> Result<Vec<Statement>, ParserError> {
         let mut stmts = vec![];
 
         while !self.is_at_end() {
-            if self.consume(&Token::Semicolon) {
+            if self.consume(&TokenKind::Semicolon) {
                 continue;
             }
             stmts.push(self.parse_statement()?);
@@ -20,11 +20,11 @@ impl Parser {
 
     fn parse_statement(&mut self) -> Result<Statement, ParserError> {
         let stmt = match self.current_token() {
-            Token::Select | Token::With => Statement::Select(self.parse_select()?),
-            Token::Truncate => Statement::TruncateTable(self.parse_truncate()?),
-            Token::Create => self.parse_create()?,
-            Token::Drop => self.parse_drop()?,
-            Token::Alter => self.parse_alter()?,
+            TokenKind::Select | TokenKind::With => Statement::Select(self.parse_select()?),
+            TokenKind::Truncate => Statement::TruncateTable(self.parse_truncate()?),
+            TokenKind::Create => self.parse_create()?,
+            TokenKind::Drop => self.parse_drop()?,
+            TokenKind::Alter => self.parse_alter()?,
 
             _ => {
                 return Err(ParserError::new(
@@ -34,7 +34,7 @@ impl Parser {
             }
         };
 
-        self.consume(&Token::Semicolon);
+        self.consume(&TokenKind::Semicolon);
 
         Ok(stmt)
     }
@@ -50,33 +50,33 @@ impl Parser {
 
         loop {
             match self.current_token() {
-                Token::Or => {
+                TokenKind::Or => {
                     self.advance();
-                    if let Token::Modifier(Modifier::Replace) = self.current_token() {
+                    if let TokenKind::Modifier(Modifier::Replace) = self.current_token() {
                         self.advance();
                         m.or_replace = true;
                     }
                 }
-                Token::Modifier(Modifier::Replace) => {
+                TokenKind::Modifier(Modifier::Replace) => {
                     self.advance();
                     m.or_replace = true;
                 }
-                Token::Modifier(Modifier::Temporary) | Token::Modifier(Modifier::Temp) => {
+                TokenKind::Modifier(Modifier::Temporary) | TokenKind::Modifier(Modifier::Temp) => {
                     self.advance();
                     m.temporary = true;
                 }
-                Token::Modifier(Modifier::Unlogged) => {
+                TokenKind::Modifier(Modifier::Unlogged) => {
                     self.advance();
                     m.unlogged = true;
                 }
-                Token::Modifier(Modifier::Materialized) => {
+                TokenKind::Modifier(Modifier::Materialized) => {
                     self.advance();
                     m.materialized = true;
                 }
-                Token::Modifier(Modifier::Local) | Token::Modifier(Modifier::Global) => {
+                TokenKind::Modifier(Modifier::Local) | TokenKind::Modifier(Modifier::Global) => {
                     self.advance(); // ignore scope hints
                 }
-                Token::Unique => {
+                TokenKind::Unique => {
                     self.advance();
                     m.unique = true;
                 }

@@ -3,7 +3,7 @@ mod lexer;
 mod parser;
 
 use lexer::lexer::Lexer;
-use lexer::token::Token;
+use lexer::token::{Token, TokenKind};
 
 use crate::parser::parser::Parser;
 

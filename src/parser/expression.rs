@@ -1,6 +1,6 @@
 use crate::{
     ast::{BinOpKind, DataType, DropBehavior, Expr, SqlOption, UnaryOpKind, Value},
-    lexer::token::Token,
+    lexer::token::TokenKind,
     parser::{
         binding_power::{infix_binding_power, prefix_binding_power},
         parser::Parser,
@@ -8,13 +8,13 @@ use crate::{
     },
 };
 
-impl Parser {
+impl<'a> Parser<'a> {
     pub fn parse_expr_lists(&mut self) -> Result<Vec<Expr>, ParserError> {
         let mut exprs = vec![];
 
         loop {
             exprs.push(self.parse_expr()?);
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
@@ -46,7 +46,7 @@ impl Parser {
 
             self.advance();
 
-            if token == Token::Dot {
+            if token == TokenKind::Dot {
                 let name = self.expect_identifier()?;
                 let table = match lhs {
                     Expr::Column { name: t, .. } => Some(t),
@@ -61,7 +61,7 @@ impl Parser {
                 continue;
             }
 
-            if token == Token::DoubleColon {
+            if token == TokenKind::DoubleColon {
                 let ty = self.parse_data_type()?;
                 lhs = Expr::Cast {
                     expr: Box::new(lhs),
@@ -88,8 +88,8 @@ impl Parser {
         if let Some(r_bp) = prefix_binding_power(&token) {
             self.advance();
             let op = match token {
-                Token::Not => UnaryOpKind::Not,
-                Token::Minus => UnaryOpKind::Minus,
+                TokenKind::Not => UnaryOpKind::Not,
+                TokenKind::Minus => UnaryOpKind::Minus,
                 _ => unreachable!(),
             };
 
@@ -101,85 +101,87 @@ impl Parser {
         }
 
         match token {
-            Token::IntLit(n) => {
+            TokenKind::IntLit(n) => {
                 self.advance();
                 Ok(Expr::Literal(Value::Int(n)))
             }
-            Token::FloatLit(f) => {
+            TokenKind::FloatLit(f) => {
                 self.advance();
                 Ok(Expr::Literal(Value::Float(f)))
             }
-            Token::StringLit(s) => {
+            TokenKind::StringLit => {
+                let s = self.source[self.current_span().start..self.current_span().end].to_string();
                 self.advance();
                 Ok(Expr::Literal(Value::String(s)))
             }
-            Token::True => {
+            TokenKind::True => {
                 self.advance();
                 Ok(Expr::Literal(Value::Boolean(true)))
             }
-            Token::False => {
+            TokenKind::False => {
                 self.advance();
                 Ok(Expr::Literal(Value::Boolean(false)))
             }
-            Token::Null => {
+            TokenKind::Null => {
                 self.advance();
                 Ok(Expr::Literal(Value::Null))
             }
 
-            Token::LParen => {
+            TokenKind::LParen => {
                 self.advance();
-                let expr = if self.current_token() == &Token::Select {
+                let expr = if self.current_token() == &TokenKind::Select {
                     let subq = self.parse_select()?;
                     Expr::Subquery(Box::new(subq))
                 } else {
                     self.parse_expr()?
                 };
 
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 Ok(expr)
             }
 
-            Token::Exists => {
+            TokenKind::Exists => {
                 self.advance();
                 let negated = false;
-                self.expect(Token::LParen)?;
+                self.expect(TokenKind::LParen)?;
                 let subq = self.parse_select()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 Ok(Expr::Exists {
                     subq: Box::new(subq),
                     negated,
                 })
             }
 
-            Token::Cast => {
+            TokenKind::Cast => {
                 self.advance();
-                self.expect(Token::LParen)?;
+                self.expect(TokenKind::LParen)?;
                 let expr = self.parse_expr()?;
-                self.expect(Token::As)?;
+                self.expect(TokenKind::As)?;
                 let ty = self.parse_data_type()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 Ok(Expr::Cast {
                     expr: Box::new(expr),
                     ty,
                 })
             }
 
-            Token::Case => self.parse_case(),
+            TokenKind::Case => self.parse_case(),
 
-            Token::Ident(name) | Token::QuotedIdent(name) => {
+            TokenKind::Ident | TokenKind::QuotedIdent => {
+                let name = self.source[self.current_span().start..self.current_span().end].to_string();
                 self.advance();
 
-                if self.consume(&Token::LParen) {
-                    let args = if self.current_token() == &Token::RParen {
+                if self.consume(&TokenKind::LParen) {
+                    let args = if self.current_token() == &TokenKind::RParen {
                         vec![]
-                    } else if self.current_token() == &Token::Star {
+                    } else if self.current_token() == &TokenKind::Star {
                         self.advance();
                         vec![Expr::Wildcard]
                     } else {
                         self.parse_expr_lists()?
                     };
 
-                    self.expect(Token::RParen)?;
+                    self.expect(TokenKind::RParen)?;
                     Ok(Expr::FuncCall { name, args })
                 } else {
                     Ok(Expr::Column { table: None, name })
@@ -188,7 +190,7 @@ impl Parser {
 
             // Allow contextual keywords to be used as identifiers in expressions
             // (e.g., column named "action", "zone", "time", etc.)
-            Token::Current => {
+            TokenKind::Current => {
                 self.advance();
                 // Handle CURRENT_TIMESTAMP and similar
                 let name = "CURRENT".to_string();
@@ -203,17 +205,17 @@ impl Parser {
     }
 
     fn try_parse_postfix(&mut self, lhs: Expr) -> Result<Option<Expr>, ParserError> {
-        if self.consume(&Token::Is) {
-            let negated = self.consume(&Token::Not);
-            self.expect(Token::Null)?;
+        if self.consume(&TokenKind::Is) {
+            let negated = self.consume(&TokenKind::Not);
+            self.expect(TokenKind::Null)?;
             return Ok(Some(Expr::IsNull {
                 expr: Box::new(lhs),
                 negated,
             }));
         }
 
-        let negated = if self.current_token() == &Token::Not
-            && matches!(self.peek_token(), Token::Between | Token::In | Token::Like)
+        let negated = if self.current_token() == &TokenKind::Not
+            && matches!(self.peek_token(), TokenKind::Between | TokenKind::In | TokenKind::Like)
         {
             self.advance();
             true
@@ -221,9 +223,9 @@ impl Parser {
             false
         };
 
-        if self.consume(&Token::Between) {
+        if self.consume(&TokenKind::Between) {
             let low = self.parser_expr_bp(4)?;
-            self.expect(Token::And)?;
+            self.expect(TokenKind::And)?;
             let high = self.parser_expr_bp(4)?;
             return Ok(Some(Expr::Between {
                 expr: Box::new(lhs),
@@ -233,11 +235,11 @@ impl Parser {
             }));
         }
 
-        if self.consume(&Token::In) {
-            self.expect(Token::LParen)?;
-            let expr = if self.current_token() == &Token::Select {
+        if self.consume(&TokenKind::In) {
+            self.expect(TokenKind::LParen)?;
+            let expr = if self.current_token() == &TokenKind::Select {
                 let subq = self.parse_select()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 Expr::InSubquery {
                     expr: Box::new(lhs),
                     subq: Box::new(subq),
@@ -245,7 +247,7 @@ impl Parser {
                 }
             } else {
                 let list = self.parse_expr_lists()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 Expr::InList {
                     expr: Box::new(lhs),
                     list,
@@ -255,7 +257,7 @@ impl Parser {
             return Ok(Some(expr));
         }
 
-        if self.consume(&Token::Like) {
+        if self.consume(&TokenKind::Like) {
             let pattern = self.parser_expr_bp(4)?;
             let like_expr = Expr::BinOp {
                 lhs: Box::new(lhs),
@@ -283,7 +285,8 @@ impl Parser {
 
     pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
         let mut base_type = match self.current_token().clone() {
-            Token::Ident(name) => {
+            TokenKind::Ident => {
+                let name = self.source[self.current_span().start..self.current_span().end].to_string();
                 self.advance();
                 match name.to_uppercase().as_str() {
                     "SMALLINT" | "INT2" => DataType::SmallInt,
@@ -292,7 +295,7 @@ impl Parser {
                     "BOOLEAN" | "BOOL" => DataType::Boolean,
                     "FLOAT" | "FLOAT4" | "REAL" => DataType::Float,
                     "DOUBLE" => {
-                        self.consume(&Token::Precision);
+                        self.consume(&TokenKind::Precision);
                         DataType::Double
                     }
                     "FLOAT8" => DataType::Double,
@@ -309,7 +312,7 @@ impl Parser {
                         DataType::Char(n)
                     }
                     "CHARACTER" => {
-                        if *self.current_token() == Token::Varying {
+                        if *self.current_token() == TokenKind::Varying {
                             self.advance();
                             let n = self.parse_optional_length()?;
                             DataType::VarChar(n)
@@ -328,14 +331,14 @@ impl Parser {
                     }
                     "DECIMAL" | "NUMERIC" => {
                         // DECIMAL(precision, scale) — both optional
-                        if self.consume(&Token::LParen) {
+                        if self.consume(&TokenKind::LParen) {
                             let precision = self.expect_int_literal()? as u8;
-                            let scale = if self.consume(&Token::Comma) {
+                            let scale = if self.consume(&TokenKind::Comma) {
                                 Some(self.expect_int_literal()? as u8)
                             } else {
                                 None
                             };
-                            self.expect(Token::RParen)?;
+                            self.expect(TokenKind::RParen)?;
                             DataType::Decimal(Some(precision), scale)
                         } else {
                             DataType::Decimal(None, None)
@@ -344,7 +347,7 @@ impl Parser {
                     // Multi-part custom types: schema.type_name
                     _ => {
                         let mut parts = vec![name];
-                        while self.consume(&Token::Dot) {
+                        while self.consume(&TokenKind::Dot) {
                             parts.push(self.expect_identifier()?);
                         }
                         DataType::Custom(parts)
@@ -352,8 +355,8 @@ impl Parser {
                 }
             }
 
-            // Handle TIME as a data type (it's now a keyword token)
-            Token::Time => {
+            // Handle TIME as a data type
+            TokenKind::Time => {
                 self.advance();
                 DataType::Time
             }
@@ -367,8 +370,8 @@ impl Parser {
         };
 
         // Handle Array types like int[] or text[][]
-        while self.consume(&Token::LBracket) {
-            self.expect(Token::RBracket)?;
+        while self.consume(&TokenKind::LBracket) {
+            self.expect(TokenKind::RBracket)?;
             base_type = DataType::Array(Box::new(base_type));
         }
 
@@ -377,9 +380,9 @@ impl Parser {
 
     // Helper — parses (n) returning Some(n), or None if no paren
     fn parse_optional_length(&mut self) -> Result<Option<u64>, ParserError> {
-        if self.consume(&Token::LParen) {
+        if self.consume(&TokenKind::LParen) {
             let n = self.expect_int_literal()?;
-            self.expect(Token::RParen)?;
+            self.expect(TokenKind::RParen)?;
             Ok(Some(n))
         } else {
             Ok(None)
@@ -389,7 +392,7 @@ impl Parser {
     // Helper — expects current token to be an integer literal
     pub fn expect_int_literal(&mut self) -> Result<u64, ParserError> {
         match self.current_token().clone() {
-            Token::IntLit(n) if n >= 0 => {
+            TokenKind::IntLit(n) if n >= 0 => {
                 self.advance();
                 Ok(n as u64)
             }
@@ -403,16 +406,16 @@ impl Parser {
     fn parse_case(&mut self) -> Result<Expr, ParserError> {
         self.advance();
 
-        let operand = if self.current_token() == &Token::When {
+        let operand = if self.current_token() == &TokenKind::When {
             None
         } else {
             Some(Box::new(self.parse_expr()?))
         };
 
         let mut when_thens = vec![];
-        while self.consume(&Token::When) {
+        while self.consume(&TokenKind::When) {
             let when = self.parse_expr()?;
-            self.expect(Token::Then)?;
+            self.expect(TokenKind::Then)?;
             let then = self.parse_expr()?;
             when_thens.push((when, then));
         }
@@ -424,13 +427,13 @@ impl Parser {
             ));
         }
 
-        let else_ = if self.consume(&Token::Else) {
+        let else_ = if self.consume(&TokenKind::Else) {
             Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
 
-        self.expect(Token::End)?;
+        self.expect(TokenKind::End)?;
 
         Ok(Expr::Case {
             operand,
@@ -439,22 +442,22 @@ impl Parser {
         })
     }
 
-    fn token_to_binop(&self, token: &Token) -> Result<BinOpKind, ParserError> {
+    fn token_to_binop(&self, token: &TokenKind) -> Result<BinOpKind, ParserError> {
         match token {
-            Token::Eq => Ok(BinOpKind::Eq),
-            Token::Ne => Ok(BinOpKind::Ne),
-            Token::Lt => Ok(BinOpKind::Lt),
-            Token::Le => Ok(BinOpKind::Le),
-            Token::Gt => Ok(BinOpKind::Gt),
-            Token::Ge => Ok(BinOpKind::Ge),
-            Token::Plus => Ok(BinOpKind::Add),
-            Token::Minus => Ok(BinOpKind::Sub),
-            Token::Star => Ok(BinOpKind::Mul),
-            Token::Slash => Ok(BinOpKind::Div),
-            Token::Percent => Ok(BinOpKind::Mod),
-            Token::And => Ok(BinOpKind::And),
-            Token::Or => Ok(BinOpKind::Or),
-            Token::Like => Ok(BinOpKind::Like),
+            TokenKind::Eq => Ok(BinOpKind::Eq),
+            TokenKind::Ne => Ok(BinOpKind::Ne),
+            TokenKind::Lt => Ok(BinOpKind::Lt),
+            TokenKind::Le => Ok(BinOpKind::Le),
+            TokenKind::Gt => Ok(BinOpKind::Gt),
+            TokenKind::Ge => Ok(BinOpKind::Ge),
+            TokenKind::Plus => Ok(BinOpKind::Add),
+            TokenKind::Minus => Ok(BinOpKind::Sub),
+            TokenKind::Star => Ok(BinOpKind::Mul),
+            TokenKind::Slash => Ok(BinOpKind::Div),
+            TokenKind::Percent => Ok(BinOpKind::Mod),
+            TokenKind::And => Ok(BinOpKind::And),
+            TokenKind::Or => Ok(BinOpKind::Or),
+            TokenKind::Like => Ok(BinOpKind::Like),
             _ => Err(ParserError::new(
                 format!("Token {:?} is not a binary operator", token),
                 self.current.span.clone(),
@@ -465,7 +468,7 @@ impl Parser {
     pub fn parse_qualified_name(&mut self) -> Result<Vec<String>, ParserError> {
         let mut parts = vec![self.expect_identifier()?];
 
-        while self.consume(&Token::Dot) {
+        while self.consume(&TokenKind::Dot) {
             parts.push(self.expect_identifier()?);
         }
         Ok(parts)
@@ -473,11 +476,11 @@ impl Parser {
 
     pub fn parse_drop_behaviour(&mut self) -> Option<DropBehavior> {
         match self.current_token() {
-            Token::Cascade => {
+            TokenKind::Cascade => {
                 self.advance();
                 Some(DropBehavior::Cascade)
             }
-            Token::Restrict => {
+            TokenKind::Restrict => {
                 self.advance();
                 Some(DropBehavior::Restrict)
             }
@@ -486,18 +489,18 @@ impl Parser {
     }
 
     pub fn parse_options_list(&mut self) -> Result<Vec<SqlOption>, ParserError> {
-        self.expect(Token::LParen)?;
+        self.expect(TokenKind::LParen)?;
         let mut options = vec![];
         loop {
             let name = self.expect_identifier()?;
-            self.expect(Token::Eq)?;
+            self.expect(TokenKind::Eq)?;
             let value = self.parse_expr()?;
             options.push(SqlOption { name, value });
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
         Ok(options)
     }
 }

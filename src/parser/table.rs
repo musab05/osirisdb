@@ -3,25 +3,25 @@ use crate::lexer::*;
 use crate::parser::parser::Parser;
 use crate::parser::parser_error::ParserError;
 
-impl Parser {
+impl<'a> Parser<'a> {
     pub fn parse_create_table(
         &mut self,
         temporary: bool,
         unlogged: bool,
     ) -> Result<CreateStmt, ParserError> {
-        self.expect(Token::Table)?;
+        self.expect(TokenKind::Table)?;
 
         let if_not_exist = self.parse_if_not_exist()?;
 
         let name = self.parse_qualified_name()?;
 
-        self.expect(Token::LParen)?;
+        self.expect(TokenKind::LParen)?;
 
         let mut columns = vec![];
         let mut constraints = vec![];
 
         loop {
-            if *self.current_token() == Token::RParen {
+            if *self.current_token() == TokenKind::RParen {
                 break;
             }
 
@@ -31,11 +31,11 @@ impl Parser {
                 columns.push(self.parse_column_def()?);
             }
 
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
 
         let mut inherits = vec![];
         let mut partitions = vec![];
@@ -46,25 +46,25 @@ impl Parser {
 
         loop {
             match self.current_token().clone() {
-                Token::Inherits => {
+                TokenKind::Inherits => {
                     self.advance();
-                    self.expect(Token::LParen)?;
+                    self.expect(TokenKind::LParen)?;
                     loop {
                         inherits.push(self.parse_qualified_name()?);
-                        if !self.consume(&Token::Comma) {
+                        if !self.consume(&TokenKind::Comma) {
                             break;
                         }
                     }
-                    self.expect(Token::RParen)?;
+                    self.expect(TokenKind::RParen)?;
                 }
-                Token::Partition => {
+                TokenKind::Partition => {
                     self.advance();
-                    self.expect(Token::By)?;
+                    self.expect(TokenKind::By)?;
 
                     let kind = match self.current_token() {
-                        Token::Range => PartitionKind::Range,
-                        Token::List => PartitionKind::List,
-                        Token::Hash => PartitionKind::Hash,
+                        TokenKind::Range => PartitionKind::Range,
+                        TokenKind::List => PartitionKind::List,
+                        TokenKind::Hash => PartitionKind::Hash,
                         _ => {
                             return Err(ParserError::new(
                                 "Expected RANGE, LIST, or HASH after PARTITION BY",
@@ -74,52 +74,52 @@ impl Parser {
                     };
                     self.advance();
 
-                    self.expect(Token::LParen)?;
+                    self.expect(TokenKind::LParen)?;
                     let mut exprs = vec![];
                     loop {
                         exprs.push(self.parse_expr()?);
-                        if !self.consume(&Token::Comma) {
+                        if !self.consume(&TokenKind::Comma) {
                             break;
                         }
                     }
-                    self.expect(Token::RParen)?;
+                    self.expect(TokenKind::RParen)?;
 
                     partitions.push(PartitionClause { kind, exprs });
                 }
-                Token::With => {
+                TokenKind::With => {
                     self.advance();
-                    self.expect(Token::LParen)?;
+                    self.expect(TokenKind::LParen)?;
                     loop {
                         let name = self.expect_identifier()?;
-                        self.expect(Token::Eq)?;
+                        self.expect(TokenKind::Eq)?;
                         let value = self.parse_expr()?;
                         with_options.push(SqlOption { name, value });
-                        if !self.consume(&Token::Comma) {
+                        if !self.consume(&TokenKind::Comma) {
                             break;
                         }
                     }
-                    self.expect(Token::RParen)?;
+                    self.expect(TokenKind::RParen)?;
                 }
-                Token::Tablespace => {
+                TokenKind::Tablespace => {
                     self.advance();
                     table_space = Some(self.expect_identifier()?);
                 }
-                Token::On => {
+                TokenKind::On => {
                     self.advance();
-                    if *self.current_token() == Token::Commit {
+                    if *self.current_token() == TokenKind::Commit {
                         self.advance();
                         match self.current_token() {
-                            Token::Preserve => {
+                            TokenKind::Preserve => {
                                 self.advance();
-                                self.consume(&Token::Rows);
+                                self.consume(&TokenKind::Rows);
                                 on_commit = Some(OnCommit::PreserveRows);
                             }
-                            Token::Delete => {
+                            TokenKind::Delete => {
                                 self.advance();
-                                self.consume(&Token::Rows);
+                                self.consume(&TokenKind::Rows);
                                 on_commit = Some(OnCommit::DeleteRows);
                             }
-                            Token::Drop => {
+                            TokenKind::Drop => {
                                 self.advance();
                                 on_commit = Some(OnCommit::Drop);
                             }
@@ -137,7 +137,7 @@ impl Parser {
                         ));
                     }
                 }
-                Token::As => {
+                TokenKind::As => {
                     self.advance();
                     as_query = Some(self.parse_select()?);
                 }
@@ -162,10 +162,10 @@ impl Parser {
     }
 
     fn parse_if_not_exist(&mut self) -> Result<bool, ParserError> {
-        if *self.current_token() == Token::If {
+        if *self.current_token() == TokenKind::If {
             self.advance();
-            self.expect(Token::Not)?;
-            self.expect(Token::Exists)?;
+            self.expect(TokenKind::Not)?;
+            self.expect(TokenKind::Exists)?;
             Ok(true)
         } else {
             Ok(false)
@@ -175,7 +175,11 @@ impl Parser {
     fn is_table_constraint(&self) -> bool {
         matches!(
             self.current_token(),
-            Token::Primary | Token::Foreign | Token::Unique | Token::Check | Token::Constraint
+            TokenKind::Primary
+                | TokenKind::Foreign
+                | TokenKind::Unique
+                | TokenKind::Check
+                | TokenKind::Constraint
         )
     }
 
@@ -183,7 +187,7 @@ impl Parser {
         let name = self.expect_identifier()?;
         let data_type = self.parse_data_type()?;
 
-        let collation = if *self.current_token() == Token::Collate {
+        let collation = if *self.current_token() == TokenKind::Collate {
             self.advance();
             Some(self.expect_identifier()?)
         } else {
@@ -195,26 +199,26 @@ impl Parser {
 
         loop {
             match self.current_token().clone() {
-                Token::Constraint => {
+                TokenKind::Constraint => {
                     self.advance();
                     let _constraint_name = self.expect_identifier()?;
                     constraints.push(self.parse_column_constraint()?);
                 }
-                Token::Generated => {
+                TokenKind::Generated => {
                     generated = Some(self.parse_generated_column()?);
                 }
-                Token::AutoIncrement => {
+                TokenKind::AutoIncrement => {
                     self.advance();
                     constraints.push(ColumnConstraint::AutoIncrement);
                 }
 
-                Token::Not
-                | Token::Null
-                | Token::Default
-                | Token::Unique
-                | Token::Primary
-                | Token::References
-                | Token::Check => {
+                TokenKind::Not
+                | TokenKind::Null
+                | TokenKind::Default
+                | TokenKind::Unique
+                | TokenKind::Primary
+                | TokenKind::References
+                | TokenKind::Check => {
                     constraints.push(self.parse_column_constraint()?);
                 }
                 _ => break,
@@ -232,40 +236,40 @@ impl Parser {
 
     fn parse_column_constraint(&mut self) -> Result<ColumnConstraint, ParserError> {
         match self.current_token().clone() {
-            Token::Not => {
+            TokenKind::Not => {
                 self.advance();
-                self.expect(Token::Null)?;
+                self.expect(TokenKind::Null)?;
                 Ok(ColumnConstraint::NotNull)
             }
-            Token::Null => {
+            TokenKind::Null => {
                 self.advance();
                 Ok(ColumnConstraint::Null)
             }
-            Token::Default => {
+            TokenKind::Default => {
                 self.advance();
                 Ok(ColumnConstraint::Default(self.parse_expr()?))
             }
-            Token::Unique => {
+            TokenKind::Unique => {
                 self.advance();
                 Ok(ColumnConstraint::Unique)
             }
-            Token::Primary => {
+            TokenKind::Primary => {
                 self.advance();
-                self.expect(Token::Key)?;
+                self.expect(TokenKind::Key)?;
                 Ok(ColumnConstraint::PrimaryKey)
             }
-            Token::Check => {
+            TokenKind::Check => {
                 self.advance();
-                self.expect(Token::LParen)?;
+                self.expect(TokenKind::LParen)?;
                 let expr = self.parse_expr()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
 
                 Ok(ColumnConstraint::Check(expr))
             }
-            Token::References => {
+            TokenKind::References => {
                 self.advance();
                 let table = self.parse_qualified_name()?;
-                let columns = if *self.current_token() == Token::LParen {
+                let columns = if *self.current_token() == TokenKind::LParen {
                     self.parse_column_list()?
                 } else {
                     vec![]
@@ -288,20 +292,20 @@ impl Parser {
     }
 
     fn parse_generated_column(&mut self) -> Result<GeneratedColumn, ParserError> {
-        self.expect(Token::Generated)?;
-        self.expect(Token::Always)?;
-        self.expect(Token::As)?;
-        self.expect(Token::LParen)?;
+        self.expect(TokenKind::Generated)?;
+        self.expect(TokenKind::Always)?;
+        self.expect(TokenKind::As)?;
+        self.expect(TokenKind::LParen)?;
         let expr = self.parse_expr()?;
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
 
-        self.consume(&Token::Stored);
+        self.consume(&TokenKind::Stored);
 
         Ok(GeneratedColumn { expr, stored: true })
     }
 
     fn parse_table_constraint(&mut self) -> Result<TableConstraint, ParserError> {
-        let name = if *self.current_token() == Token::Constraint {
+        let name = if *self.current_token() == TokenKind::Constraint {
             self.advance();
             Some(self.expect_identifier()?)
         } else {
@@ -309,31 +313,31 @@ impl Parser {
         };
 
         match self.current_token().clone() {
-            Token::Primary => {
+            TokenKind::Primary => {
                 self.advance();
-                self.expect(Token::Key)?;
+                self.expect(TokenKind::Key)?;
                 let columns = self.parse_column_list()?;
                 Ok(TableConstraint::PrimaryKey { name, columns })
             }
-            Token::Unique => {
+            TokenKind::Unique => {
                 self.advance();
                 let columns = self.parse_column_list()?;
                 Ok(TableConstraint::Unique { name, columns })
             }
-            Token::Check => {
+            TokenKind::Check => {
                 self.advance();
-                self.expect(Token::LParen)?;
+                self.expect(TokenKind::LParen)?;
                 let expr = self.parse_expr()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 Ok(TableConstraint::Check { name, expr })
             }
-            Token::Foreign => {
+            TokenKind::Foreign => {
                 self.advance();
-                self.expect(Token::Key)?;
+                self.expect(TokenKind::Key)?;
                 let columns = self.parse_column_list()?;
-                self.expect(Token::References)?;
+                self.expect(TokenKind::References)?;
                 let foreign_table = self.parse_qualified_name()?;
-                let referred_columns = if *self.current_token() == Token::LParen {
+                let referred_columns = if *self.current_token() == TokenKind::LParen {
                     self.parse_column_list()?
                 } else {
                     vec![]
@@ -361,29 +365,29 @@ impl Parser {
     }
 
     fn parse_decimal_args(&mut self) -> Result<(Option<u8>, Option<u8>), ParserError> {
-        if !self.consume(&Token::LParen) {
+        if !self.consume(&TokenKind::LParen) {
             return Ok((None, None));
         }
 
         let prec = self.expect_int_literal()? as u8;
-        let scale = if self.consume(&Token::Comma) {
+        let scale = if self.consume(&TokenKind::Comma) {
             Some(self.expect_int_literal()? as u8)
         } else {
             None
         };
 
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
         Ok((Some(prec), scale))
     }
 
     fn skip_time_zone(&mut self) {
-        if matches!(self.current_token(), Token::With)
-            || matches!(self.current_token(), Token::Ident(k) if k.eq_ignore_ascii_case("without"))
+        if matches!(self.current_token(), TokenKind::With)
+            || matches!(self.current_token(), TokenKind::Ident if self.source[self.current_span().start..self.current_span().end].eq_ignore_ascii_case("without"))
         {
             self.advance();
-            if *self.current_token() == Token::Time {
+            if *self.current_token() == TokenKind::Time {
                 self.advance();
-                if *self.current_token() == Token::Zone {
+                if *self.current_token() == TokenKind::Zone {
                     self.advance();
                 }
             }
@@ -391,14 +395,14 @@ impl Parser {
     }
 
     fn parse_column_list(&mut self) -> Result<Vec<String>, ParserError> {
-        self.expect(Token::LParen)?;
+        self.expect(TokenKind::LParen)?;
         let mut cols = vec![self.expect_identifier()?];
 
-        while self.consume(&Token::Comma) {
+        while self.consume(&TokenKind::Comma) {
             cols.push(self.expect_identifier()?);
         }
 
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
         Ok(cols)
     }
 
@@ -409,18 +413,18 @@ impl Parser {
         let mut on_update = None;
 
         for _ in 0..2 {
-            if !matches!(self.current_token(), Token::On) {
+            if !matches!(self.current_token(), TokenKind::On) {
                 break;
             }
 
             self.advance();
 
             match self.current_token().clone() {
-                Token::Delete => {
+                TokenKind::Delete => {
                     self.advance();
                     on_delete = Some(self.parse_referential_action()?);
                 }
-                Token::Update => {
+                TokenKind::Update => {
                     self.advance();
                     on_update = Some(self.parse_referential_action()?);
                 }
@@ -439,14 +443,14 @@ impl Parser {
 
     fn parse_referential_action(&mut self) -> Result<ReferentialAction, ParserError> {
         match self.current_token().clone() {
-            Token::Set => {
+            TokenKind::Set => {
                 self.advance(); // SET
                 match self.current_token() {
-                    Token::Null => {
+                    TokenKind::Null => {
                         self.advance();
                         Ok(ReferentialAction::SetNull)
                     }
-                    Token::Default => {
+                    TokenKind::Default => {
                         self.advance();
                         Ok(ReferentialAction::SetDefault)
                     }
@@ -456,17 +460,17 @@ impl Parser {
                     )),
                 }
             }
-            Token::Cascade => {
+            TokenKind::Cascade => {
                 self.advance();
                 Ok(ReferentialAction::Cascade)
             }
-            Token::Restrict => {
+            TokenKind::Restrict => {
                 self.advance();
                 Ok(ReferentialAction::Restrict)
             }
-            Token::No => {
+            TokenKind::No => {
                 self.advance(); // NO
-                self.consume(&Token::Action);
+                self.consume(&TokenKind::Action);
                 Ok(ReferentialAction::NoAction)
             }
             _ => Err(ParserError::new(
@@ -478,7 +482,7 @@ impl Parser {
 
     // Drop table
     pub fn parse_drop_table(&mut self, temporary: bool) -> Result<DropTableStmt, ParserError> {
-        self.consume(&Token::Table);
+        self.consume(&TokenKind::Table);
 
         let if_exist = self.parse_if_exist()?;
 
@@ -486,7 +490,7 @@ impl Parser {
 
         loop {
             names.push(ObjectName(self.parse_qualified_name()?));
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
@@ -502,8 +506,8 @@ impl Parser {
     }
 
     fn parse_if_exist(&mut self) -> Result<bool, ParserError> {
-        if self.consume(&Token::If) {
-            self.expect(Token::Exists)?;
+        if self.consume(&TokenKind::If) {
+            self.expect(TokenKind::Exists)?;
             Ok(true)
         } else {
             Ok(false)
@@ -512,7 +516,7 @@ impl Parser {
 
     // Alter table
     pub fn parse_alter_table(&mut self) -> Result<AlterTableStmt, ParserError> {
-        self.consume(&Token::Table);
+        self.consume(&TokenKind::Table);
 
         let if_exist = self.parse_if_exist()?;
 
@@ -523,7 +527,7 @@ impl Parser {
         loop {
             actions.push(self.parse_alter_table_actions()?);
 
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
@@ -537,45 +541,45 @@ impl Parser {
 
     fn parse_alter_table_actions(&mut self) -> Result<AlterTableAction, ParserError> {
         match self.current_token().clone() {
-            Token::Add => self.parse_alter_table_add(),
-            Token::Drop => self.parse_alter_table_drop(),
-            Token::Alter => self.parse_alter_table_alter(),
-            Token::Set => self.parse_alter_table_set(),
-            Token::Reset => {
+            TokenKind::Add => self.parse_alter_table_add(),
+            TokenKind::Drop => self.parse_alter_table_drop(),
+            TokenKind::Alter => self.parse_alter_table_alter(),
+            TokenKind::Set => self.parse_alter_table_set(),
+            TokenKind::Reset => {
                 self.advance();
                 Ok(AlterTableAction::ResetOptions(
                     self.parse_reset_options_list()?,
                 ))
             }
-            Token::Rename => self.parse_alter_table_rename(),
-            Token::Inherit => {
+            TokenKind::Rename => self.parse_alter_table_rename(),
+            TokenKind::Inherit => {
                 self.advance();
                 Ok(AlterTableAction::Inherit(ObjectName(
                     self.parse_qualified_name()?,
                 )))
             }
-            Token::No => {
+            TokenKind::No => {
                 self.advance();
-                self.expect(Token::Inherit)?;
+                self.expect(TokenKind::Inherit)?;
                 Ok(AlterTableAction::NoInherit(ObjectName(
                     self.parse_qualified_name()?,
                 )))
             }
-            Token::Attach => {
+            TokenKind::Attach => {
                 self.advance();
-                self.expect(Token::Partition)?;
+                self.expect(TokenKind::Partition)?;
                 let partition = ObjectName(self.parse_qualified_name()?);
-                self.expect(Token::For)?;
-                self.expect(Token::Values)?;
+                self.expect(TokenKind::For)?;
+                self.expect(TokenKind::Values)?;
                 let for_values = self.parse_partition_bound()?;
                 Ok(AlterTableAction::AttachPartition {
                     partition,
                     for_values,
                 })
             }
-            Token::Detach => {
+            TokenKind::Detach => {
                 self.advance();
-                self.expect(Token::Partition)?;
+                self.expect(TokenKind::Partition)?;
                 Ok(AlterTableAction::DetachPartition(ObjectName(
                     self.parse_qualified_name()?,
                 )))
@@ -591,9 +595,9 @@ impl Parser {
     }
 
     fn parse_alter_table_add(&mut self) -> Result<AlterTableAction, ParserError> {
-        self.consume(&Token::Add);
+        self.consume(&TokenKind::Add);
 
-        if self.consume(&Token::Column) {
+        if self.consume(&TokenKind::Column) {
             let if_not_exist = self.parse_if_not_exist()?;
             let column = self.parse_column_def()?;
             Ok(AlterTableAction::AddColumn {
@@ -615,9 +619,9 @@ impl Parser {
     }
 
     fn parse_alter_table_drop(&mut self) -> Result<AlterTableAction, ParserError> {
-        self.consume(&Token::Drop);
+        self.consume(&TokenKind::Drop);
 
-        if self.consume(&Token::Column) {
+        if self.consume(&TokenKind::Column) {
             let if_exist = self.parse_if_exist()?;
             let name = self.expect_identifier()?;
             let behaviour = self.parse_drop_behaviour();
@@ -647,9 +651,9 @@ impl Parser {
     }
 
     fn parse_alter_table_alter(&mut self) -> Result<AlterTableAction, ParserError> {
-        self.consume(&Token::Alter);
+        self.consume(&TokenKind::Alter);
 
-        self.expect(Token::Column)?;
+        self.expect(TokenKind::Column)?;
 
         let name = self.expect_identifier()?;
         let action = self.parse_alter_column_actions()?;
@@ -659,10 +663,10 @@ impl Parser {
 
     fn parse_alter_column_actions(&mut self) -> Result<AlterColumnAction, ParserError> {
         match self.current_token().clone() {
-            Token::Set => self.parse_alter_column_set(),
-            Token::Drop => self.parse_alter_column_drop(),
-            Token::Reset => self.parse_alter_column_reset(),
-            Token::Type => self.parse_alter_column_type(),
+            TokenKind::Set => self.parse_alter_column_set(),
+            TokenKind::Drop => self.parse_alter_column_drop(),
+            TokenKind::Reset => self.parse_alter_column_reset(),
+            TokenKind::Type => self.parse_alter_column_type(),
             _ => Err(ParserError::new(
                 format!(
                     "Unexpected token in ALTER COLUMN: {:?}",
@@ -674,36 +678,36 @@ impl Parser {
     }
 
     fn parse_alter_column_set(&mut self) -> Result<AlterColumnAction, ParserError> {
-        self.consume(&Token::Set);
+        self.consume(&TokenKind::Set);
         match self.current_token().clone() {
-            Token::Default => {
+            TokenKind::Default => {
                 self.advance();
                 Ok(AlterColumnAction::SetDefault(self.parse_expr()?))
             }
-            Token::Not => {
+            TokenKind::Not => {
                 self.advance();
-                self.expect(Token::Null)?;
+                self.expect(TokenKind::Null)?;
                 Ok(AlterColumnAction::SetNotNull)
             }
-            Token::Statistics => {
+            TokenKind::Statistics => {
                 self.advance();
                 let n = self.expect_int_literal()?;
                 Ok(AlterColumnAction::SetStatistics(n as i64))
             }
-            Token::Storage => {
+            TokenKind::Storage => {
                 self.advance();
                 Ok(AlterColumnAction::SetStorage(self.parse_column_storage()?))
             }
-            Token::Options => {
+            TokenKind::Options => {
                 self.advance();
                 Ok(AlterColumnAction::SetOptions(self.parse_options_list()?))
             }
-            Token::Data => {
+            TokenKind::Data => {
                 self.advance();
-                self.expect(Token::Type)?;
+                self.expect(TokenKind::Type)?;
                 self.parse_alter_column_type()
             }
-            Token::Type => {
+            TokenKind::Type => {
                 self.advance();
                 self.parse_alter_column_type()
             }
@@ -715,15 +719,15 @@ impl Parser {
     }
 
     fn parse_alter_column_drop(&mut self) -> Result<AlterColumnAction, ParserError> {
-        self.consume(&Token::Drop);
+        self.consume(&TokenKind::Drop);
         match self.current_token().clone() {
-            Token::Default => {
+            TokenKind::Default => {
                 self.advance();
                 Ok(AlterColumnAction::DropDefault)
             }
-            Token::Not => {
+            TokenKind::Not => {
                 self.advance();
-                self.expect(Token::Null)?;
+                self.expect(TokenKind::Null)?;
                 Ok(AlterColumnAction::DropNotNull)
             }
             _ => Err(ParserError::new(
@@ -734,29 +738,29 @@ impl Parser {
     }
 
     fn parse_alter_column_reset(&mut self) -> Result<AlterColumnAction, ParserError> {
-        self.consume(&Token::Reset);
-        self.expect(Token::LParen)?;
+        self.consume(&TokenKind::Reset);
+        self.expect(TokenKind::LParen)?;
         let mut names = vec![];
         loop {
             names.push(self.expect_identifier()?);
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
         Ok(AlterColumnAction::ResetOptions(names))
     }
 
     fn parse_alter_column_type(&mut self) -> Result<AlterColumnAction, ParserError> {
         let data_type = self.parse_data_type()?;
 
-        let collation = if self.consume(&Token::Collate) {
+        let collation = if self.consume(&TokenKind::Collate) {
             Some(self.expect_identifier()?)
         } else {
             None
         };
 
-        let using = if self.consume(&Token::Using) {
+        let using = if self.consume(&TokenKind::Using) {
             Some(self.parse_expr()?)
         } else {
             None
@@ -771,7 +775,8 @@ impl Parser {
 
     fn parse_column_storage(&mut self) -> Result<ColumnStorage, ParserError> {
         match self.current_token().clone() {
-            Token::Ident(s) => {
+            TokenKind::Ident => {
+                let s = self.source[self.current_span().start..self.current_span().end].to_string();
                 let storage = match s.to_uppercase().as_str() {
                     "PLAIN" => ColumnStorage::Plain,
                     "EXTERNAL" => ColumnStorage::External,
@@ -795,23 +800,23 @@ impl Parser {
     }
 
     fn parse_alter_table_set(&mut self) -> Result<AlterTableAction, ParserError> {
-        self.consume(&Token::Set);
+        self.consume(&TokenKind::Set);
 
         match self.current_token().clone() {
-            Token::Schema => {
+            TokenKind::Schema => {
                 self.advance();
                 Ok(AlterTableAction::SetSchema(self.expect_identifier()?))
             }
-            Token::Tablespace => {
+            TokenKind::Tablespace => {
                 self.advance();
                 Ok(AlterTableAction::SetTableSpace(self.expect_identifier()?))
             }
-            Token::Owner => {
+            TokenKind::Owner => {
                 self.advance();
-                self.expect(Token::To)?;
+                self.expect(TokenKind::To)?;
                 Ok(AlterTableAction::SetOwner(self.expect_identifier()?))
             }
-            Token::Options => {
+            TokenKind::Options => {
                 self.advance();
                 Ok(AlterTableAction::SetOptions(self.parse_options_list()?))
             }
@@ -823,24 +828,24 @@ impl Parser {
     }
 
     fn parse_alter_table_rename(&mut self) -> Result<AlterTableAction, ParserError> {
-        self.consume(&Token::Rename);
+        self.consume(&TokenKind::Rename);
 
         match self.current_token().clone() {
-            Token::To => {
+            TokenKind::To => {
                 self.advance();
                 Ok(AlterTableAction::RenameTable(self.expect_identifier()?))
             }
-            Token::Column => {
+            TokenKind::Column => {
                 self.advance();
                 let old_name = self.expect_identifier()?;
-                self.expect(Token::To)?;
+                self.expect(TokenKind::To)?;
                 let new_name = self.expect_identifier()?;
                 Ok(AlterTableAction::RenameColumn { old_name, new_name })
             }
-            Token::Constraint => {
+            TokenKind::Constraint => {
                 self.advance();
                 let old_name = self.expect_identifier()?;
-                self.expect(Token::To)?;
+                self.expect(TokenKind::To)?;
                 let new_name = self.expect_identifier()?;
                 Ok(AlterTableAction::RenameConstraint { old_name, new_name })
             }
@@ -855,46 +860,46 @@ impl Parser {
     }
 
     fn parse_reset_options_list(&mut self) -> Result<Vec<String>, ParserError> {
-        self.expect(Token::LParen)?;
+        self.expect(TokenKind::LParen)?;
         let mut names = vec![];
         loop {
             names.push(self.expect_identifier()?);
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
-        self.expect(Token::RParen)?;
+        self.expect(TokenKind::RParen)?;
         Ok(names)
     }
 
     fn parse_partition_bound(&mut self) -> Result<PartitionBound, ParserError> {
         match self.current_token().clone() {
-            Token::In => {
+            TokenKind::In => {
                 self.advance();
-                self.expect(Token::LParen)?;
+                self.expect(TokenKind::LParen)?;
                 let exprs = self.parse_expr_lists()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 Ok(PartitionBound::In(exprs))
             }
-            Token::From => {
+            TokenKind::From => {
                 self.advance();
-                self.expect(Token::LParen)?;
+                self.expect(TokenKind::LParen)?;
                 let from = self.parse_partition_bound_values()?;
-                self.expect(Token::RParen)?;
-                self.expect(Token::To)?;
-                self.expect(Token::LParen)?;
+                self.expect(TokenKind::RParen)?;
+                self.expect(TokenKind::To)?;
+                self.expect(TokenKind::LParen)?;
                 let to = self.parse_partition_bound_values()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 Ok(PartitionBound::FromTo { from, to })
             }
-            Token::With => {
+            TokenKind::With => {
                 self.advance();
-                self.expect(Token::LParen)?;
+                self.expect(TokenKind::LParen)?;
                 let exprs = self.parse_expr_lists()?;
-                self.expect(Token::RParen)?;
+                self.expect(TokenKind::RParen)?;
                 Ok(PartitionBound::With(exprs))
             }
-            Token::Default => {
+            TokenKind::Default => {
                 self.advance();
                 Ok(PartitionBound::Default)
             }
@@ -912,18 +917,18 @@ impl Parser {
         let mut values = vec![];
         loop {
             let val = match self.current_token().clone() {
-                Token::Minvalue => {
+                TokenKind::Minvalue => {
                     self.advance();
                     PartitionBoundValue::Minvalue
                 }
-                Token::Maxvalue => {
+                TokenKind::Maxvalue => {
                     self.advance();
                     PartitionBoundValue::Maxvalue
                 }
                 _ => PartitionBoundValue::Expr(self.parse_expr()?),
             };
             values.push(val);
-            if !self.consume(&Token::Comma) {
+            if !self.consume(&TokenKind::Comma) {
                 break;
             }
         }
