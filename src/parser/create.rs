@@ -15,6 +15,8 @@ impl<'a> Parser<'a> {
                 let stmt = self.parse_create_table(m.temporary, m.unlogged)?;
                 Ok(Statement::CreateTable(stmt))
             }
+            TokenKind::Schema => Ok(Statement::CreateSchema(self.parse_create_schema()?)),
+            TokenKind::Index => Ok(Statement::CreateIndex(self.parse_create_index(m.unique)?)),
             _ => Err(ParserError::new(
                 format!(
                     "Expected TABLE after CREATE, got {:?}",

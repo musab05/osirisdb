@@ -161,17 +161,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_if_not_exist(&mut self) -> Result<bool, ParserError> {
-        if *self.current_token() == TokenKind::If {
-            self.advance();
-            self.expect(TokenKind::Not)?;
-            self.expect(TokenKind::Exists)?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
     fn is_table_constraint(&self) -> bool {
         matches!(
             self.current_token(),

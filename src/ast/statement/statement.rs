@@ -7,6 +7,7 @@ pub enum Statement {
     AlterTable(AlterTableStmt),
     DropTable(DropTableStmt),
     TruncateTable(TruncateStmt),
+    CreateSchema(CreateSchemaStmt),
     Insert(InsertStmt),
     Update(UpdateStmt),
     Delete(DeleteStmt),

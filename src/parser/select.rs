@@ -3,7 +3,7 @@ use crate::{
         Cte, Expr, JoinClause, JoinType, OrderItem, SelectItem, SelectModifier, SelectStmt, SetOp,
         SetOperation, TableRef,
     },
-    lexer::{TokenKind, token::Token},
+    lexer::{TokenKind},
     parser::{parser::Parser, parser_error::ParserError},
 };
 

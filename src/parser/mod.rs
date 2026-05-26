@@ -10,3 +10,5 @@ pub mod table;
 pub mod modifiers;
 pub mod truncate;
 pub mod alter;
+pub mod schema;
+pub mod index;

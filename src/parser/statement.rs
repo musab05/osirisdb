@@ -1,6 +1,6 @@
 use crate::{
     ast::Statement,
-    lexer::{Modifier, TokenKind, token::Token},
+    lexer::{Modifier, TokenKind},
     parser::{modifiers::CreateModifiers, parser::Parser, parser_error::ParserError},
 };
 

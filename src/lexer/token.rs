@@ -24,10 +24,13 @@ pub enum TokenKind {
     Set,
     Delete,
     Returning,
+    Merge,
     // DDL
     Create,
     Table,
+    Tables,
     Schema,
+    Authorization,
     Drop,
     Truncate,
     Alter,
@@ -150,6 +153,13 @@ pub enum TokenKind {
     // ON COMMIT
     Preserve,
     Rows,
+    // Utility
+    Explain,
+    Analyze,
+    Describe,
+    Show,
+    Copy,
+    Vacuum,
     // Locking
     For,
     Share,

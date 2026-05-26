@@ -110,7 +110,8 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Literal(Value::Float(f)))
             }
             TokenKind::StringLit => {
-                let s = self.source[self.current_span().start..self.current_span().end].to_string();
+                let s = self.source[self.current_span().start + 1..self.current_span().end - 1]
+                    .to_string();
                 self.advance();
                 Ok(Expr::Literal(Value::String(s)))
             }
@@ -168,7 +169,8 @@ impl<'a> Parser<'a> {
             TokenKind::Case => self.parse_case(),
 
             TokenKind::Ident | TokenKind::QuotedIdent => {
-                let name = self.source[self.current_span().start..self.current_span().end].to_string();
+                let name =
+                    self.source[self.current_span().start..self.current_span().end].to_string();
                 self.advance();
 
                 if self.consume(&TokenKind::LParen) {
@@ -215,8 +217,10 @@ impl<'a> Parser<'a> {
         }
 
         let negated = if self.current_token() == &TokenKind::Not
-            && matches!(self.peek_token(), TokenKind::Between | TokenKind::In | TokenKind::Like)
-        {
+            && matches!(
+                self.peek_token(),
+                TokenKind::Between | TokenKind::In | TokenKind::Like
+            ) {
             self.advance();
             true
         } else {
@@ -286,7 +290,8 @@ impl<'a> Parser<'a> {
     pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
         let mut base_type = match self.current_token().clone() {
             TokenKind::Ident => {
-                let name = self.source[self.current_span().start..self.current_span().end].to_string();
+                let name =
+                    self.source[self.current_span().start..self.current_span().end].to_string();
                 self.advance();
                 match name.to_uppercase().as_str() {
                     "SMALLINT" | "INT2" => DataType::SmallInt,
@@ -502,5 +507,16 @@ impl<'a> Parser<'a> {
         }
         self.expect(TokenKind::RParen)?;
         Ok(options)
+    }
+
+    pub fn parse_if_not_exist(&mut self) -> Result<bool, ParserError> {
+        if *self.current_token() == TokenKind::If {
+            self.advance();
+            self.expect(TokenKind::Not)?;
+            self.expect(TokenKind::Exists)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }

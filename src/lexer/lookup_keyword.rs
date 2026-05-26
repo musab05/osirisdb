@@ -13,11 +13,14 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         "SET" => TokenKind::Set,
         "DELETE" => TokenKind::Delete,
         "RETURNING" => TokenKind::Returning,
+        "MERGE" => TokenKind::Merge,
 
         // ── DDL ──
         "CREATE" => TokenKind::Create,
         "TABLE" => TokenKind::Table,
+        "TABLES" => TokenKind::Tables,
         "SCHEMA" => TokenKind::Schema,
+        "AUTHORIZATION" => TokenKind::Authorization,
         "DROP" => TokenKind::Drop,
         "TRUNCATE" => TokenKind::Truncate,
         "ALTER" => TokenKind::Alter,
@@ -150,6 +153,14 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         // ── ON COMMIT Options ──
         "PRESERVE" => TokenKind::Preserve,
         "ROWS" => TokenKind::Rows,
+
+        // ── Utility ──
+        "EXPLAIN" => TokenKind::Explain,
+        "ANALYZE" => TokenKind::Analyze,
+        "DESCRIBE" => TokenKind::Describe,
+        "SHOW" => TokenKind::Show,
+        "COPY" => TokenKind::Copy,
+        "VACUUM" => TokenKind::Vacuum,
 
         // ── Locking ──
         "FOR" => TokenKind::For,
