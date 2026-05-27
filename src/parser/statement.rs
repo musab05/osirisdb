@@ -74,7 +74,7 @@ impl<'a> Parser<'a> {
                     m.materialized = true;
                 }
                 TokenKind::Modifier(Modifier::Local) | TokenKind::Modifier(Modifier::Global) => {
-                    self.advance(); // ignore scope hints
+                    self.advance();
                 }
                 TokenKind::Unique => {
                     self.advance();

@@ -12,3 +12,5 @@ pub mod truncate;
 pub mod alter;
 pub mod schema;
 pub mod index;
+pub mod view;
+pub mod sequence;

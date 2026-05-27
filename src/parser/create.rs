@@ -1,6 +1,6 @@
 use crate::{
     ast::Statement,
-    lexer::token::TokenKind,
+    lexer::{Modifier, token::TokenKind},
     parser::{parser::Parser, parser_error::ParserError},
 };
 
@@ -17,9 +17,27 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Schema => Ok(Statement::CreateSchema(self.parse_create_schema()?)),
             TokenKind::Index => Ok(Statement::CreateIndex(self.parse_create_index(m.unique)?)),
+            TokenKind::View => {
+                self.advance();
+                Ok(Statement::CreateView(self.parse_create_view(
+                    m.or_replace,
+                    m.temporary,
+                    false,
+                )?))
+            }
+            TokenKind::Modifier(Modifier::Materialized) => {
+                self.advance();
+                self.expect(TokenKind::View)?;
+                Ok(Statement::CreateView(self.parse_create_view(
+                    m.or_replace,
+                    m.temporary,
+                    false,
+                )?))
+            }
+            TokenKind::Sequence => Ok(Statement::CreateSequence(self.parse_create_sequence()?)),
             _ => Err(ParserError::new(
                 format!(
-                    "Expected TABLE after CREATE, got {:?}",
+                    "Expected TABLE/SCHEMA/INDEX/VIEW after CREATE, got {:?}",
                     self.current_token()
                 ),
                 self.current.span.clone(),

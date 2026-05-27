@@ -7,6 +7,7 @@ pub mod referential_action;
 pub mod sql_option;
 pub mod table_constraint;
 pub mod schema;
+pub mod sequence;
 
 pub use column::*;
 pub use column_constraint::*;
@@ -17,3 +18,4 @@ pub use referential_action::*;
 pub use sql_option::*;
 pub use table_constraint::*;
 pub use schema::*;
+pub use sequence::*;

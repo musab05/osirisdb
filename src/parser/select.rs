@@ -3,7 +3,7 @@ use crate::{
         Cte, Expr, JoinClause, JoinType, OrderItem, SelectItem, SelectModifier, SelectStmt, SetOp,
         SetOperation, TableRef,
     },
-    lexer::{TokenKind},
+    lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
 };
 
@@ -370,7 +370,7 @@ impl<'a> Parser<'a> {
     }
 
     // Expect a sequence of tokens in order, fail if any doesn't match
-    fn expect_keyword_sequence(&mut self, tokens: &[TokenKind]) -> Result<(), ParserError> {
+    pub fn expect_keyword_sequence(&mut self, tokens: &[TokenKind]) -> Result<(), ParserError> {
         for token in tokens {
             self.expect(token.clone())?;
         }

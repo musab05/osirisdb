@@ -187,6 +187,14 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         "NOTHING" => TokenKind::Nothing,
         "EXCLUDED" => TokenKind::Excluded,
 
+        // ── Sequence ──
+        "SEQUENCE" => TokenKind::Sequence,
+        "START" => TokenKind::Start,
+        "INCREMENT" => TokenKind::Increment,
+        "CACHE" => TokenKind::Cache,
+        "CYCLE" => TokenKind::Cycle,
+        "OWNED" => TokenKind::Owned,
+
         // ── Data Type Contextual Keywords ──
         "VARYING" => TokenKind::Varying,
         "PRECISION" => TokenKind::Precision,

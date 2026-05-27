@@ -184,6 +184,13 @@ pub enum TokenKind {
     Do,
     Nothing,
     Excluded,
+    // Sequence
+    Sequence,
+    Start,
+    Increment,
+    Cache,
+    Cycle,
+    Owned,
     // Data types
     Varying,
     Precision,
