@@ -12,11 +12,19 @@ impl<'a> Parser<'a> {
 
         match self.current_token() {
             TokenKind::Table => {
-                let stmt = self.parse_create_table(m.temporary, m.unlogged)?;
-                Ok(Statement::CreateTable(stmt))
+                self.advance();
+                Ok(Statement::CreateTable(
+                    self.parse_create_table(m.temporary, m.unlogged)?,
+                ))
             }
-            TokenKind::Schema => Ok(Statement::CreateSchema(self.parse_create_schema()?)),
-            TokenKind::Index => Ok(Statement::CreateIndex(self.parse_create_index(m.unique)?)),
+            TokenKind::Schema => {
+                self.advance();
+                Ok(Statement::CreateSchema(self.parse_create_schema()?))
+            }
+            TokenKind::Index => {
+                self.advance();
+                Ok(Statement::CreateIndex(self.parse_create_index(m.unique)?))
+            }
             TokenKind::View => {
                 self.advance();
                 Ok(Statement::CreateView(self.parse_create_view(
@@ -34,7 +42,7 @@ impl<'a> Parser<'a> {
                     false,
                 )?))
             }
-            TokenKind::Sequence => Ok(Statement::CreateSequence(self.parse_create_sequence()?)),
+            TokenKind::Sequence =>{self.advance(); Ok(Statement::CreateSequence(self.parse_create_sequence()?))}
             _ => Err(ParserError::new(
                 format!(
                     "Expected TABLE/SCHEMA/INDEX/VIEW after CREATE, got {:?}",

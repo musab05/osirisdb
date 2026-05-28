@@ -408,6 +408,32 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn expect_int(&mut self) -> Result<i64, ParserError> {
+        match self.current_token().clone() {
+            TokenKind::IntLit(n) => {
+                self.advance();
+                Ok(n)
+            }
+            TokenKind::Minus => {
+                self.advance();
+                match self.current_token().clone() {
+                    TokenKind::IntLit(n) => {
+                        self.advance();
+                        Ok(-n)
+                    }
+                    _ => Err(ParserError::new(
+                        "Expected integer after -",
+                        self.current.span.clone(),
+                    )),
+                }
+            }
+            _ => Err(ParserError::new(
+                format!("Expected integer, got {:?}", self.current_token()),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
     fn parse_case(&mut self) -> Result<Expr, ParserError> {
         self.advance();
 

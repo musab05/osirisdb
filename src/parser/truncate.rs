@@ -8,7 +8,7 @@ impl<'a> Parser<'a> {
     pub fn parse_truncate(&mut self) -> Result<TruncateStmt, ParserError> {
         self.consume(&TokenKind::Truncate);
 
-        self.consume(&TokenKind::Table);
+        self.expect(TokenKind::Table)?;
 
         let mut tables = vec![];
 

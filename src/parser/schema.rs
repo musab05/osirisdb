@@ -6,7 +6,6 @@ use crate::{
 
 impl<'a> Parser<'a> {
     pub fn parse_create_schema(&mut self) -> Result<CreateSchemaStmt, ParserError> {
-        self.consume(&TokenKind::Schema);
 
         let if_not_exists = self.parse_if_not_exist()?;
 

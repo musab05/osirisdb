@@ -77,7 +77,6 @@ impl<'a> Parser<'a> {
                 Ok(s)
             }
             TokenKind::QuotedIdent => {
-                // strip surrounding quotes
                 let s =
                     self.source[self.current.span.start + 1..self.current.span.end - 1].to_string();
                 self.advance();

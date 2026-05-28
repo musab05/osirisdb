@@ -9,7 +9,6 @@ impl<'a> Parser<'a> {
         temporary: bool,
         unlogged: bool,
     ) -> Result<CreateStmt, ParserError> {
-        self.expect(TokenKind::Table)?;
 
         let if_not_exist = self.parse_if_not_exist()?;
 

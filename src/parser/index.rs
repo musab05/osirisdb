@@ -6,7 +6,6 @@ use crate::{
 
 impl<'a> Parser<'a> {
     pub fn parse_create_index(&mut self, unique: bool) -> Result<CreateIndexStmt, ParserError> {
-        self.consume(&TokenKind::Index);
 
         let if_not_exist = self.parse_if_not_exist()?;
 
