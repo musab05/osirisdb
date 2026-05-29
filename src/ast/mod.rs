@@ -1,27 +1,15 @@
-pub mod create_statement;
-pub mod insert_statement;
-pub mod select_statement;
+pub mod common;
+pub mod ddl;
+pub mod dml;
+pub mod expression;
+pub mod query;
+pub mod transaction;
 pub mod statement;
 
-pub mod data_types;
-pub mod drop_behaviour;
-pub mod expr;
-pub mod index_item;
-pub mod null_ordering;
-pub mod object_name;
-pub mod order;
-pub mod value;
-
-pub use create_statement::*;
-pub use insert_statement::*;
-pub use select_statement::*;
+pub use common::*;
+pub use ddl::*;
+pub use dml::*;
+pub use expression::*;
+pub use query::*;
+pub use transaction::*;
 pub use statement::*;
-
-pub use data_types::*;
-pub use drop_behaviour::*;
-pub use expr::*;
-pub use index_item::*;
-pub use null_ordering::*;
-pub use object_name::*;
-pub use order::*;
-pub use value::*;

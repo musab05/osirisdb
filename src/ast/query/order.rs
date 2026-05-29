@@ -5,3 +5,8 @@ pub struct OrderItem {
     pub asc: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Order {
+    Asc,
+    Desc,
+}
