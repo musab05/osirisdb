@@ -62,4 +62,22 @@ fn main() {
             }
         }
     }
+
+    // Lexer Token printing demo
+    let select_command = "SELECT name, age FROM users WHERE age > 18;";
+    println!("\n=== Lexer Token Demo ===");
+    println!("Input SQL: {}", select_command);
+    
+    use rust_sql::lexer::Lexer;
+    let mut lexer = Lexer::new(select_command);
+    loop {
+        let token = lexer.next_token();
+        println!(
+            "{:?} @ line {}, col {}, bytes {}..{}",
+            token.kind, token.span.line, token.span.column, token.span.start, token.span.end
+        );
+        if token.kind == rust_sql::lexer::TokenKind::Eof {
+            break;
+        }
+    }
 }

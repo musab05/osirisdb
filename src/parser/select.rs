@@ -8,6 +8,8 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
+/// Executes parsing or lookup for the `parse_select` operation.
+    /// Parses a complete `SELECT` query statement, including CTEs, Joins, grouping, ordering, limits, and set operations.
     pub fn parse_select(&mut self) -> Result<SelectStmt, ParserError> {
         let ctes = if self.consume(&TokenKind::With) {
             self.parse_ctes()?
@@ -85,6 +87,7 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses a list of Common Table Expressions inside a `WITH` clause (e.g., `WITH active AS (SELECT ...), admins AS (SELECT ...)`).
     fn parse_ctes(&mut self) -> Result<Vec<Cte>, ParserError> {
         let mut ctes = vec![];
 
@@ -108,6 +111,7 @@ impl<'a> Parser<'a> {
         Ok(ctes)
     }
 
+    /// Parses distinct modifiers (`DISTINCT`, `DISTINCT ON (...)`, or `ALL`).
     fn parse_select_modifier(&mut self) -> Result<Option<SelectModifier>, ParserError> {
         if self.consume(&TokenKind::All) {
             return Ok(Some(SelectModifier::All));
@@ -126,6 +130,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
+    /// Parses target columns in a projection list, supporting wildcards, aliases, and expressions (e.g., `id, price * 1.1 AS cost`).
     fn parse_select_column(&mut self) -> Result<Vec<SelectItem>, ParserError> {
         let mut items = vec![];
 
@@ -165,6 +170,7 @@ impl<'a> Parser<'a> {
         Ok(items)
     }
 
+    /// Parses table source targets in a `FROM` clause, supporting subqueries and aliases.
     fn parse_table_refs(&mut self) -> Result<Vec<TableRef>, ParserError> {
         let mut refs = vec![];
 
@@ -209,6 +215,7 @@ impl<'a> Parser<'a> {
         Ok(refs)
     }
 
+    /// Parses a sequence of explicit JOIN clauses (e.g., `LEFT JOIN orders ON u.id = o.user_id`).
     fn parse_joins(&mut self) -> Result<Vec<JoinClause>, ParserError> {
         let mut joins = vec![];
 
@@ -273,6 +280,7 @@ impl<'a> Parser<'a> {
     }
 
     // helper used by parse_joins — parses one table ref without comma loop
+    /// Parses a single table target or subquery block within a join clause context.
     fn parse_single_table_ref(&mut self) -> Result<TableRef, ParserError> {
         if self.consume(&TokenKind::LParen) {
             let query = self.parse_select()?;
@@ -307,6 +315,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses sorting specifications in an `ORDER BY` clause (e.g., `price DESC, name ASC`).
     fn parse_order_items(&mut self) -> Result<Vec<OrderItem>, ParserError> {
         let mut items = vec![];
 
@@ -331,6 +340,7 @@ impl<'a> Parser<'a> {
         Ok(items)
     }
 
+    /// Parses trailing set operators combining queries (`UNION`, `INTERSECT`, or `EXCEPT`).
     fn parse_set_op(&mut self) -> Result<Option<Box<SetOperation>>, ParserError> {
         let op = match self.current_token() {
             TokenKind::Union => SetOp::Union,
@@ -355,6 +365,8 @@ impl<'a> Parser<'a> {
 
 
     // Expect a sequence of tokens in order, fail if any doesn't match
+/// Executes parsing or lookup for the `expect_keyword_sequence` operation.
+    /// Asserts that a sequence of keyword tokens appears next in order, erroring if any matches fail.
     pub fn expect_keyword_sequence(&mut self, tokens: &[TokenKind]) -> Result<(), ParserError> {
         for token in tokens {
             self.expect(token.clone())?;
@@ -362,6 +374,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    /// Detects if the current token terminates the `SELECT` column projection list (e.g., reaching `FROM` or `WHERE`).
     fn is_select_column_end(&self) -> bool {
         matches!(
             self.current_token(),

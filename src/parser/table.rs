@@ -4,6 +4,8 @@ use crate::parser::parser::Parser;
 use crate::parser::parser_error::ParserError;
 
 impl<'a> Parser<'a> {
+/// Executes parsing or lookup for the `parse_create_table` operation.
+    /// Parses a detailed `CREATE TABLE` DDL statement, capturing columns, constraints, inheritance, partitions, and storage settings.
     pub fn parse_create_table(
         &mut self,
         temporary: bool,
@@ -160,6 +162,7 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Detects if the current token indicates the start of a table-level constraint (e.g., `PRIMARY KEY`, `FOREIGN KEY`, `CHECK`).
     fn is_table_constraint(&self) -> bool {
         matches!(
             self.current_token(),
@@ -171,6 +174,7 @@ impl<'a> Parser<'a> {
         )
     }
 
+    /// Parses a single column schema definition including data types, collations, column constraints, and auto-increment properties.
     fn parse_column_def(&mut self) -> Result<ColumnDef, ParserError> {
         let name = self.expect_identifier()?;
         let data_type = self.parse_data_type()?;
@@ -222,6 +226,7 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses a single constraint clause on a column (e.g., `DEFAULT 0` or `REFERENCES other(col)`).
     fn parse_column_constraint(&mut self) -> Result<ColumnConstraint, ParserError> {
         match self.current_token().clone() {
             TokenKind::Not => {
@@ -279,6 +284,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses generated computed column specifications (e.g., `GENERATED ALWAYS AS (a * b) STORED`).
     fn parse_generated_column(&mut self) -> Result<GeneratedColumn, ParserError> {
         self.expect(TokenKind::Generated)?;
         self.expect(TokenKind::Always)?;
@@ -292,6 +298,7 @@ impl<'a> Parser<'a> {
         Ok(GeneratedColumn { expr, stored: true })
     }
 
+    /// Parses a table-level integrity constraint (e.g., composite key definitions, checks, and foreign keys).
     fn parse_table_constraint(&mut self) -> Result<TableConstraint, ParserError> {
         let name = if *self.current_token() == TokenKind::Constraint {
             self.advance();
@@ -354,6 +361,7 @@ impl<'a> Parser<'a> {
 
 
 
+    /// Parses a comma-separated list of column identifiers inside parentheses (e.g., `(user_id, order_id)`).
     fn parse_column_list(&mut self) -> Result<Vec<String>, ParserError> {
         self.expect(TokenKind::LParen)?;
         let mut cols = vec![self.expect_identifier()?];
@@ -366,6 +374,7 @@ impl<'a> Parser<'a> {
         Ok(cols)
     }
 
+    /// Parses update and delete referential triggers on foreign keys (`ON DELETE ... ON UPDATE ...`).
     fn parse_referential_actions(
         &mut self,
     ) -> Result<(Option<ReferentialAction>, Option<ReferentialAction>), ParserError> {
@@ -401,6 +410,7 @@ impl<'a> Parser<'a> {
         Ok((on_delete, on_update))
     }
 
+    /// Parses a specific referential constraint action (e.g., `CASCADE`, `RESTRICT`, `SET NULL`, `SET DEFAULT`, `NO ACTION`).
     fn parse_referential_action(&mut self) -> Result<ReferentialAction, ParserError> {
         match self.current_token().clone() {
             TokenKind::Set => {
@@ -441,6 +451,8 @@ impl<'a> Parser<'a> {
     }
 
     // Drop table
+/// Executes parsing or lookup for the `parse_drop_table` operation.
+    /// Parses a `DROP TABLE` DDL statement.
     pub fn parse_drop_table(&mut self, temporary: bool) -> Result<DropTableStmt, ParserError> {
         self.consume(&TokenKind::Table);
 
@@ -465,6 +477,7 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses the optional `IF EXISTS` DDL modifier.
     fn parse_if_exist(&mut self) -> Result<bool, ParserError> {
         if self.consume(&TokenKind::If) {
             self.expect(TokenKind::Exists)?;
@@ -475,6 +488,8 @@ impl<'a> Parser<'a> {
     }
 
     // Alter table
+/// Executes parsing or lookup for the `parse_alter_table` operation.
+    /// Parses an `ALTER TABLE` schema modification statement containing a list of sub-actions.
     pub fn parse_alter_table(&mut self) -> Result<AlterTableStmt, ParserError> {
         self.consume(&TokenKind::Table);
 
@@ -499,6 +514,7 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Dispatches table alteration commands based on target keyword (e.g., `ADD`, `DROP`, `RENAME`, `ATTACH PARTITION`).
     fn parse_alter_table_actions(&mut self) -> Result<AlterTableAction, ParserError> {
         match self.current_token().clone() {
             TokenKind::Add => self.parse_alter_table_add(),
@@ -554,6 +570,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses column additions or constraint additions in an `ALTER TABLE ... ADD` statement.
     fn parse_alter_table_add(&mut self) -> Result<AlterTableAction, ParserError> {
         self.consume(&TokenKind::Add);
 
@@ -578,6 +595,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses column drop or constraint drop in an `ALTER TABLE ... DROP` statement.
     fn parse_alter_table_drop(&mut self) -> Result<AlterTableAction, ParserError> {
         self.consume(&TokenKind::Drop);
 
@@ -610,6 +628,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses column configuration modifications in an `ALTER TABLE ... ALTER COLUMN` statement.
     fn parse_alter_table_alter(&mut self) -> Result<AlterTableAction, ParserError> {
         self.consume(&TokenKind::Alter);
 
@@ -621,6 +640,7 @@ impl<'a> Parser<'a> {
         Ok(AlterTableAction::AlterColumn { name, action })
     }
 
+    /// Dispatches actions on a column alteration context (e.g., `SET DEFAULT`, `DROP NOT NULL`, `TYPE`).
     fn parse_alter_column_actions(&mut self) -> Result<AlterColumnAction, ParserError> {
         match self.current_token().clone() {
             TokenKind::Set => self.parse_alter_column_set(),
@@ -637,6 +657,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses column properties additions (e.g., `SET DEFAULT`, `SET NOT NULL`, `SET STATISTICS`, `SET STORAGE`).
     fn parse_alter_column_set(&mut self) -> Result<AlterColumnAction, ParserError> {
         self.consume(&TokenKind::Set);
         match self.current_token().clone() {
@@ -678,6 +699,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses column properties removals (e.g., `DROP DEFAULT`, `DROP NOT NULL`).
     fn parse_alter_column_drop(&mut self) -> Result<AlterColumnAction, ParserError> {
         self.consume(&TokenKind::Drop);
         match self.current_token().clone() {
@@ -697,6 +719,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses resetting column properties in parentheses (e.g., `RESET (option)`).
     fn parse_alter_column_reset(&mut self) -> Result<AlterColumnAction, ParserError> {
         self.consume(&TokenKind::Reset);
         self.expect(TokenKind::LParen)?;
@@ -711,6 +734,7 @@ impl<'a> Parser<'a> {
         Ok(AlterColumnAction::ResetOptions(names))
     }
 
+    /// Parses column type conversions (`TYPE new_type [COLLATE c] [USING expr]`).
     fn parse_alter_column_type(&mut self) -> Result<AlterColumnAction, ParserError> {
         let data_type = self.parse_data_type()?;
 
@@ -733,6 +757,7 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Parses column storage strategy constraints (e.g., `PLAIN`, `EXTERNAL`, `EXTENDED`, `MAIN`).
     fn parse_column_storage(&mut self) -> Result<ColumnStorage, ParserError> {
         match self.current_token().clone() {
             TokenKind::Ident => {
@@ -759,6 +784,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses table property sets (e.g., `SET SCHEMA`, `SET TABLESPACE`, `SET OWNER`).
     fn parse_alter_table_set(&mut self) -> Result<AlterTableAction, ParserError> {
         self.consume(&TokenKind::Set);
 
@@ -787,6 +813,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses table renames (`RENAME TO`, `RENAME COLUMN`, `RENAME CONSTRAINT`).
     fn parse_alter_table_rename(&mut self) -> Result<AlterTableAction, ParserError> {
         self.consume(&TokenKind::Rename);
 
@@ -819,6 +846,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses a reset option parameters list.
     fn parse_reset_options_list(&mut self) -> Result<Vec<String>, ParserError> {
         self.expect(TokenKind::LParen)?;
         let mut names = vec![];
@@ -832,6 +860,7 @@ impl<'a> Parser<'a> {
         Ok(names)
     }
 
+    /// Parses partition boundary markers (e.g., `IN (...)` or `FROM (...) TO (...)`).
     fn parse_partition_bound(&mut self) -> Result<PartitionBound, ParserError> {
         match self.current_token().clone() {
             TokenKind::In => {
@@ -873,6 +902,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses boundary list values, keeping track of `MINVALUE` and `MAXVALUE` contextual indicators.
     fn parse_partition_bound_values(&mut self) -> Result<Vec<PartitionBoundValue>, ParserError> {
         let mut values = vec![];
         loop {

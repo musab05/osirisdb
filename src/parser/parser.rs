@@ -37,14 +37,17 @@ impl<'a> Parser<'a> {
         self.peek = self.lexer.next_token();
     }
 
+/// Executes parsing or lookup for the `current_token` operation.
     pub fn current_token(&self) -> &TokenKind {
         &self.current.kind
     }
 
+/// Executes parsing or lookup for the `current_span` operation.
     pub fn current_span(&self) -> &Span {
         &self.current.span
     }
 
+/// Executes parsing or lookup for the `peek_token` operation.
     pub fn peek_token(&self) -> &TokenKind {
         &self.peek.kind
     }
@@ -60,10 +63,12 @@ impl<'a> Parser<'a> {
         }
     }
 
+/// Executes parsing or lookup for the `is_at_end` operation.
     pub fn is_at_end(&self) -> bool {
         *self.current_token() == TokenKind::Eof
     }
 
+/// Executes parsing or lookup for the `peek_is` operation.
     pub fn peek_is(&self, token: &TokenKind) -> bool {
         self.peek_token() == token
     }

@@ -9,6 +9,8 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
+/// Executes parsing or lookup for the `parse_expr_lists` operation.
+    /// Parses a comma-separated list of SQL expressions (e.g. `1, a + b, 'hello'`).
     pub fn parse_expr_lists(&mut self) -> Result<Vec<Expr>, ParserError> {
         let mut exprs = vec![];
 
@@ -22,10 +24,16 @@ impl<'a> Parser<'a> {
         Ok(exprs)
     }
 
+/// Executes parsing or lookup for the `parse_expr` operation.
+    /// Parses an SQL expression starting at the current token position with a binding power of 0.
     pub fn parse_expr(&mut self) -> Result<Expr, ParserError> {
         self.parser_expr_bp(0)
     }
 
+    /// Core Pratt parsing algorithm loop.
+    ///
+    /// Evaluates operators in top-down operator precedence using a left and right binding
+    /// power to guarantee correct algebraic nesting and associativity (e.g., `1 + 2 * 3` becomes `1 + (2 * 3)`).
     fn parser_expr_bp(&mut self, min_bp: u8) -> Result<Expr, ParserError> {
         let mut lhs = self.parse_prefix()?;
 
@@ -82,6 +90,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
+    /// Parses unary prefix operators (`NOT`, `-`) or basic literals/identifiers (e.g., `TRUE`, `123`, `users.name`).
     fn parse_prefix(&mut self) -> Result<Expr, ParserError> {
         let token = self.current_token().clone();
 
@@ -206,6 +215,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Attempts to parse trailing postfix operators that follow an expression (e.g., `IS NULL`, `BETWEEN`, `IN`, `LIKE`).
     fn try_parse_postfix(&mut self, lhs: Expr) -> Result<Option<Expr>, ParserError> {
         if self.consume(&TokenKind::Is) {
             let negated = self.consume(&TokenKind::Not);
@@ -287,6 +297,8 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
+/// Executes parsing or lookup for the `parse_data_type` operation.
+    /// Parses a SQL data type specification, including array brackets and parameter lengths (e.g., `VARCHAR(255)`, `INT[]`).
     pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
         let mut base_type = match self.current_token().clone() {
             TokenKind::Ident => {
@@ -384,6 +396,7 @@ impl<'a> Parser<'a> {
     }
 
     // Helper — parses (n) returning Some(n), or None if no paren
+    /// Helper method to parse optional length bounds inside parentheses (e.g., parsing `(255)` after `VARCHAR`).
     fn parse_optional_length(&mut self) -> Result<Option<u64>, ParserError> {
         if self.consume(&TokenKind::LParen) {
             let n = self.expect_int_literal()?;
@@ -395,6 +408,8 @@ impl<'a> Parser<'a> {
     }
 
     // Helper — expects current token to be an integer literal
+/// Executes parsing or lookup for the `expect_int_literal` operation.
+    /// Asserts the current token is a non-negative integer literal and consumes it, returning the value.
     pub fn expect_int_literal(&mut self) -> Result<u64, ParserError> {
         match self.current_token().clone() {
             TokenKind::IntLit(n) if n >= 0 => {
@@ -408,6 +423,8 @@ impl<'a> Parser<'a> {
         }
     }
 
+/// Executes parsing or lookup for the `expect_int` operation.
+    /// Asserts the current token is a signed integer literal (allowing an optional leading minus sign) and consumes it.
     pub fn expect_int(&mut self) -> Result<i64, ParserError> {
         match self.current_token().clone() {
             TokenKind::IntLit(n) => {
@@ -434,6 +451,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses a conditional `CASE ... WHEN ... THEN ... ELSE ... END` expression block.
     fn parse_case(&mut self) -> Result<Expr, ParserError> {
         self.advance();
 
@@ -473,6 +491,7 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Maps a token kind to its corresponding binary operator representation (`BinOpKind`).
     fn token_to_binop(&self, token: &TokenKind) -> Result<BinOpKind, ParserError> {
         match token {
             TokenKind::Eq => Ok(BinOpKind::Eq),
@@ -496,6 +515,8 @@ impl<'a> Parser<'a> {
         }
     }
 
+/// Executes parsing or lookup for the `parse_qualified_name` operation.
+    /// Parses a dot-separated object path (e.g., `public.users` or `database.schema.table`).
     pub fn parse_qualified_name(&mut self) -> Result<Vec<String>, ParserError> {
         let mut parts = vec![self.expect_identifier()?];
 
@@ -505,6 +526,8 @@ impl<'a> Parser<'a> {
         Ok(parts)
     }
 
+/// Executes parsing or lookup for the `parse_drop_behaviour` operation.
+    /// Parses optional cascade/restrict flags (`CASCADE` / `RESTRICT`).
     pub fn parse_drop_behaviour(&mut self) -> Option<DropBehavior> {
         match self.current_token() {
             TokenKind::Cascade => {
@@ -519,6 +542,8 @@ impl<'a> Parser<'a> {
         }
     }
 
+/// Executes parsing or lookup for the `parse_options_list` operation.
+    /// Parses storage parameters list in parentheses (e.g. `(fillfactor = 70, autovacuum_enabled = true)`).
     pub fn parse_options_list(&mut self) -> Result<Vec<SqlOption>, ParserError> {
         self.expect(TokenKind::LParen)?;
         let mut options = vec![];
@@ -535,6 +560,8 @@ impl<'a> Parser<'a> {
         Ok(options)
     }
 
+/// Executes parsing or lookup for the `parse_if_not_exist` operation.
+    /// Parses the optional `IF NOT EXISTS` DDL modifier.
     pub fn parse_if_not_exist(&mut self) -> Result<bool, ParserError> {
         if *self.current_token() == TokenKind::If {
             self.advance();

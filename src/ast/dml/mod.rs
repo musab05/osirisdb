@@ -1,3 +1,7 @@
+//! AST structures representing Data Manipulation Language (DML) statements.
+//!
+//! Covers SQL mutation operations such as insert, update, delete, upsert, and CTE boundaries.
+
 pub mod assignment;
 pub mod conflict_action;
 pub mod conflict_target;

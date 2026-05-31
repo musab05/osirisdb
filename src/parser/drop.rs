@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
+/// Executes parsing or lookup for the `parse_drop` operation.
     pub fn parse_drop(&mut self) -> Result<Statement, ParserError> {
         self.consume(&TokenKind::Drop);
         let m = self.parse_create_modifiers();

@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
+/// Executes parsing or lookup for the `parse_create_schema` operation.
     pub fn parse_create_schema(&mut self) -> Result<CreateSchemaStmt, ParserError> {
 
         let if_not_exists = self.parse_if_not_exist()?;

@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
+/// Executes parsing or lookup for the `parse_create_sequence` operation.
     pub fn parse_create_sequence(&mut self) -> Result<CreateSequenceStmt, ParserError> {
         let if_not_exists = self.parse_if_not_exist()?;
         let name = ObjectName(self.parse_qualified_name()?);

@@ -1,3 +1,7 @@
+//! AST structures representing Data Definition Language (DDL) statements.
+//!
+//! Supports schemas, tables, views, sequences, indexes, and constraints, along with drop and truncate statements.
+
 pub mod alter;
 pub mod column_constraint;
 pub mod column;

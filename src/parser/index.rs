@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
+/// Executes parsing or lookup for the `parse_create_index` operation.
     pub fn parse_create_index(&mut self, unique: bool) -> Result<CreateIndexStmt, ParserError> {
 
         let if_not_exist = self.parse_if_not_exist()?;

@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
+/// Executes parsing or lookup for the `parse_create` operation.
     pub fn parse_create(&mut self) -> Result<Statement, ParserError> {
         self.consume(&TokenKind::Create);
 

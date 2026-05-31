@@ -1,3 +1,8 @@
+//! Strongly typed Abstract Syntax Tree (AST) representations of SQL statement and expression structures.
+//!
+//! This module forms the backbone of the parser's output, defining the representations of DDL, DML,
+//! expressions, and query clauses. All AST nodes derive `Debug`, `Clone`, and `PartialEq`.
+
 pub mod common;
 pub mod ddl;
 pub mod dml;

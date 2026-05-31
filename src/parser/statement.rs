@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
+/// Executes parsing or lookup for the `parse` operation.
     pub fn parse(&mut self) -> Result<Vec<Statement>, ParserError> {
         let mut stmts = vec![];
 
@@ -39,6 +40,7 @@ impl<'a> Parser<'a> {
         Ok(stmt)
     }
 
+/// Executes parsing or lookup for the `parse_create_modifiers` operation.
     pub fn parse_create_modifiers(&mut self) -> CreateModifiers {
         let mut m = CreateModifiers {
             or_replace: false,

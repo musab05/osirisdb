@@ -5,6 +5,7 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
+/// Executes parsing or lookup for the `parse_alter` operation.
     pub fn parse_alter(&mut self) -> Result<Statement, ParserError> {
         self.consume(&TokenKind::Alter);
 
