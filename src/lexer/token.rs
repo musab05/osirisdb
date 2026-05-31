@@ -227,6 +227,12 @@ pub enum TokenKind {
     Precision,
     Zone,
     Time,
+    Enum,
+    Domain,
+    Base,
+    Subtype,
+    Canonical,
+    Preferred,
     // ── DDL Modifiers ──
     /// A DDL modifier keyword (e.g. `TEMPORARY`, `UNLOGGED`). See [`Modifier`].
     Modifier(Modifier),

@@ -1,6 +1,6 @@
 use crate::ast::*;
-#[derive(Debug, Clone, PartialEq)]
 /// Represents the SQL `Assignment` structure in the AST.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Assignment {
     pub column: String,
     pub value: Expr,

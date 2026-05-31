@@ -203,6 +203,12 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         "PRECISION" => TokenKind::Precision,
         "ZONE" => TokenKind::Zone,
         "TIME" => TokenKind::Time,
+        "ENUM" => TokenKind::Enum,
+        "DOMAIN" => TokenKind::Domain,
+        "BASE" => TokenKind::Base,
+        "SUBTYPE" => TokenKind::Subtype,
+        "CANONICAL" => TokenKind::Canonical,
+        "PREFERRED" => TokenKind::Preferred,
 
         // ── Modifiers ──
         "TEMPORARY" => TokenKind::Modifier(Modifier::Temporary),

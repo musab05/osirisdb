@@ -19,6 +19,7 @@ pub mod schema;
 pub mod index;
 pub mod view;
 pub mod sequence;
+pub mod type_statement;
 
 pub use parser::Parser;
 pub use parser_error::ParserError;

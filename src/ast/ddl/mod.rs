@@ -18,6 +18,7 @@ pub mod sequence;
 pub mod table_constraint;
 pub mod truncate;
 pub mod view;
+pub mod type_statement;
 
 pub use alter::*;
 pub use column_constraint::*;
@@ -35,3 +36,4 @@ pub use sequence::*;
 pub use table_constraint::*;
 pub use truncate::*;
 pub use view::*;
+pub use type_statement::*;

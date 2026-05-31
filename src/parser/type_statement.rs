@@ -1,0 +1,49 @@
+use crate::{
+    ast::{CreateTypeStmt, DataType, TypeKind},
+    parser::{Parser, ParserError},
+};
+
+impl<'a> Parser<'a> {
+    /// Parses a `CREATE TYPE` statement.
+    ///
+    /// This handles defining new data types, such as composite types,
+    /// `ENUM` types, `RANGE` types, or custom base types.
+    pub fn parse_create_type(&mut self) -> Result<CreateTypeStmt, ParserError> {
+        todo!()
+    }
+
+    /// Parses a `CREATE DOMAIN` statement.
+    ///
+    /// Domains are user-defined data types based on another underlying
+    /// base type, optionally including `CHECK` constraints and `DEFAULT` values.
+    pub fn parse_create_domain(&mut self) -> Result<CreateTypeStmt, ParserError> {
+        todo!()
+    }
+
+    // ── Dispatch ──
+
+    /// Parses the definition of an `ENUM` type (e.g., `AS ENUM ('val1', 'val2')`).
+    fn parse_type_enum(&mut self) -> Result<TypeKind, ParserError> {
+        todo!()
+    }
+
+    /// Parses the definition of a composite type (e.g., `AS (col_name data_type, ...)`).
+    fn parse_type_composite(&mut self) -> Result<TypeKind, ParserError> {
+        todo!()
+    }
+
+    /// Parses the definition of a `RANGE` type (e.g., `AS RANGE (SUBTYPE = int4)`).
+    fn parse_type_range(&mut self) -> Result<TypeKind, ParserError> {
+        todo!()
+    }
+
+    /// Parses the definition of a custom base type.
+    fn parse_type_base(&mut self) -> Result<TypeKind, ParserError> {
+        todo!()
+    }
+
+    /// Parses the domain-specific constraints and default values, given its base `DataType`.
+    fn parse_type_domain(&mut self, base_type: DataType) -> Result<TypeKind, ParserError> {
+        todo!()
+    }
+}

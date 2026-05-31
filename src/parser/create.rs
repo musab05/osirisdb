@@ -5,7 +5,30 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
-/// Executes parsing or lookup for the `parse_create` operation.
+    /// Parses a `CREATE` statement.
+    ///
+    /// Supported CREATE statements include:
+    ///
+    /// - `CREATE TABLE`
+    /// - `CREATE SCHEMA`
+    /// - `CREATE INDEX`
+    /// - `CREATE VIEW`
+    /// - `CREATE MATERIALIZED VIEW`
+    /// - `CREATE SEQUENCE`
+    ///
+    /// CREATE modifiers such as `OR REPLACE`, `TEMPORARY`,
+    /// `UNLOGGED`, `UNIQUE`, and `MATERIALIZED` are parsed
+    /// and applied when supported by the target object type.
+    ///
+    /// # Returns
+    ///
+    /// A [`Statement`] representing the parsed CREATE statement.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ParserError`] if the token following `CREATE`
+    /// does not correspond to a supported CREATE object type or
+    /// if any nested CREATE parser encounters invalid syntax.
     pub fn parse_create(&mut self) -> Result<Statement, ParserError> {
         self.consume(&TokenKind::Create);
 
@@ -43,7 +66,19 @@ impl<'a> Parser<'a> {
                     false,
                 )?))
             }
-            TokenKind::Sequence =>{self.advance(); Ok(Statement::CreateSequence(self.parse_create_sequence()?))}
+            TokenKind::Sequence => {
+                self.advance();
+                Ok(Statement::CreateSequence(self.parse_create_sequence()?))
+            }
+
+            TokenKind::Type => {
+                self.advance();
+                Ok(Statement::CreateType(self.parse_create_type()?))
+            }
+            TokenKind::Domain => {
+                self.advance();
+                Ok(Statement::CreateType(self.parse_create_domain()?))
+            }
             _ => Err(ParserError::new(
                 format!(
                     "Expected TABLE/SCHEMA/INDEX/VIEW after CREATE, got {:?}",
