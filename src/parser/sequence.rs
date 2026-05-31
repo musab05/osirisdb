@@ -1,5 +1,5 @@
 use crate::{
-    ast::{CreateSequenceStmt, DataType, ObjectName},
+    ast::{CreateSequenceStmt, ObjectName},
     lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
 };

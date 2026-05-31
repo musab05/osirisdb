@@ -352,35 +352,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_decimal_args(&mut self) -> Result<(Option<u8>, Option<u8>), ParserError> {
-        if !self.consume(&TokenKind::LParen) {
-            return Ok((None, None));
-        }
 
-        let prec = self.expect_int_literal()? as u8;
-        let scale = if self.consume(&TokenKind::Comma) {
-            Some(self.expect_int_literal()? as u8)
-        } else {
-            None
-        };
-
-        self.expect(TokenKind::RParen)?;
-        Ok((Some(prec), scale))
-    }
-
-    fn skip_time_zone(&mut self) {
-        if matches!(self.current_token(), TokenKind::With)
-            || matches!(self.current_token(), TokenKind::Ident if self.source[self.current_span().start..self.current_span().end].eq_ignore_ascii_case("without"))
-        {
-            self.advance();
-            if *self.current_token() == TokenKind::Time {
-                self.advance();
-                if *self.current_token() == TokenKind::Zone {
-                    self.advance();
-                }
-            }
-        }
-    }
 
     fn parse_column_list(&mut self) -> Result<Vec<String>, ParserError> {
         self.expect(TokenKind::LParen)?;

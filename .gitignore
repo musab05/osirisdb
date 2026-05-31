@@ -1,4 +1,17 @@
+# Build artifacts
 /target
-parser_ast_example.md
-parser_implementation_guide.md
-create_variants_plan.md
+**/*.rs.bk
+*.pdb
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local

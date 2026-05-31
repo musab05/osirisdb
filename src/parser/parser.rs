@@ -3,14 +3,22 @@ use crate::lexer::spanned_token::Span;
 use crate::lexer::token::{Token, TokenKind};
 use crate::parser::parser_error::ParserError;
 
+/// A recursive-descent and Pratt parser for SQL queries.
+///
+/// Implements token navigation helpers and lookahead caching (`current` and `peek`).
 pub struct Parser<'a> {
+    /// The original source SQL query string.
     pub source: &'a str,
+    /// The underlying lexical analyzer.
     pub lexer: Lexer<'a>,
+    /// The current lookahead token.
     pub current: Token,
+    /// The next lookahead token.
     pub peek: Token,
 }
 
 impl<'a> Parser<'a> {
+    /// Creates a new `Parser` for the given SQL string, pre-fetching the first two tokens.
     pub fn new(source: &'a str) -> Self {
         let mut lexer = Lexer::new(source);
         let current = lexer.next_token();
@@ -23,6 +31,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Advances the parser by one token, updating both `current` and `peek`.
     pub fn advance(&mut self) {
         self.current = self.peek.clone();
         self.peek = self.lexer.next_token();
@@ -40,6 +49,8 @@ impl<'a> Parser<'a> {
         &self.peek.kind
     }
 
+    /// Tries to consume the next token if it matches `expected`.
+    /// Returns `true` if consumed, otherwise `false`.
     pub fn consume(&mut self, expected: &TokenKind) -> bool {
         if self.current_token() == expected {
             self.advance();
@@ -57,6 +68,7 @@ impl<'a> Parser<'a> {
         self.peek_token() == token
     }
 
+    /// Consumes the next token if it matches `expected`, or returns a [`ParserError`].
     pub fn expect(&mut self, expected: TokenKind) -> Result<(), ParserError> {
         if self.current.kind == expected {
             self.advance();
@@ -69,6 +81,8 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Consumes the next token expecting it to be an identifier or quoted identifier,
+    /// returning its string contents. Strips quotes for quoted identifiers.
     pub fn expect_identifier(&mut self) -> Result<String, ParserError> {
         match self.current.kind {
             TokenKind::Ident => {

@@ -2,5 +2,15 @@
 name = "rust_sql"
 version = "0.1.0"
 edition = "2024"
+authors = ["Musab Khan <musab05ahs@gmail.com>"]
+description = "A hand-written SQL lexer and parser built from scratch in Rust, producing a fully typed Abstract Syntax Tree (AST)"
+license = "Apache-2.0"
+repository = "https://github.com/musab05/rust_sql"
+homepage = "https://github.com/musab05/rust_sql"
+documentation = "https://docs.rs/rust_sql"
+readme = "README.md"
+keywords = ["sql", "parser", "lexer", "ast", "database"]
+categories = ["parser-implementations", "database"]
+rust-version = "1.85"
 
 [dependencies]

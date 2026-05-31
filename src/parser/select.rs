@@ -352,22 +352,7 @@ impl<'a> Parser<'a> {
         })))
     }
 
-    // Check current token matches without consuming
-    fn current_is(&self, token: &TokenKind) -> bool {
-        self.current_token() == token
-    }
 
-    // Consume current token if it's an identifier, return the name
-    fn consume_ident(&mut self) -> Option<String> {
-        match self.current_token() {
-            TokenKind::Ident | TokenKind::QuotedIdent => {
-                let s = self.source[self.current_span().start..self.current_span().end].to_string();
-                self.advance();
-                Some(s)
-            }
-            _ => None,
-        }
-    }
 
     // Expect a sequence of tokens in order, fail if any doesn't match
     pub fn expect_keyword_sequence(&mut self, tokens: &[TokenKind]) -> Result<(), ParserError> {

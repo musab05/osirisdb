@@ -1,5 +1,9 @@
-﻿use crate::lexer::{TokenKind, lookup_keyword::lookup_keyword, spanned_token::Span, token::Token};
+use crate::lexer::{TokenKind, lookup_keyword::lookup_keyword, spanned_token::Span, token::Token};
 
+/// A lexical analyzer for tokenizing SQL queries.
+///
+/// Converts a raw SQL query string into a stream of tokens with positional metadata
+/// (line and column numbers) used by the parser.
 pub struct Lexer<'a> {
     input: &'a [u8],
     position: usize,
@@ -9,6 +13,7 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
+    /// Creates a new `Lexer` for the given SQL string.
     pub fn new(input: &'a str) -> Self {
         let bytes = input.as_bytes();
 
@@ -21,6 +26,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Returns the current (line, column) position of the lexer (1-based).
     pub fn current_position(&self) -> (usize, usize) {
         (self.line, self.column)
     }
@@ -566,6 +572,10 @@ impl<'a> Lexer<'a> {
         TokenKind::Eof
     }
 
+    /// Advances the lexer and returns the next spanned token.
+    ///
+    /// Skips all whitespace and comments automatically. Returns a token of kind
+    /// [`TokenKind::Eof`] when the end of the input is reached.
     pub fn next_token(&mut self) -> Token {
         let kind = loop {
             self.skip_whitespace();

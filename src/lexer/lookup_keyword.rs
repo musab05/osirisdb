@@ -1,5 +1,8 @@
 use crate::lexer::token::{Modifier, TokenKind};
 
+/// Maps an identifier string (case-insensitive) to its corresponding SQL keyword `TokenKind`.
+///
+/// Returns `TokenKind::Ident` if the identifier is not a reserved or contextual keyword.
 pub fn lookup_keyword(word: &str) -> TokenKind {
     match word.to_uppercase().as_str() {
         // ── DML ──
