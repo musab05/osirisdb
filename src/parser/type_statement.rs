@@ -1,6 +1,5 @@
 use crate::{
-    ast::{CreateTypeStmt, DataType, TypeKind},
-    parser::{Parser, ParserError},
+    ast::{CreateTypeStmt, DataType, ObjectName, TypeKind}, lexer::TokenKind, parser::{Parser, ParserError}
 };
 
 impl<'a> Parser<'a> {
@@ -9,7 +8,19 @@ impl<'a> Parser<'a> {
     /// This handles defining new data types, such as composite types,
     /// `ENUM` types, `RANGE` types, or custom base types.
     pub fn parse_create_type(&mut self) -> Result<CreateTypeStmt, ParserError> {
-        todo!()
+        let name = ObjectName(self.parse_qualified_name()?);
+
+    self.expect(TokenKind::As)?;
+
+    let kind = match self.current_token().clone() {
+        TokenKind::Enum       => { self.advance(); self.parse_type_enum()? }
+        TokenKind::Range      => { self.advance(); self.parse_type_range()? }
+        TokenKind::Base       => { self.advance(); self.parse_type_base()? }
+        TokenKind::LParen     => self.parse_type_composite()?,  // no keyword, just (
+        _ => return Err(...)
+    };
+
+    Ok(CreateTypeStmt { name, kind })
     }
 
     /// Parses a `CREATE DOMAIN` statement.
