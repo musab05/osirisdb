@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `CREATE SEQUENCE` (AS type, START WITH, INCREMENT BY, bounds, cache, cycle, ownership).
   - `DROP TABLE` (IF EXISTS, multiple targets, cascade/restrict behavior).
   - `TRUNCATE TABLE` (multiple tables, cascade/restrict, restart/continue identity).
+  - `CREATE TYPE` (ENUM, composite/row types, RANGE, custom BASE types, and DOMAIN definitions with validation constraints and defaults).
 - **PostgreSQL DML / Query Support**:
   - `SELECT` queries with CTE (WITH), joins, wildcards, distinct, aggregates (group by/having), sorting (order by), paging (limit/offset/fetch), and set operations (UNION/INTERSECT/EXCEPT).
   - SQL literal value tracking.
