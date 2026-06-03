@@ -38,6 +38,8 @@ pub enum Statement {
     CreateType(CreateTypeStmt),
     /// A `CREATE DATABASE` DDL statement
     CreateDataBase(CreateDatabaseStmt),
+    /// A `CREATE ROLE/USER` DDL statement
+    CreateRole(CreateRoleStmt),
     /// A transaction control statement to start a new transaction block (`BEGIN` / `BEGIN TRANSACTION`).
     Begin,
     /// A transaction control statement to commit the current transaction block (`COMMIT` / `END`).
