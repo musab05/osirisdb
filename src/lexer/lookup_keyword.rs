@@ -20,6 +20,10 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
 
         // ── DDL ──
         "CREATE" => TokenKind::Create,
+        "DATABASE" => TokenKind::Database,
+        "CONNECTION" => TokenKind::Connection,
+        "ENCODING" => TokenKind::Encoding,
+        "LOCALE" => TokenKind::Locale,
         "TABLE" => TokenKind::Table,
         "TABLES" => TokenKind::Tables,
         "SCHEMA" => TokenKind::Schema,

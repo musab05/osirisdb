@@ -36,6 +36,8 @@ pub enum Statement {
     DropView(DropViewStmt),
     /// A `CREATE TYPE` DDL statement
     CreateType(CreateTypeStmt),
+    /// A `CREATE DATABASE` DDL statement
+    CreateDataBase(CreateDatabaseStmt),
     /// A transaction control statement to start a new transaction block (`BEGIN` / `BEGIN TRANSACTION`).
     Begin,
     /// A transaction control statement to commit the current transaction block (`COMMIT` / `END`).

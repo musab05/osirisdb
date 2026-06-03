@@ -45,6 +45,10 @@ pub enum TokenKind {
     Merge,
     // ── DDL (Data Definition Language) ──
     Create,
+    Database,
+    Connection,
+    Encoding,
+    Locale,
     Table,
     Tables,
     Schema,

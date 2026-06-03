@@ -79,6 +79,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Statement::CreateType(self.parse_create_domain()?))
             }
+            TokenKind::Database => {
+                self.advance();
+                Ok(Statement::CreateDataBase(self.parse_create_database()?))
+            }
             _ => Err(ParserError::new(
                 format!(
                     "Expected TABLE/SCHEMA/INDEX/VIEW after CREATE, got {:?}",

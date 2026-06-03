@@ -19,6 +19,7 @@ pub mod table_constraint;
 pub mod truncate;
 pub mod view;
 pub mod type_statement;
+pub mod database;
 
 pub use alter::*;
 pub use column_constraint::*;
@@ -37,3 +38,4 @@ pub use table_constraint::*;
 pub use truncate::*;
 pub use view::*;
 pub use type_statement::*;
+pub use database::*;

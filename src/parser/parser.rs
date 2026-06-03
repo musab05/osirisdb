@@ -37,17 +37,17 @@ impl<'a> Parser<'a> {
         self.peek = self.lexer.next_token();
     }
 
-/// Executes parsing or lookup for the `current_token` operation.
+    /// Executes parsing or lookup for the `current_token` operation.
     pub fn current_token(&self) -> &TokenKind {
         &self.current.kind
     }
 
-/// Executes parsing or lookup for the `current_span` operation.
+    /// Executes parsing or lookup for the `current_span` operation.
     pub fn current_span(&self) -> &Span {
         &self.current.span
     }
 
-/// Executes parsing or lookup for the `peek_token` operation.
+    /// Executes parsing or lookup for the `peek_token` operation.
     pub fn peek_token(&self) -> &TokenKind {
         &self.peek.kind
     }
@@ -63,12 +63,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-/// Executes parsing or lookup for the `is_at_end` operation.
+    /// Executes parsing or lookup for the `is_at_end` operation.
     pub fn is_at_end(&self) -> bool {
         *self.current_token() == TokenKind::Eof
     }
 
-/// Executes parsing or lookup for the `peek_is` operation.
+    /// Executes parsing or lookup for the `peek_is` operation.
     pub fn peek_is(&self, token: &TokenKind) -> bool {
         self.peek_token() == token
     }
@@ -103,6 +103,23 @@ impl<'a> Parser<'a> {
             }
             _ => Err(ParserError::new(
                 format!("Expected identifier, found {:?}", self.current.kind),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    /// Expects the current token to be a string literal and returns its contents.
+    /// Strips the surrounding quotes from the span.
+    pub fn expect_string_literal(&mut self) -> Result<String, ParserError> {
+        match self.current_token() {
+            TokenKind::StringLit => {
+                let s =
+                    self.source[self.current.span.start + 1..self.current.span.end - 1].to_string();
+                self.advance();
+                Ok(s)
+            }
+            _ => Err(ParserError::new(
+                format!("Expected string literal, found {:?}", self.current_token()),
                 self.current.span.clone(),
             )),
         }
