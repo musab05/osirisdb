@@ -48,6 +48,16 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         "STORAGE" => TokenKind::Storage,
         "OPTIONS" => TokenKind::Options,
         "DATA" => TokenKind::Data,
+        "ROLE" => TokenKind::Role,
+        "USER" => TokenKind::User,
+        "LOGIN" => TokenKind::Login,
+        "PASSWORD" => TokenKind::Password,
+        "SUPERUSER" => TokenKind::Superuser,
+        "REPLICATION" => TokenKind::Replication,
+        "VALID" => TokenKind::Valid,
+        "UNTIL" => TokenKind::Until,
+        "CREATEDB" => TokenKind::Createdb,
+        "CREATEROLE" => TokenKind::Createrole,
 
         // ── Constraints & References ──
         "CONSTRAINT" => TokenKind::Constraint,
