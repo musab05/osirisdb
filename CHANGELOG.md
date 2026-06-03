@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-05-31
 
 ### Added
+
 - **Hand-written Lexer**: Implemented byte-based tokenizer with standard SQL keywords and nested block comment support.
 - **Recursive-Descent Parser**: Modular parser utilizing Rust extension traits.
 - **Pratt Operator Precedence Parser**: Successfully parses complex SQL expressions with correct operator precedence.
@@ -22,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `TRUNCATE TABLE` (multiple tables, cascade/restrict, restart/continue identity).
   - `CREATE TYPE` (ENUM, composite/row types, RANGE, custom BASE types, and DOMAIN definitions with validation constraints and defaults).
   - `CREATE DATABASE` (IF NOT EXISTS, owner, encoding, locale, tablespace, connection limit).
+  - `CREATE ROLE/USER` (IF NOT EXISTS, LOGIN, PASSWORD, SUPERUSER, CREATEDB, CREATEROLE, INHERIT, REPLICATION, CONNECTION LIMIT, VALID UNTIL, IN ROLE, ROLE).
 - **PostgreSQL DML / Query Support**:
   - `SELECT` queries with CTE (WITH), joins, wildcards, distinct, aggregates (group by/having), sorting (order by), paging (limit/offset/fetch), and set operations (UNION/INTERSECT/EXCEPT).
   - SQL literal value tracking.
