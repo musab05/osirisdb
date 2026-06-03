@@ -21,6 +21,7 @@ pub mod view;
 pub mod sequence;
 pub mod type_statement;
 pub mod database;
+pub mod role;
 
 pub use parser::Parser;
 pub use parser_error::ParserError;

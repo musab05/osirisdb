@@ -83,6 +83,14 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Statement::CreateDataBase(self.parse_create_database()?))
             }
+            TokenKind::Role => {
+                self.advance();
+                Ok(Statement::CreateRole(self.parse_create_role(false)?))
+            }
+            TokenKind::User => {
+                self.advance();
+                Ok(Statement::CreateRole(self.parse_create_role(true)?))
+            }
             _ => Err(ParserError::new(
                 format!(
                     "Expected TABLE/SCHEMA/INDEX/VIEW after CREATE, got {:?}",
