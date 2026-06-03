@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `DROP TABLE` (IF EXISTS, multiple targets, cascade/restrict behavior).
   - `TRUNCATE TABLE` (multiple tables, cascade/restrict, restart/continue identity).
   - `CREATE TYPE` (ENUM, composite/row types, RANGE, custom BASE types, and DOMAIN definitions with validation constraints and defaults).
+  - `CREATE DATABASE` (IF NOT EXISTS, owner, encoding, locale, tablespace, connection limit).
 - **PostgreSQL DML / Query Support**:
   - `SELECT` queries with CTE (WITH), joins, wildcards, distinct, aggregates (group by/having), sorting (order by), paging (limit/offset/fetch), and set operations (UNION/INTERSECT/EXCEPT).
   - SQL literal value tracking.
