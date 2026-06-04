@@ -10,3 +10,4 @@ pub mod table;
 pub mod truncate;
 pub mod type_statement;
 pub mod view;
+pub mod tablespace;

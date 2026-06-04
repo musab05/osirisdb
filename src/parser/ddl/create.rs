@@ -91,6 +91,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Statement::CreateRole(self.parse_create_role(true)?))
             }
+            TokenKind::Tablespace => {
+                self.advance();
+                Ok(Statement::CreateTablespace(self.parse_create_tablespace()?))
+            }
             _ => Err(ParserError::new(
                 format!(
                     "Expected TABLE/SCHEMA/INDEX/VIEW after CREATE, got {:?}",
