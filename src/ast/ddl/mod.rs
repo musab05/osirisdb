@@ -22,7 +22,7 @@ pub mod type_statement;
 pub mod database;
 pub mod role;
 pub mod tablespace;
-pub mod extenstion;
+pub mod extension;
 
 pub use alter::*;
 pub use column_constraint::*;
@@ -44,4 +44,4 @@ pub use type_statement::*;
 pub use database::*;
 pub use role::*;
 pub use tablespace::*;
-pub use extenstion::*;
+pub use extension::*;

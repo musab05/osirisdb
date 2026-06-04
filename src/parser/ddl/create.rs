@@ -95,6 +95,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Statement::CreateTablespace(self.parse_create_tablespace()?))
             }
+            TokenKind::Extension => {
+                self.advance();
+                Ok(Statement::CreateExtension(self.parse_create_extension()?))
+            }
             _ => Err(ParserError::new(
                 format!(
                     "Expected TABLE/SCHEMA/INDEX/VIEW after CREATE, got {:?}",
