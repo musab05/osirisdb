@@ -164,6 +164,7 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         "LIST" => TokenKind::List,
         "HASH" => TokenKind::Hash,
         "TABLESPACE" => TokenKind::Tablespace,
+        "LOCATION" => TokenKind::Location,
         "COLLATE" => TokenKind::Collate,
         "GENERATED" => TokenKind::Generated,
         "ALWAYS" => TokenKind::Always,

@@ -180,6 +180,7 @@ pub enum TokenKind {
     List,
     Hash,
     Tablespace,
+    Location,
     Collate,
     Generated,
     Always,
