@@ -89,6 +89,8 @@ pub enum TokenKind {
     CreateRole,
     NoCreateRole,
     NoInherit,
+    Extension,
+    Version,
     // ── Constraints & Referential Integrity ──
     Constraint,
     Primary,

@@ -64,6 +64,8 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         "CREATEROLE" => TokenKind::CreateRole,
         "NOCREATEROLE" => TokenKind::NoCreateRole,
         "NOINHERIT" => TokenKind::NoInherit,
+        "EXTENSION" => TokenKind::Extension,
+        "VERSION" => TokenKind::Version,
 
         // ── Constraints & References ──
         "CONSTRAINT" => TokenKind::Constraint,
