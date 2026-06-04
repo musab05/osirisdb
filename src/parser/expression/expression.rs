@@ -2,14 +2,14 @@ use crate::{
     ast::{BinOpKind, DataType, DropBehavior, Expr, SqlOption, UnaryOpKind, Value},
     lexer::token::TokenKind,
     parser::{
-        binding_power::{infix_binding_power, prefix_binding_power},
+        expression::binding_power::{infix_binding_power, prefix_binding_power},
         parser::Parser,
         parser_error::ParserError,
     },
 };
 
 impl<'a> Parser<'a> {
-/// Executes parsing or lookup for the `parse_expr_lists` operation.
+    /// Executes parsing or lookup for the `parse_expr_lists` operation.
     /// Parses a comma-separated list of SQL expressions (e.g. `1, a + b, 'hello'`).
     pub fn parse_expr_lists(&mut self) -> Result<Vec<Expr>, ParserError> {
         let mut exprs = vec![];
@@ -24,7 +24,7 @@ impl<'a> Parser<'a> {
         Ok(exprs)
     }
 
-/// Executes parsing or lookup for the `parse_expr` operation.
+    /// Executes parsing or lookup for the `parse_expr` operation.
     /// Parses an SQL expression starting at the current token position with a binding power of 0.
     pub fn parse_expr(&mut self) -> Result<Expr, ParserError> {
         self.parser_expr_bp(0)
@@ -297,7 +297,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-/// Executes parsing or lookup for the `parse_data_type` operation.
+    /// Executes parsing or lookup for the `parse_data_type` operation.
     /// Parses a SQL data type specification, including array brackets and parameter lengths (e.g., `VARCHAR(255)`, `INT[]`).
     pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
         let mut base_type = match self.current_token().clone() {
@@ -408,7 +408,7 @@ impl<'a> Parser<'a> {
     }
 
     // Helper — expects current token to be an integer literal
-/// Executes parsing or lookup for the `expect_int_literal` operation.
+    /// Executes parsing or lookup for the `expect_int_literal` operation.
     /// Asserts the current token is a non-negative integer literal and consumes it, returning the value.
     pub fn expect_int_literal(&mut self) -> Result<u64, ParserError> {
         match self.current_token().clone() {
@@ -423,7 +423,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-/// Executes parsing or lookup for the `expect_int` operation.
+    /// Executes parsing or lookup for the `expect_int` operation.
     /// Asserts the current token is a signed integer literal (allowing an optional leading minus sign) and consumes it.
     pub fn expect_int(&mut self) -> Result<i64, ParserError> {
         match self.current_token().clone() {
@@ -515,7 +515,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-/// Executes parsing or lookup for the `parse_qualified_name` operation.
+    /// Executes parsing or lookup for the `parse_qualified_name` operation.
     /// Parses a dot-separated object path (e.g., `public.users` or `database.schema.table`).
     pub fn parse_qualified_name(&mut self) -> Result<Vec<String>, ParserError> {
         let mut parts = vec![self.expect_identifier()?];
@@ -526,7 +526,7 @@ impl<'a> Parser<'a> {
         Ok(parts)
     }
 
-/// Executes parsing or lookup for the `parse_drop_behaviour` operation.
+    /// Executes parsing or lookup for the `parse_drop_behaviour` operation.
     /// Parses optional cascade/restrict flags (`CASCADE` / `RESTRICT`).
     pub fn parse_drop_behaviour(&mut self) -> Option<DropBehavior> {
         match self.current_token() {
@@ -542,7 +542,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-/// Executes parsing or lookup for the `parse_options_list` operation.
+    /// Executes parsing or lookup for the `parse_options_list` operation.
     /// Parses storage parameters list in parentheses (e.g. `(fillfactor = 70, autovacuum_enabled = true)`).
     pub fn parse_options_list(&mut self) -> Result<Vec<SqlOption>, ParserError> {
         self.expect(TokenKind::LParen)?;
@@ -560,7 +560,7 @@ impl<'a> Parser<'a> {
         Ok(options)
     }
 
-/// Executes parsing or lookup for the `parse_if_not_exist` operation.
+    /// Executes parsing or lookup for the `parse_if_not_exist` operation.
     /// Parses the optional `IF NOT EXISTS` DDL modifier.
     pub fn parse_if_not_exist(&mut self) -> Result<bool, ParserError> {
         if *self.current_token() == TokenKind::If {

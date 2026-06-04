@@ -1,7 +1,7 @@
 use crate::{
     ast::Statement,
     lexer::{Modifier, TokenKind},
-    parser::{modifiers::CreateModifiers, parser::Parser, parser_error::ParserError},
+    parser::{expression::modifiers::CreateModifiers, parser::Parser, parser_error::ParserError},
 };
 
 impl<'a> Parser<'a> {

@@ -1,5 +1,5 @@
 use crate::{
-    ast::{BaseTypeDef, CompositeField, CreateTypeStmt, DataType, DomainConstraint, DomainDef, ObjectName, RangeTypeDef, Statement::CreateType, TypeKind},
+    ast::{BaseTypeDef, CompositeField, CreateTypeStmt, DataType, DomainConstraint, DomainDef, ObjectName, RangeTypeDef, TypeKind},
     lexer::TokenKind,
     parser::{Parser, ParserError},
 };

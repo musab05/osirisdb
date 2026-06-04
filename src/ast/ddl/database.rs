@@ -1,4 +1,3 @@
-use crate::ast::*;
 
 /// Represents a `CREATE DATABASE` statement.
 ///
