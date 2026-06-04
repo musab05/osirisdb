@@ -42,6 +42,8 @@ pub enum Statement {
     CreateRole(CreateRoleStmt),
     /// A `CREATE TABLESPACE` DDL statement
     CreateTablespace(CreateTablespaceStmt),
+    /// A `CREATE EXTENSION` DDL statement
+    CreateExtension(CreateExtensionStmt),
     /// A transaction control statement to start a new transaction block (`BEGIN` / `BEGIN TRANSACTION`).
     Begin,
     /// A transaction control statement to commit the current transaction block (`COMMIT` / `END`).
