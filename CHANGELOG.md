@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `CREATE ROLE/USER` (IF NOT EXISTS, LOGIN, PASSWORD, SUPERUSER, CREATEDB, CREATEROLE, INHERIT, REPLICATION, CONNECTION LIMIT, VALID UNTIL, IN ROLE, ROLE).
   - `CREATE TABLESPACE` (OWNER, LOCATION, IF NOT EXISTS).
   - `CREATE EXTENSION` (IF NOT EXISTS, SCHEMA, VERSION, CASCADE).
+  - `CREATE TRIGGER` (CONSTRAINT, BEFORE/AFTER/INSTEAD OF timing, INSERT/UPDATE/DELETE/TRUNCATE events, REFERENCING transition tables, FOR EACH ROW/STATEMENT level, conditional WHEN clause, execute function/procedure, and custom extensions: PRIORITY, TAGS, ENABLED/DISABLED).
 - **PostgreSQL DML / Query Support**:
   - `SELECT` queries with CTE (WITH), joins, wildcards, distinct, aggregates (group by/having), sorting (order by), paging (limit/offset/fetch), and set operations (UNION/INTERSECT/EXCEPT).
   - SQL literal value tracking.
