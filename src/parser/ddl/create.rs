@@ -99,6 +99,10 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(Statement::CreateExtension(self.parse_create_extension()?))
             }
+            TokenKind::Trigger => {
+                self.advance();
+                Ok(Statement::CreateTrigger(self.parse_create_trigger(m.or_replace)?))
+            }
             _ => Err(ParserError::new(
                 format!(
                     "Expected TABLE/SCHEMA/INDEX/VIEW after CREATE, got {:?}",

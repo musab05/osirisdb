@@ -248,6 +248,9 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         "REFERENCING" => TokenKind::Referencing,
         "OLD"         => TokenKind::Old,
         "NEW"         => TokenKind::New,
+        "OF"          => TokenKind::Of,
+        "STATEMENT"   => TokenKind::Statement,
+        "FUNCTION"    => TokenKind::Function,
 
         // ── Trigger Extensions ──
         "PRIORITY" => TokenKind::Priority,

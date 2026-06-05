@@ -261,6 +261,7 @@ pub enum TokenKind {
     Before,
     After,
     Instead,
+    Of,
     InsteadOf,   // two words — handle as Ident "INSTEAD" + consume "OF"
     Each,
     Execute,
@@ -272,6 +273,8 @@ pub enum TokenKind {
     Referencing,
     Old,
     New,
+    Statement,
+    Function,
     // ── Trigger Extensions ──
     Priority,   // PRIORITY n
     Tags,       // TAGS ('tag1', ...)
