@@ -23,6 +23,7 @@ pub mod database;
 pub mod role;
 pub mod tablespace;
 pub mod extension;
+pub mod trigger;
 
 pub use alter::*;
 pub use column_constraint::*;
@@ -45,3 +46,4 @@ pub use database::*;
 pub use role::*;
 pub use tablespace::*;
 pub use extension::*;
+pub use trigger::*;
