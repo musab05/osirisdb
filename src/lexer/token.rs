@@ -256,6 +256,27 @@ pub enum TokenKind {
     Subtype,
     Canonical,
     Preferred,
+    // ── Triggers ──
+    Trigger,
+    Before,
+    After,
+    Instead,
+    InsteadOf,   // two words — handle as Ident "INSTEAD" + consume "OF"
+    Each,
+    Execute,
+    Procedure,
+    Deferrable,
+    Initially,
+    Deferred,
+    Immediate,
+    Referencing,
+    Old,
+    New,
+    // ── Trigger Extensions ──
+    Priority,   // PRIORITY n
+    Tags,       // TAGS ('tag1', ...)
+    Enabled,    // ENABLED
+    Disabled,   // DISABLED
     // ── DDL Modifiers ──
     /// A DDL modifier keyword (e.g. `TEMPORARY`, `UNLOGGED`). See [`Modifier`].
     Modifier(Modifier),

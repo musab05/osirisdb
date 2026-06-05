@@ -233,6 +233,28 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         "CANONICAL" => TokenKind::Canonical,
         "PREFERRED" => TokenKind::Preferred,
 
+        // ── Triggers ──
+        "TRIGGER"     => TokenKind::Trigger,
+        "BEFORE"      => TokenKind::Before,
+        "AFTER"       => TokenKind::After,
+        "INSTEAD"     => TokenKind::Instead,
+        "EACH"        => TokenKind::Each,
+        "EXECUTE"     => TokenKind::Execute,
+        "PROCEDURE"   => TokenKind::Procedure,
+        "DEFERRABLE"  => TokenKind::Deferrable,
+        "INITIALLY"   => TokenKind::Initially,
+        "DEFERRED"    => TokenKind::Deferred,
+        "IMMEDIATE"   => TokenKind::Immediate,
+        "REFERENCING" => TokenKind::Referencing,
+        "OLD"         => TokenKind::Old,
+        "NEW"         => TokenKind::New,
+
+        // ── Trigger Extensions ──
+        "PRIORITY" => TokenKind::Priority,
+        "TAGS"     => TokenKind::Tags,
+        "ENABLED"  => TokenKind::Enabled,
+        "DISABLED" => TokenKind::Disabled,
+
         // ── Modifiers ──
         "TEMPORARY" => TokenKind::Modifier(Modifier::Temporary),
         "TEMP" => TokenKind::Modifier(Modifier::Temp),
