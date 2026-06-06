@@ -301,7 +301,26 @@ impl<'a> Parser<'a> {
     /// Parses a SQL data type specification, including array brackets and parameter lengths (e.g., `VARCHAR(255)`, `INT[]`).
     pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
         let mut base_type = match self.current_token().clone() {
-            TokenKind::Ident => {
+            TokenKind::Ident
+            | TokenKind::Int
+            | TokenKind::Integer
+            | TokenKind::Bigint
+            | TokenKind::Smallint
+            | TokenKind::Boolean
+            | TokenKind::Text
+            | TokenKind::Varchar
+            | TokenKind::Char
+            | TokenKind::Real
+            | TokenKind::Double
+            | TokenKind::Numeric
+            | TokenKind::Decimal
+            | TokenKind::Date
+            | TokenKind::Timestamp
+            | TokenKind::Interval
+            | TokenKind::Json
+            | TokenKind::Jsonb
+            | TokenKind::Uuid
+            | TokenKind::Bytea => {
                 let name =
                     self.source[self.current_span().start..self.current_span().end].to_string();
                 self.advance();
@@ -446,6 +465,41 @@ impl<'a> Parser<'a> {
             }
             _ => Err(ParserError::new(
                 format!("Expected integer, got {:?}", self.current_token()),
+                self.current.span.clone(),
+            )),
+        }
+    }
+
+    /// Expects a floating point or integer number, optionally signed, and returns it as f64.
+    pub fn expect_float(&mut self) -> Result<f64, ParserError> {
+        match self.current_token().clone() {
+            TokenKind::FloatLit(f) => {
+                self.advance();
+                Ok(f)
+            }
+            TokenKind::IntLit(n) => {
+                self.advance();
+                Ok(n as f64)
+            }
+            TokenKind::Minus => {
+                self.advance();
+                match self.current_token().clone() {
+                    TokenKind::FloatLit(f) => {
+                        self.advance();
+                        Ok(-f)
+                    }
+                    TokenKind::IntLit(n) => {
+                        self.advance();
+                        Ok(-(n as f64))
+                    }
+                    _ => Err(ParserError::new(
+                        "Expected number after -",
+                        self.current.span.clone(),
+                    )),
+                }
+            }
+            _ => Err(ParserError::new(
+                format!("Expected number, got {:?}", self.current_token()),
                 self.current.span.clone(),
             )),
         }

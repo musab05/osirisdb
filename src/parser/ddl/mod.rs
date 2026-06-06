@@ -13,3 +13,4 @@ pub mod view;
 pub mod tablespace;
 pub mod extnsion;
 pub mod trigger;
+pub mod function;

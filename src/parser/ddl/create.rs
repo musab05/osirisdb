@@ -101,7 +101,15 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Trigger => {
                 self.advance();
-                Ok(Statement::CreateTrigger(self.parse_create_trigger(m.or_replace)?))
+                Ok(Statement::CreateTrigger(
+                    self.parse_create_trigger(m.or_replace)?,
+                ))
+            }
+            TokenKind::Function => {
+                self.advance();
+                Ok(Statement::CreateFunction(
+                    self.parse_create_function(m.or_replace)?,
+                ))
             }
             _ => Err(ParserError::new(
                 format!(

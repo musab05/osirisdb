@@ -538,27 +538,89 @@ impl<'a> Lexer<'a> {
                 }
 
                 b'$' => {
-                    self.advance();
-
-                    let mut digits = String::new();
-
-                    while let Some(ch) = self.current_char {
-                        if ch.is_ascii_digit() {
-                            digits.push(ch as char);
+                    // Check if it's a dollar-quoted string lit ($$ or $tag$) or a parameter ($1, $2, etc.)
+                    if self.peek() == Some(b'$') {
+                        // Empty tag: $$
+                        self.advance(); // consume first '$'
+                        self.advance(); // consume second '$'
+                        // Now scan for the closing '$$'
+                        while let Some(ch) = self.current_char {
+                            if ch == b'$' && self.peek() == Some(b'$') {
+                                self.advance(); // consume closing first '$'
+                                self.advance(); // consume closing second '$'
+                                return TokenKind::DollarStringLit;
+                            }
                             self.advance();
-                        } else {
-                            break;
                         }
+                        return TokenKind::UnterminatedString;
+                    } else if self.peek().map_or(false, |c| c.is_ascii_alphabetic() || c == b'_') {
+                        // Tagged dollar-quoted string: e.g. $tag$
+                        self.advance(); // consume first '$'
+                        let mut tag = vec![];
+                        while let Some(ch) = self.current_char {
+                            if ch == b'$' {
+                                break;
+                            }
+                            if ch.is_ascii_alphanumeric() || ch == b'_' {
+                                tag.push(ch);
+                                self.advance();
+                            } else {
+                                // Not a valid tag character. Fallback to parameter check or illegal.
+                                return TokenKind::Illegal(b'$');
+                            }
+                        }
+                        if self.current_char != Some(b'$') {
+                            return TokenKind::UnterminatedString;
+                        }
+                        self.advance(); // consume second '$' of start tag
+                        
+                        // Now search for the closing tag: $ + tag + $
+                        let tag_len = tag.len();
+                        loop {
+                            if self.current_char.is_none() {
+                                return TokenKind::UnterminatedString;
+                            }
+                            if self.current_char == Some(b'$') {
+                                // Check if the following characters match tag + $
+                                let mut matches = true;
+                                for i in 0..tag_len {
+                                    if self.input.get(self.position + 1 + i).copied() != Some(tag[i]) {
+                                        matches = false;
+                                        break;
+                                    }
+                                }
+                                if matches && self.input.get(self.position + 1 + tag_len).copied() == Some(b'$') {
+                                    // Found the closing tag!
+                                    self.advance(); // consume '$'
+                                    for _ in 0..tag_len {
+                                        self.advance();
+                                    }
+                                    self.advance(); // consume closing '$'
+                                    return TokenKind::DollarStringLit;
+                                }
+                            }
+                            self.advance();
+                        }
+                    } else {
+                        // Parameter: $1, $2, etc.
+                        self.advance(); // consume '$'
+                        let mut digits = String::new();
+                        while let Some(ch) = self.current_char {
+                            if ch.is_ascii_digit() {
+                                digits.push(ch as char);
+                                self.advance();
+                            } else {
+                                break;
+                            }
+                        }
+                        if digits.is_empty() {
+                            return TokenKind::Illegal(b'$');
+                        }
+                        return match digits.parse::<u32>() {
+                            Ok(n) => TokenKind::Parameter(n),
+                            Err(_) => TokenKind::Illegal(b'$'),
+                        };
                     }
-
-                    if digits.is_empty() {
-                        return TokenKind::Illegal(b'$');
-                    }
-
-                    return match digits.parse::<u32>() {
-                        Ok(n) => TokenKind::Parameter(n),
-                        Err(_) => TokenKind::Illegal(b'$'),
-                    };
                 }
 
                 // unknown character
