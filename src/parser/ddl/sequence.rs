@@ -106,7 +106,7 @@ impl<'a> Parser<'a> {
                         while self.consume(&TokenKind::Dot) {
                             parts.push(self.expect_identifier()?);
                         }
-                        owned_by = Some(parts);
+                        owned_by = Some(ObjectName(parts));
                     }
                 }
 

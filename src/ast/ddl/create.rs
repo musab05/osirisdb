@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::common::symbol::Symbol;
 
 /// Represents a DDL statement to construct a new table (`CREATE TABLE`).
 ///
@@ -15,7 +16,7 @@ pub struct CreateStmt {
     pub unlogged: bool,
 
     /// The qualified name of the table to create.
-    pub name: Vec<String>,
+    pub name: ObjectName,
 
     /// The list of column definitions specifying names, data types, and column constraints.
     pub columns: Vec<ColumnDef>,
@@ -23,7 +24,7 @@ pub struct CreateStmt {
     pub constraints: Vec<TableConstraint>,
 
     /// A list of parent tables this table inherits columns from (PostgreSQL `INHERITS`).
-    pub inherits: Vec<Vec<String>>,
+    pub inherits: Vec<ObjectName>,
     /// Table partitioning specification (PostgreSQL `PARTITION BY`).
     pub partitions: Vec<PartitionClause>,
 
@@ -31,7 +32,7 @@ pub struct CreateStmt {
     pub with_options: Vec<SqlOption>,
 
     /// Optional target storage tablespace name (PostgreSQL `TABLESPACE name`).
-    pub table_space: Option<String>,
+    pub table_space: Option<Symbol>,
 
     /// Action defining what happens to temporary tables when a transaction commits (`ON COMMIT`).
     pub on_commit: Option<OnCommit>,

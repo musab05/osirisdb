@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::common::symbol::Symbol;
 
 /// Represents a full `CREATE FUNCTION` statement.
 ///
@@ -84,7 +85,7 @@ pub struct CreateFunctionStmt {
     /// ```sql
     /// RAISES division_by_zero, null_value_not_allowed
     /// ```
-    pub raises: Vec<String>,
+    pub raises: Vec<Symbol>,
 
     /// PARALLEL UNSAFE | RESTRICTED | SAFE
     pub parallel: FunctionParallel,
@@ -106,7 +107,7 @@ pub struct FunctionParam {
     pub mode: ParamMode,
 
     /// Parameter name — optional in PostgreSQL
-    pub name: Option<String>,
+    pub name: Option<Symbol>,
 
     /// Parameter data type — required
     pub data_type: DataType,
@@ -174,7 +175,7 @@ pub enum FunctionLanguage {
     /// PL/Tcl — Tcl via extension
     PlTcl,
     /// Any other language e.g. plrust, plv8, plluau
-    Custom(String),
+    Custom(Symbol),
 }
 
 /// The function body — how the code is provided.
@@ -185,7 +186,7 @@ pub enum FunctionLanguage {
 pub enum FunctionBody {
     /// PostgreSQL dollar-quoted body: `AS $$ ... $$`
     /// Stored as raw string, interpreter handles parsing.
-    DollarQuoted(String),
+    DollarQuoted(Symbol),
 
     /// Our extension — clean BEGIN...END syntax.
     /// No dollar quoting needed, consistent with trigger syntax.
@@ -195,13 +196,13 @@ pub enum FunctionBody {
     ///     RETURN a + b;
     /// END;
     /// ```
-    BeginEnd(String),
+    BeginEnd(Symbol),
 
     /// Single SQL expression body — for simple SQL functions.
     /// ```sql
     /// AS $$ SELECT a + b $$
     /// ```
-    SqlExpr(String),
+    SqlExpr(Symbol),
 }
 
 /// How the function behaves with respect to query optimization.

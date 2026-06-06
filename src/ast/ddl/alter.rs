@@ -1,4 +1,4 @@
-use crate::ast::*;
+use crate::{ast::*, common::symbol::Symbol};
 
 /// Represents a DDL statement to modify an existing table schema or properties (`ALTER TABLE`).
 #[derive(Debug, Clone, PartialEq)]
@@ -26,23 +26,23 @@ pub enum AlterTableAction {
         /// If `true`, does nothing if the column does not exist.
         if_exist: bool,
         /// The column name.
-        name: String,
+        name: Symbol,
         /// Optional cascade/restrict behavior for dropping associated dependencies.
         behaviour: Option<DropBehavior>,
     },
     /// Modify an existing column's definition (e.g. data type, default value).
     AlterColumn {
         /// The name of the column to alter.
-        name: String,
+        name: Symbol,
         /// The modification action to perform on this column.
         action: AlterColumnAction,
     },
     /// Rename a column (`RENAME COLUMN old_name TO new_name`).
     RenameColumn {
         /// The current name of the column.
-        old_name: String,
+        old_name: Symbol,
         /// The new name for the column.
-        new_name: String,
+        new_name: Symbol,
     },
 
     /// Add a new table-level constraint (`ADD CONSTRAINT constraint_def`).
@@ -52,30 +52,30 @@ pub enum AlterTableAction {
         /// If `true`, does nothing if the constraint does not exist.
         if_exist: bool,
         /// The constraint name.
-        name: String,
+        name: Symbol,
         /// Optional cascade/restrict behavior for dropping dependencies.
         behaviour: Option<DropBehavior>,
     },
     /// Rename a constraint (`RENAME CONSTRAINT old_name TO new_name`).
     RenameConstraint {
         /// The current constraint name.
-        old_name: String,
+        old_name: Symbol,
         /// The new name for the constraint.
-        new_name: String,
+        new_name: Symbol,
     },
 
     /// Rename the table (`RENAME TO new_name`).
-    RenameTable(String),
+    RenameTable(Symbol),
     /// Change the table's schema (`SET SCHEMA new_schema`).
-    SetSchema(String),
+    SetSchema(Symbol),
     /// Change the table owner (`OWNER TO new_owner`).
-    SetOwner(String),
+    SetOwner(Symbol),
     /// Change the table's tablespace (`SET TABLESPACE new_tablespace`).
-    SetTableSpace(String),
+    SetTableSpace(Symbol),
     /// Set specific table parameters (`SET (options)`).
     SetOptions(Vec<SqlOption>),
     /// Reset/Remove specific table parameters (`RESET (options)`).
-    ResetOptions(Vec<String>),
+    ResetOptions(Vec<Symbol>),
 
     /// Add a parent table to inherit from (`INHERIT parent_table`).
     Inherit(ObjectName),
@@ -101,7 +101,7 @@ pub enum AlterColumnAction {
         /// The new data type.
         data_type: DataType,
         /// Optional custom collation name.
-        collation: Option<String>,
+        collation: Option<Symbol>,
         /// Optional expression to convert current data to the new type.
         using: Option<Expr>,
     },
@@ -118,7 +118,7 @@ pub enum AlterColumnAction {
     /// Set column-specific options.
     SetOptions(Vec<SqlOption>),
     /// Reset/Remove column-specific options.
-    ResetOptions(Vec<String>),
+    ResetOptions(Vec<Symbol>),
     /// Change the storage mode of the column (e.g. `PLAIN`, `MAIN`).
     SetStorage(ColumnStorage),
 }

@@ -2,6 +2,7 @@ use crate::ast::*;
 use crate::lexer::*;
 use crate::parser::parser::Parser;
 use crate::parser::parser_error::ParserError;
+use crate::common::symbol::Symbol;
 
 impl<'a> Parser<'a> {
 /// Executes parsing or lookup for the `parse_create_table` operation.
@@ -14,7 +15,7 @@ impl<'a> Parser<'a> {
 
         let if_not_exist = self.parse_if_not_exist()?;
 
-        let name = self.parse_qualified_name()?;
+        let name = ObjectName(self.parse_qualified_name()?);
 
         self.expect(TokenKind::LParen)?;
 
@@ -51,7 +52,7 @@ impl<'a> Parser<'a> {
                     self.advance();
                     self.expect(TokenKind::LParen)?;
                     loop {
-                        inherits.push(self.parse_qualified_name()?);
+                        inherits.push(ObjectName(self.parse_qualified_name()?));
                         if !self.consume(&TokenKind::Comma) {
                             break;
                         }
@@ -261,7 +262,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::References => {
                 self.advance();
-                let table = self.parse_qualified_name()?;
+                let table = ObjectName(self.parse_qualified_name()?);
                 let columns = if *self.current_token() == TokenKind::LParen {
                     self.parse_column_list()?
                 } else {
@@ -331,7 +332,7 @@ impl<'a> Parser<'a> {
                 self.expect(TokenKind::Key)?;
                 let columns = self.parse_column_list()?;
                 self.expect(TokenKind::References)?;
-                let foreign_table = self.parse_qualified_name()?;
+                let foreign_table = ObjectName(self.parse_qualified_name()?);
                 let referred_columns = if *self.current_token() == TokenKind::LParen {
                     self.parse_column_list()?
                 } else {
@@ -362,7 +363,7 @@ impl<'a> Parser<'a> {
 
 
     /// Parses a comma-separated list of column identifiers inside parentheses (e.g., `(user_id, order_id)`).
-    fn parse_column_list(&mut self) -> Result<Vec<String>, ParserError> {
+    fn parse_column_list(&mut self) -> Result<Vec<Symbol>, ParserError> {
         self.expect(TokenKind::LParen)?;
         let mut cols = vec![self.expect_identifier()?];
 
@@ -847,7 +848,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a reset option parameters list.
-    fn parse_reset_options_list(&mut self) -> Result<Vec<String>, ParserError> {
+    fn parse_reset_options_list(&mut self) -> Result<Vec<Symbol>, ParserError> {
         self.expect(TokenKind::LParen)?;
         let mut names = vec![];
         loop {

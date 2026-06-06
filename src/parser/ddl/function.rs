@@ -4,6 +4,7 @@ use crate::{
         FunctionParallel, FunctionReturn, FunctionVolatility, NullBehavior, ObjectName,
         ParamMode, SecurityMode, SqlOption,
     },
+    common::symbol::Symbol,
     lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
 };
@@ -60,7 +61,7 @@ impl<'a> Parser<'a> {
         let mut rows = None;
         let mut set_options: Vec<SqlOption> = vec![];
         let mut access = FunctionAccess::Public;                // our default
-        let mut raises: Vec<String> = vec![];
+        let mut raises: Vec<Symbol> = vec![];
 
         loop {
             match self.current_token().clone() {
@@ -444,6 +445,7 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::Language)?;
 
         let lang = self.source[self.current.span.start..self.current.span.end].to_lowercase();
+        let sym = self.interner.intern(&lang);
         self.advance();
 
         Ok(match lang.as_str() {
@@ -452,7 +454,7 @@ impl<'a> Parser<'a> {
             "plpython" | "plpython3u" | "plpython2u" => FunctionLanguage::PlPython,
             "plperl" | "plperlu" => FunctionLanguage::PlPerl,
             "pltcl" | "pltclu" => FunctionLanguage::PlTcl,
-            other => FunctionLanguage::Custom(other.to_string()),
+            _ => FunctionLanguage::Custom(sym),
         })
     }
 
@@ -477,9 +479,8 @@ impl<'a> Parser<'a> {
             match self.current_token().clone() {
                 // Dollar-quoted body: AS $$ ... $$ or AS $tag$ ... $tag$
                 TokenKind::DollarStringLit => {
-                    let body = self.source
-                        [self.current.span.start..self.current.span.end]
-                        .to_string();
+                    let body_str = &self.source[self.current.span.start..self.current.span.end];
+                    let body = self.interner.intern(body_str);
                     self.advance();
                     Ok(FunctionBody::DollarQuoted(body))
                 }
@@ -528,9 +529,9 @@ impl<'a> Parser<'a> {
             }
 
             let end = self.current.span.start;
-            Ok(FunctionBody::BeginEnd(
-                self.source[start..end].to_string(),
-            ))
+            let body_str = &self.source[start..end];
+            let body = self.interner.intern(body_str);
+            Ok(FunctionBody::BeginEnd(body))
         } else {
             Err(ParserError::new(
                 format!(

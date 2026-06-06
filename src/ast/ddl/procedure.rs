@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::common::symbol::Symbol;
 
 /// Represents a `CREATE PROCEDURE` statement.
 ///
@@ -39,7 +40,7 @@ pub struct CreateProcedureStmt {
 
     /// RAISES exception1, exception2
     /// Our extension — declared exceptions this procedure can raise.
-    pub raises: Vec<String>,
+    pub raises: Vec<Symbol>,
 
     /// TRANSACTION CONTROL — declares that this procedure explicitly
     /// manages transactions via COMMIT/ROLLBACK in its body.

@@ -59,7 +59,7 @@ SQL expressions (like `(a + b) > 5`) are modeled using a recursive `Expr` enum:
 ```rust
 pub enum Expr {
     Literal(Value),
-    Column { table: Option<String>, name: String },
+    Column { table: Option<String>, name: Symbol },
     BinOp { op: BinOpKind, lhs: Box<Expr>, rhs: Box<Expr> },
     // ...
 }
@@ -186,7 +186,7 @@ The **Logical Planner** translates the bound, annotated AST into a relational al
 ### Key Responsibilities
 
 1. **Relational Operator Construction**: Maps SQL features to logical operators (e.g. `SELECT` maps to `LogicalProjection`, `WHERE` to `LogicalFilter`, `JOIN` to `LogicalJoin`, and `LIMIT` to `LogicalLimit`).
-2. **Abstraction Layer**: Represents *what* the query wants to do, completely independent of how data is stored, indexed, or retrieved physically.
+2. **Abstraction Layer**: Represents _what_ the query wants to do, completely independent of how data is stored, indexed, or retrieved physically.
 
 ### Proposed Rust Interface
 
@@ -317,4 +317,3 @@ impl BufferPoolManager {
     pub fn flush_page(&mut self, page_id: PageId) -> Result<(), StorageError> { ... }
 }
 ```
-

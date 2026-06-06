@@ -1,4 +1,4 @@
-use crate::ast::*;
+use crate::{ast::*, common::symbol::Symbol};
 
 /// Represents a Common Table Expression (CTE) in a `WITH` clause.
 ///
@@ -7,7 +7,7 @@ use crate::ast::*;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cte {
     /// The temporary table name alias representing this CTE.
-    pub name: String,
+    pub name: Symbol,
     /// The subquery defining the rows inside this CTE.
     pub query: SelectStmt,
 }

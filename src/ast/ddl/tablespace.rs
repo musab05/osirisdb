@@ -1,4 +1,4 @@
-use crate::ast::*;
+use crate::{ast::*, common::symbol::Symbol};
 
 /// Represents filter or parameter options for a `CREATE TABLESPACE` statement.
 ///
@@ -7,11 +7,11 @@ use crate::ast::*;
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateTablespaceStmt {
     /// The name of the tablespace to create.
-    pub name: String,
+    pub name: Symbol,
     /// Optional role name of the user who will own the new tablespace.
-    pub owner: Option<String>,
+    pub owner: Option<Symbol>,
     /// The directory location where the tablespace will be stored.
-    pub location: String,
+    pub location: Symbol,
     /// Optional tablespace configuration options specified in the `WITH` clause.
     pub options: Vec<SqlOption>,
 }

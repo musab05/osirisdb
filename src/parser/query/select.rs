@@ -1,14 +1,14 @@
 use crate::{
     ast::{
-        Cte, Expr, JoinClause, JoinType, OrderItem, SelectItem, SelectModifier, SelectStmt, SetOp,
-        SetOperation, TableRef,
+        Cte, Expr, JoinClause, JoinType, ObjectName, OrderItem, SelectItem, SelectModifier,
+        SelectStmt, SetOp, SetOperation, TableRef,
     },
     lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
 };
 
 impl<'a> Parser<'a> {
-/// Executes parsing or lookup for the `parse_select` operation.
+    /// Executes parsing or lookup for the `parse_select` operation.
     /// Parses a complete `SELECT` query statement, including CTEs, Joins, grouping, ordering, limits, and set operations.
     pub fn parse_select(&mut self) -> Result<SelectStmt, ParserError> {
         let ctes = if self.consume(&TokenKind::With) {
@@ -144,7 +144,9 @@ impl<'a> Parser<'a> {
                     Expr::Column {
                         table: Some(t),
                         name,
-                    } if name == "*" => SelectItem::QualifiedWildcard(vec![t.clone()]),
+                    } if self.interner.resolve(*name) == "*" => {
+                        SelectItem::QualifiedWildcard(vec![*t])
+                    }
 
                     _ => {
                         let alias = if self.consume(&TokenKind::As) {
@@ -203,7 +205,10 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-                TableRef::Named { name, alias }
+                TableRef::Named {
+                    name: ObjectName(name),
+                    alias,
+                }
             };
             refs.push(tref);
 
@@ -311,7 +316,10 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            Ok(TableRef::Named { name, alias })
+            Ok(TableRef::Named {
+                name: ObjectName(name),
+                alias,
+            })
         }
     }
 
@@ -362,10 +370,8 @@ impl<'a> Parser<'a> {
         })))
     }
 
-
-
     // Expect a sequence of tokens in order, fail if any doesn't match
-/// Executes parsing or lookup for the `expect_keyword_sequence` operation.
+    /// Executes parsing or lookup for the `expect_keyword_sequence` operation.
     /// Asserts that a sequence of keyword tokens appears next in order, erroring if any matches fail.
     pub fn expect_keyword_sequence(&mut self, tokens: &[TokenKind]) -> Result<(), ParserError> {
         for token in tokens {

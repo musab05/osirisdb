@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::common::symbol::Symbol;
 
 /// Represents constraints applied to a single column in a table definition.
 #[derive(Debug, Clone, PartialEq)]
@@ -23,9 +24,9 @@ pub enum ColumnConstraint {
     /// Defines a foreign key constraint linking this column to a target table and columns (`REFERENCES table(columns)`).
     References {
         /// The referenced foreign table path.
-        table: Vec<String>,
+        table: ObjectName,
         /// The referenced columns in the foreign table.
-        columns: Vec<String>,
+        columns: Vec<Symbol>,
         /// Referential action applied on deletion of a parent record (`ON DELETE`).
         on_delete: Option<ReferentialAction>,
         /// Referential action applied on modification of a parent record (`ON UPDATE`).

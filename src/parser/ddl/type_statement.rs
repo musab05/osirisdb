@@ -64,17 +64,7 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::LParen)?;
 
         loop {
-            if self.current_token() == &TokenKind::StringLit {
-                let span = self.current.span.clone();
-                let s = self.source[span.start + 1..span.end - 1].to_string();
-                values.push(s);
-                self.advance();
-            } else {
-                return Err(ParserError::new(
-                    format!("Expected string literal, found {:?}", self.current_token()),
-                    self.current.span.clone(),
-                ));
-            }
+            values.push(self.expect_string_literal()?);
 
             if !self.consume(&TokenKind::Comma) {
                 break;
@@ -97,9 +87,7 @@ impl<'a> Parser<'a> {
 
             if self.consume(&TokenKind::Collate) {
                 if self.current_token() == &TokenKind::StringLit {
-                    let span = self.current.span.clone();
-                    collation = Some(self.source[span.start + 1..span.end - 1].to_string());
-                    self.advance();
+                    collation = Some(self.expect_string_literal()?);
                 } else {
                     collation = Some(self.expect_identifier()?);
                 }
@@ -136,7 +124,8 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let prop = self.expect_identifier()?.to_uppercase();
+            let prop_sym = self.expect_identifier()?;
+            let prop = self.interner.resolve(prop_sym).to_uppercase();
             self.expect(TokenKind::Eq)?;
 
             match prop.as_str() {
@@ -149,10 +138,7 @@ impl<'a> Parser<'a> {
                 }
                 "COLLATION" => {
                     if self.current_token() == &TokenKind::StringLit {
-                        let span = self.current.span.clone();
-                        range_def.collation =
-                            Some(self.source[span.start + 1..span.end - 1].to_string());
-                        self.advance();
+                        range_def.collation = Some(self.expect_string_literal()?);
                     } else {
                         range_def.collation = Some(self.expect_identifier()?);
                     }
@@ -209,7 +195,8 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let prop = self.expect_identifier()?.to_uppercase();
+            let prop_sym = self.expect_identifier()?;
+            let prop = self.interner.resolve(prop_sym).to_uppercase();
 
             // PASSEDBYVALUE is a boolean flag that may not have an '=' following it.
             if prop == "PASSEDBYVALUE" {
@@ -248,7 +235,8 @@ impl<'a> Parser<'a> {
                         } else if self.consume(&TokenKind::False) {
                             base_def.preferred = false;
                         } else {
-                            base_def.preferred = self.expect_identifier()?.to_uppercase() == "TRUE";
+                            let pref_sym = self.expect_identifier()?;
+                            base_def.preferred = self.interner.resolve(pref_sym).to_uppercase() == "TRUE";
                         }
                     }
                     "DEFAULT" => {

@@ -1,3 +1,5 @@
+use crate::common::symbol::Symbol;
+
 /// Represents the SQL data types supported by the SQL parser.
 ///
 /// This enum maps standard SQL and PostgreSQL-specific types, including numeric,
@@ -55,5 +57,5 @@ pub enum DataType {
 
     /// Custom, user-defined or schema-qualified types (e.g., `public.mood`, `my_type`).
     /// Keeps track of a list of identifiers representing the qualified path.
-    Custom(Vec<String>),
+    Custom(Vec<Symbol>),
 }

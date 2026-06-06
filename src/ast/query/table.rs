@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::common::symbol::Symbol;
 
 /// Represents a table or subquery reference in the `FROM` or `JOIN` clauses of a query.
 #[derive(Debug, Clone, PartialEq)]
@@ -6,9 +7,9 @@ pub enum TableRef {
     /// A named table or view, optionally qualified (e.g. `users`, `public.users`).
     Named {
         /// The qualified table path parts.
-        name: Vec<String>,
+        name: ObjectName,
         /// Optional table alias identifier (e.g. `users AS u`).
-        alias: Option<String>,
+        alias: Option<Symbol>,
     },
 
     /// A nested subquery evaluating to a table-like result (e.g., `(SELECT * FROM orders) AS o`).
@@ -16,6 +17,6 @@ pub enum TableRef {
         /// The nested SELECT query.
         query: Box<SelectStmt>,
         /// Optional table alias identifier.
-        alias: Option<String>,
+        alias: Option<Symbol>,
     },
 }

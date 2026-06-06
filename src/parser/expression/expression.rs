@@ -119,9 +119,7 @@ impl<'a> Parser<'a> {
                 Ok(Expr::Literal(Value::Float(f)))
             }
             TokenKind::StringLit => {
-                let s = self.source[self.current_span().start + 1..self.current_span().end - 1]
-                    .to_string();
-                self.advance();
+                let s = self.expect_string_literal()?;
                 Ok(Expr::Literal(Value::String(s)))
             }
             TokenKind::True => {
@@ -178,9 +176,7 @@ impl<'a> Parser<'a> {
             TokenKind::Case => self.parse_case(),
 
             TokenKind::Ident | TokenKind::QuotedIdent => {
-                let name =
-                    self.source[self.current_span().start..self.current_span().end].to_string();
-                self.advance();
+                let name = self.expect_identifier()?;
 
                 if self.consume(&TokenKind::LParen) {
                     let args = if self.current_token() == &TokenKind::RParen {
@@ -204,7 +200,7 @@ impl<'a> Parser<'a> {
             TokenKind::Current => {
                 self.advance();
                 // Handle CURRENT_TIMESTAMP and similar
-                let name = "CURRENT".to_string();
+                let name = self.interner.intern("CURRENT");
                 Ok(Expr::Column { table: None, name })
             }
 
@@ -321,8 +317,16 @@ impl<'a> Parser<'a> {
             | TokenKind::Jsonb
             | TokenKind::Uuid
             | TokenKind::Bytea => {
-                let name =
-                    self.source[self.current_span().start..self.current_span().end].to_string();
+                let s = &self.source[self.current.span.start..self.current.span.end];
+                let (sym, name) = match self.current_token() {
+                    TokenKind::QuotedIdent => {
+                        let inner = &s[1..s.len() - 1];
+                        (self.interner.intern(inner), inner.to_string())
+                    }
+                    _ => {
+                        (self.interner.intern(s), s.to_string())
+                    }
+                };
                 self.advance();
                 match name.to_uppercase().as_str() {
                     "SMALLINT" | "INT2" => DataType::SmallInt,
@@ -382,7 +386,7 @@ impl<'a> Parser<'a> {
                     }
                     // Multi-part custom types: schema.type_name
                     _ => {
-                        let mut parts = vec![name];
+                        let mut parts = vec![sym];
                         while self.consume(&TokenKind::Dot) {
                             parts.push(self.expect_identifier()?);
                         }
@@ -423,85 +427,6 @@ impl<'a> Parser<'a> {
             Ok(Some(n))
         } else {
             Ok(None)
-        }
-    }
-
-    // Helper — expects current token to be an integer literal
-    /// Executes parsing or lookup for the `expect_int_literal` operation.
-    /// Asserts the current token is a non-negative integer literal and consumes it, returning the value.
-    pub fn expect_int_literal(&mut self) -> Result<u64, ParserError> {
-        match self.current_token().clone() {
-            TokenKind::IntLit(n) if n >= 0 => {
-                self.advance();
-                Ok(n as u64)
-            }
-            _ => Err(ParserError::new(
-                format!("Expected integer, found {:?}", self.current_token()),
-                self.current.span.clone(),
-            )),
-        }
-    }
-
-    /// Executes parsing or lookup for the `expect_int` operation.
-    /// Asserts the current token is a signed integer literal (allowing an optional leading minus sign) and consumes it.
-    pub fn expect_int(&mut self) -> Result<i64, ParserError> {
-        match self.current_token().clone() {
-            TokenKind::IntLit(n) => {
-                self.advance();
-                Ok(n)
-            }
-            TokenKind::Minus => {
-                self.advance();
-                match self.current_token().clone() {
-                    TokenKind::IntLit(n) => {
-                        self.advance();
-                        Ok(-n)
-                    }
-                    _ => Err(ParserError::new(
-                        "Expected integer after -",
-                        self.current.span.clone(),
-                    )),
-                }
-            }
-            _ => Err(ParserError::new(
-                format!("Expected integer, got {:?}", self.current_token()),
-                self.current.span.clone(),
-            )),
-        }
-    }
-
-    /// Expects a floating point or integer number, optionally signed, and returns it as f64.
-    pub fn expect_float(&mut self) -> Result<f64, ParserError> {
-        match self.current_token().clone() {
-            TokenKind::FloatLit(f) => {
-                self.advance();
-                Ok(f)
-            }
-            TokenKind::IntLit(n) => {
-                self.advance();
-                Ok(n as f64)
-            }
-            TokenKind::Minus => {
-                self.advance();
-                match self.current_token().clone() {
-                    TokenKind::FloatLit(f) => {
-                        self.advance();
-                        Ok(-f)
-                    }
-                    TokenKind::IntLit(n) => {
-                        self.advance();
-                        Ok(-(n as f64))
-                    }
-                    _ => Err(ParserError::new(
-                        "Expected number after -",
-                        self.current.span.clone(),
-                    )),
-                }
-            }
-            _ => Err(ParserError::new(
-                format!("Expected number, got {:?}", self.current_token()),
-                self.current.span.clone(),
-            )),
         }
     }
 
@@ -569,17 +494,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Executes parsing or lookup for the `parse_qualified_name` operation.
-    /// Parses a dot-separated object path (e.g., `public.users` or `database.schema.table`).
-    pub fn parse_qualified_name(&mut self) -> Result<Vec<String>, ParserError> {
-        let mut parts = vec![self.expect_identifier()?];
-
-        while self.consume(&TokenKind::Dot) {
-            parts.push(self.expect_identifier()?);
-        }
-        Ok(parts)
-    }
-
     /// Executes parsing or lookup for the `parse_drop_behaviour` operation.
     /// Parses optional cascade/restrict flags (`CASCADE` / `RESTRICT`).
     pub fn parse_drop_behaviour(&mut self) -> Option<DropBehavior> {
@@ -612,18 +526,5 @@ impl<'a> Parser<'a> {
         }
         self.expect(TokenKind::RParen)?;
         Ok(options)
-    }
-
-    /// Executes parsing or lookup for the `parse_if_not_exist` operation.
-    /// Parses the optional `IF NOT EXISTS` DDL modifier.
-    pub fn parse_if_not_exist(&mut self) -> Result<bool, ParserError> {
-        if *self.current_token() == TokenKind::If {
-            self.advance();
-            self.expect(TokenKind::Not)?;
-            self.expect(TokenKind::Exists)?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
     }
 }

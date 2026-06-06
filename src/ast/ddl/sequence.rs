@@ -26,5 +26,5 @@ pub struct CreateSequenceStmt {
     /// If `Some(true)`, the sequence cycles when bounds are reached (`CYCLE`).
     pub cycle: Option<bool>,
     /// Optional table column that owns this sequence generator (`OWNED BY table.column`).
-    pub owned_by: Option<Vec<String>>,
+    pub owned_by: Option<ObjectName>,
 }

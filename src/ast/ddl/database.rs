@@ -1,3 +1,4 @@
+use crate::common::symbol::Symbol;
 
 /// Represents a `CREATE DATABASE` statement.
 ///
@@ -6,17 +7,17 @@
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateDatabaseStmt {
     /// The name of the database to create.
-    pub name: String,
+    pub name: Symbol,
     /// If true, do not throw an error if a database with the same name already exists (`IF NOT EXISTS`).
     pub if_not_exists: bool,
     /// Optional role name of the user who will own the new database.
-    pub owner: Option<String>,
+    pub owner: Option<Symbol>,
     /// Optional character encoding for the new database (e.g., "UTF8").
-    pub encoding: Option<String>,
+    pub encoding: Option<Symbol>,
     /// Optional locale (collation and character classification) for the database.
-    pub locale: Option<String>,
+    pub locale: Option<Symbol>,
     /// Optional name of the tablespace associated with the new database.
-    pub tablespace: Option<String>,
+    pub tablespace: Option<Symbol>,
     /// Optional maximum number of concurrent connections allowed.
     pub connection_limit: Option<i64>,
 }

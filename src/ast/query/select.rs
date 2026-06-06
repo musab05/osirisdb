@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::common::symbol::Symbol;
 
 /// Represents a query expression starting with `SELECT`.
 ///
@@ -49,13 +50,13 @@ pub enum SelectItem {
     /// Wildcard projection (`*`) representing all fields.
     Wildcard,
     /// Qualified wildcard projection (e.g. `users.*`) representing all fields of a specific table.
-    QualifiedWildcard(Vec<String>),
+    QualifiedWildcard(Vec<Symbol>),
     /// A single expression projection, optionally renamed with an alias (e.g., `price * 1.15 AS price_with_tax`).
     Expr {
         /// The column expression.
         expr: Expr,
         /// The column alias identifier.
-        alias: Option<String>,
+        alias: Option<Symbol>,
     },
 }
 

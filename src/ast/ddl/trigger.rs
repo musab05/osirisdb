@@ -1,4 +1,4 @@
-use crate::ast::*;
+use crate::{ast::*, common::symbol::Symbol};
 
 /// Represents a full `CREATE TRIGGER` statement.
 ///
@@ -10,7 +10,7 @@ use crate::ast::*;
 /// - Constraint triggers with deferral support (PostgreSQL compatible)
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateTriggerStmt {
-    pub name: String,
+    pub name: Symbol,
     pub if_not_exists: bool,
     pub or_replace: bool,
 
@@ -84,7 +84,7 @@ pub struct CreateTriggerStmt {
     ///     TAGS ('audit', 'compliance')
     ///     EXECUTE FUNCTION log_order();
     /// ```
-    pub tags: Vec<String>,
+    pub tags: Vec<Symbol>,
 
     /// ENABLED | DISABLED — sets the initial state of the trigger.
     /// PostgreSQL has `ALTER TRIGGER ... ENABLE/DISABLE` but not at creation.
@@ -122,7 +122,7 @@ pub enum TriggerTiming {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TriggerEvent {
     Insert,
-    Update(Vec<String>),  // empty Vec = all columns
+    Update(Vec<Symbol>),  // empty Vec = all columns
     Delete,
     Truncate,
 }
@@ -143,10 +143,10 @@ pub enum TriggerLevel {
 /// PostgreSQL only allows string literals here, not expressions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TriggerFunction {
-    /// Qualified function name e.g. `vec!["myschema", "my_func"]`
-    pub name: Vec<String>,
+    /// Qualified function name e.g. `ObjectName`
+    pub name: ObjectName,
     /// String literal arguments: `EXECUTE FUNCTION my_func('arg1', 'arg2')`
-    pub args: Vec<String>,
+    pub args: Vec<Symbol>,
 }
 
 /// A single entry in the `REFERENCING` clause.
@@ -162,7 +162,7 @@ pub struct TriggerFunction {
 pub struct TriggerReferencing {
     pub kind: TransitionKind,
     /// The alias used to reference this transition table in the function
-    pub alias: String,
+    pub alias: Symbol,
 }
 
 /// Which transition table is being named in a REFERENCING clause.

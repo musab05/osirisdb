@@ -1,5 +1,5 @@
 use crate::{
-    ast::{CreateViewStmt, ViewCheckOption},
+    ast::{CreateViewStmt, ViewCheckOption, ObjectName},
     lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
 };
@@ -12,7 +12,7 @@ impl<'a> Parser<'a> {
         temporary: bool,
         recursive: bool,
     ) -> Result<CreateViewStmt, ParserError> {
-        let name = self.parse_qualified_name()?;
+        let name = ObjectName(self.parse_qualified_name()?);
         let columns = if self.consume(&TokenKind::LParen) {
             let mut cols = vec![];
 

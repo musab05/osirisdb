@@ -1,5 +1,6 @@
 use crate::{
     ast::CreateRoleStmt,
+    common::symbol::Symbol,
     lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
 };
@@ -45,8 +46,8 @@ impl<'a> Parser<'a> {
         let mut replication = None;
         let mut connection_limit = None;
         let mut valid_until = None;
-        let mut in_role: Vec<String> = vec![];
-        let mut roles: Vec<String> = vec![];
+        let mut in_role: Vec<Symbol> = vec![];
+        let mut roles: Vec<Symbol> = vec![];
 
         loop {
             match self.current_token().clone() {

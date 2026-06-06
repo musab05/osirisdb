@@ -1,3 +1,5 @@
+use crate::common::symbol::Symbol;
+
 /// Represents a primitive literal value in an SQL statement.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -6,13 +8,13 @@ pub enum Value {
     /// A floating-point number literal (e.g., `3.14`, `1.0e-5`).
     Float(f64),
     /// A single-quoted string literal (e.g., `'hello'`, `'it''s fine'`).
-    String(String),
+    String(Symbol),
     /// A boolean literal (`TRUE` or `FALSE`).
     Boolean(bool),
     /// A bit string literal (e.g., `B'101010'`).
-    BitString(String),
+    BitString(Symbol),
     /// A hexadecimal string literal (e.g., `X'deadbeef'`).
-    HexString(String),
+    HexString(Symbol),
     /// The SQL `NULL` value representing missing or unknown data.
     Null,
 }

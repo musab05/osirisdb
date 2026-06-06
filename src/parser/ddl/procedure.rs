@@ -1,8 +1,9 @@
 use crate::{
     ast::{
-        CreateProcedureStmt, FunctionAccess, FunctionBody, FunctionLanguage, FunctionParam,
+        CreateProcedureStmt, FunctionAccess,
         ObjectName, SecurityMode, SqlOption,
     },
+    common::symbol::Symbol,
     lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
 };
@@ -64,7 +65,7 @@ impl<'a> Parser<'a> {
         let mut access = FunctionAccess::Public;
 
         // No declared exceptions by default — our extension
-        let mut raises: Vec<String> = vec![];
+        let mut raises: Vec<Symbol> = vec![];
 
         // false by default — procedure does not manage transactions
         let mut transaction_control = false;

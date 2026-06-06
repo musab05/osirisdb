@@ -1,4 +1,4 @@
-use crate::ast::*;
+use crate::{ast::*, common::symbol::Symbol};
 
 /// Represents an expression node in the SQL Abstract Syntax Tree (AST).
 ///
@@ -13,9 +13,9 @@ pub enum Expr {
     /// A column reference, optionally qualified with a table alias (e.g., `id`, `users.name`).
     Column {
         /// Optional table name or table alias prefix.
-        table: Option<String>,
+        table: Option<Symbol>,
         /// The column name.
-        name: String,
+        name: Symbol,
     },
 
     /// A binary operator expression (e.g., `a = b`, `price + tax`).
@@ -39,7 +39,7 @@ pub enum Expr {
     /// A function call (e.g., `COUNT(*)`, `COALESCE(val, 0)`).
     FuncCall {
         /// The function name.
-        name: String,
+        name: Symbol,
         /// The argument list. Can contain wildcard `Expr::Wildcard` for cases like `COUNT(*)`.
         args: Vec<Expr>,
     },

@@ -1,3 +1,5 @@
+use crate::common::symbol::Symbol;
+
 /// Represents a `CREATE ROLE` or `CREATE USER` statement.
 ///
 /// In SQL, roles are entities that can own database objects and have database privileges.
@@ -5,7 +7,7 @@
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateRoleStmt {
     /// The name of the role to be created.
-    pub name: String,
+    pub name: Symbol,
 
     /// If true, do not throw an error if a role with the same name already exists (`IF NOT EXISTS`).
     pub if_not_exists: bool,
@@ -18,7 +20,7 @@ pub struct CreateRoleStmt {
     pub login: Option<bool>,
 
     /// The password associated with the role, if any.
-    pub password: Option<String>,
+    pub password: Option<Symbol>,
 
     /// Whether the role is a superuser bypassing all permission checks (`SUPERUSER` / `NOSUPERUSER`).
     pub superuser: Option<bool>,
@@ -39,11 +41,11 @@ pub struct CreateRoleStmt {
     pub connection_limit: Option<i64>,
 
     /// A timestamp or string indicating when the role's privileges expire (`VALID UNTIL`).
-    pub valid_until: Option<String>,
+    pub valid_until: Option<Symbol>,
 
     /// Lists roles to which the new role will be immediately added as a new member (`IN ROLE`).
-    pub in_role: Vec<String>,
+    pub in_role: Vec<Symbol>,
 
     /// Lists roles which will be immediately added as members of the new role (`ROLE`).
-    pub roles: Vec<String>,
+    pub roles: Vec<Symbol>,
 }

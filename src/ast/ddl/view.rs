@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::common::symbol::Symbol;
 
 /// Represents a DDL statement to construct a virtual table query representation (`CREATE VIEW`).
 #[derive(Debug, Clone, PartialEq)]
@@ -10,9 +11,9 @@ pub struct CreateViewStmt {
     /// If `true`, represents a recursive query representation (`RECURSIVE`).
     pub recursive: bool,
     /// The qualified name of the view.
-    pub name: Vec<String>,
+    pub name: ObjectName,
     /// Optional column aliases defined for the view projection.
-    pub columns: Vec<String>,
+    pub columns: Vec<Symbol>,
     /// View storage parameters (`WITH`).
     pub with_options: Vec<SqlOption>,
     /// The SELECT query that defines the view contents.
@@ -45,15 +46,15 @@ pub struct AlterViewStmt {
 #[derive(Debug, Clone, PartialEq)]
 pub enum AlterViewAction {
     /// Rename the view.
-    Rename(String),
+    Rename(Symbol),
     /// Set a new owner for the view.
-    SetOwner(String),
+    SetOwner(Symbol),
     /// Move the view to a different schema.
-    SetSchema(String),
+    SetSchema(Symbol),
     /// Set specific view options.
     SetOptions(Vec<SqlOption>),
     /// Reset/Remove specific view options.
-    ResetOptions(Vec<String>),
+    ResetOptions(Vec<Symbol>),
 }
 
 /// Verification options for values inserted/updated via the view (`WITH CHECK OPTION`).
