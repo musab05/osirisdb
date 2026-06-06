@@ -48,6 +48,8 @@ pub enum Statement {
     CreateTrigger(CreateTriggerStmt),
     /// A `CREATE FUNCTION` DDL statement
     CreateFunction(CreateFunctionStmt),
+    /// A `CREATE Procedure` DDL statement
+    CreateProcedure(CreateProcedureStmt),
     /// A transaction control statement to start a new transaction block (`BEGIN` / `BEGIN TRANSACTION`).
     Begin,
     /// A transaction control statement to commit the current transaction block (`COMMIT` / `END`).

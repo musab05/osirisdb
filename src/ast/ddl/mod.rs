@@ -25,6 +25,7 @@ pub mod tablespace;
 pub mod extension;
 pub mod trigger;
 pub mod function;
+pub mod procedure;
 
 pub use alter::*;
 pub use column_constraint::*;
@@ -49,3 +50,4 @@ pub use tablespace::*;
 pub use extension::*;
 pub use trigger::*;
 pub use function::*;
+pub use procedure::*;
