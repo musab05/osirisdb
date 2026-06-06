@@ -14,3 +14,4 @@ pub mod tablespace;
 pub mod extnsion;
 pub mod trigger;
 pub mod function;
+pub mod procedure;

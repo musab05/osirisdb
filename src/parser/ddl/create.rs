@@ -111,6 +111,12 @@ impl<'a> Parser<'a> {
                     self.parse_create_function(m.or_replace)?,
                 ))
             }
+            TokenKind::Procedure => {
+                self.advance();
+                Ok(Statement::CreateProcedure(
+                    self.parse_create_procedure(m.or_replace)?,
+                ))
+            }
             _ => Err(ParserError::new(
                 format!(
                     "Expected TABLE/SCHEMA/INDEX/VIEW after CREATE, got {:?}",

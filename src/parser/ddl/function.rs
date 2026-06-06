@@ -272,7 +272,7 @@ impl<'a> Parser<'a> {
     /// Parses the full parameter list of a function.
     ///
     /// Returns an empty vec for `func()` — checked before entering the loop.
-    fn parse_function_params(&mut self) -> Result<Vec<FunctionParam>, ParserError> {
+    pub fn parse_function_params(&mut self) -> Result<Vec<FunctionParam>, ParserError> {
         let mut params = vec![];
 
         // Empty parameter list — exit immediately
@@ -440,7 +440,7 @@ impl<'a> Parser<'a> {
     ///
     /// Language name is case-insensitive and stored in lowercase.
     /// Unknown languages are stored as `FunctionLanguage::Custom(name)`.
-    fn parse_function_language(&mut self) -> Result<FunctionLanguage, ParserError> {
+    pub fn parse_function_language(&mut self) -> Result<FunctionLanguage, ParserError> {
         self.expect(TokenKind::Language)?;
 
         let lang = self.source[self.current.span.start..self.current.span.end].to_lowercase();
@@ -472,7 +472,7 @@ impl<'a> Parser<'a> {
     ///     RETURN a + b;
     /// END
     /// ```
-    fn parse_function_body(&mut self) -> Result<FunctionBody, ParserError> {
+    pub fn parse_function_body(&mut self) -> Result<FunctionBody, ParserError> {
         if self.consume(&TokenKind::As) {
             match self.current_token().clone() {
                 // Dollar-quoted body: AS $$ ... $$ or AS $tag$ ... $tag$
