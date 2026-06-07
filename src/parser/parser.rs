@@ -76,7 +76,7 @@ impl<'a> Parser<'a> {
     ///
     /// Pre-fetches the first two tokens into `current` and `peek` so the
     /// parser is immediately ready to make decisions without calling advance.
-    
+
     pub fn new(source: &'a str) -> Self {
         let mut lexer = Lexer::new(source);
         let current = lexer.next_token();
@@ -158,7 +158,7 @@ impl<'a> Parser<'a> {
     ///
     /// Does not consume any tokens. Used for two-token lookahead decisions
     /// where you need to see beyond `current` before committing.
-    
+
     pub fn peek_is(&self, token: &TokenKind) -> bool {
         self.peek_token() == token
     }

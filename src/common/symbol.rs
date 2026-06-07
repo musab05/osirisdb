@@ -87,13 +87,13 @@ impl Symbol {
     ///
     /// Never pass `DUMMY` to `interner.resolve()` — it will panic with an
     /// out-of-bounds index. Always check before resolving:
-    
+
     pub const DUMMY: Symbol = Symbol(u32::MAX);
 
     /// Returns `true` if this symbol is the dummy sentinel value.
     ///
     /// Convenience method to avoid comparing against `Symbol::DUMMY` directly.
-    
+
     pub fn is_dummy(&self) -> bool {
         self.0 == u32::MAX
     }
@@ -103,7 +103,7 @@ impl Symbol {
     /// Useful for serialization, debugging, or storing in compact
     /// data structures. The id is stable within a single interner
     /// instance but not across different interners or restarts.
-    
+
     pub fn id(&self) -> u32 {
         self.0
     }

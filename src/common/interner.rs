@@ -83,7 +83,7 @@ impl Interner {
     ///
     /// No strings are pre-interned. The first call to [`intern`] will
     /// assign `Symbol(0)`, the second `Symbol(1)`, and so on.
-    
+
     pub fn new() -> Self {
         Self {
             map: HashMap::new(),
@@ -110,7 +110,7 @@ impl Interner {
     ///
     /// Panics if more than `u32::MAX - 1` unique strings are interned.
     /// In practice this limit (≈4 billion) will never be reached.
-    
+
     pub fn intern(&mut self, s: &str) -> Symbol {
         // Fast path — string already interned, return existing symbol.
         // This is the common case in a SQL engine where identifiers repeat.
@@ -144,7 +144,7 @@ impl Interner {
     ///
     /// Panics if `sym` was not produced by this interner, or if
     /// `sym` is [`Symbol::DUMMY`] (`Symbol(u32::MAX)`).
-    
+
     pub fn resolve(&self, sym: Symbol) -> &str {
         self.strings[sym.0 as usize]
     }
@@ -162,7 +162,7 @@ impl Interner {
     /// - Use [`get`] during **binding/resolution** — you want to check if
     ///   a name exists in the catalog without adding it. If `None` is
     ///   returned, the name is undefined and should produce an error.
-    
+
     pub fn get(&self, s: &str) -> Option<Symbol> {
         self.map.get(s).copied()
     }
@@ -170,13 +170,13 @@ impl Interner {
     /// Returns the number of unique strings currently interned.
     ///
     /// Useful for diagnostics, testing, and capacity planning.
-    
+
     pub fn len(&self) -> usize {
         self.strings.len()
     }
 
     /// Returns `true` if no strings have been interned yet.
-    
+
     pub fn is_empty(&self) -> bool {
         self.strings.is_empty()
     }
