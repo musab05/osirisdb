@@ -37,7 +37,7 @@ pub enum Statement {
     /// A `CREATE TYPE` DDL statement
     CreateType(CreateTypeStmt),
     /// A `CREATE DATABASE` DDL statement
-    CreateDataBase(CreateDatabaseStmt),
+    CreateDatabase(CreateDatabaseStmt),
     /// A `CREATE ROLE/USER` DDL statement
     CreateRole(CreateRoleStmt),
     /// A `CREATE TABLESPACE` DDL statement

@@ -81,7 +81,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Database => {
                 self.advance();
-                Ok(Statement::CreateDataBase(self.parse_create_database()?))
+                Ok(Statement::CreateDatabase(self.parse_create_database()?))
             }
             TokenKind::Role => {
                 self.advance();

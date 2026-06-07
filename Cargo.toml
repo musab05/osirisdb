@@ -14,3 +14,21 @@ categories = ["parser-implementations", "database"]
 rust-version = "1.85"
 
 [dependencies]
+
+[dev-dependencies]
+criterion = "0.7.0"
+
+[[bench]]
+name = "catalog_bench"
+path = "benches/catalog/database_bench.rs"
+harness = false
+
+[[bench]]
+name = "lexer_bench"
+path = "benches/lexer/database_bench.rs"
+harness = false
+
+[[bench]]
+name = "parser_bench"
+path = "benches/parser/database_bench.rs"
+harness = false

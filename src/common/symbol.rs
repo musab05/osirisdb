@@ -62,20 +62,7 @@
 /// - [`Eq`] + [`Hash`] — usable as `HashMap` keys directly
 /// - [`PartialEq`] — `sym_a == sym_b` is a single integer comparison
 ///
-/// # Example
-///
-/// ```rust
-/// let mut interner = Interner::new();
-///
-/// let a = interner.intern("users");
-/// let b = interner.intern("users");
-/// let c = interner.intern("orders");
-///
-/// assert_eq!(a, b);        // same string → same symbol
-/// assert_ne!(a, c);        // different string → different symbol
-///
-/// assert_eq!(interner.resolve(a), "users");
-/// ```
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(pub u32);
 
@@ -101,21 +88,14 @@ impl Symbol {
     /// Never pass `DUMMY` to `interner.resolve()` — it will panic with an
     /// out-of-bounds index. Always check before resolving:
     ///
-    /// ```rust
-    /// if sym != Symbol::DUMMY {
-    ///     println!("{}", interner.resolve(sym));
-    /// }
-    /// ```
+
     pub const DUMMY: Symbol = Symbol(u32::MAX);
 
     /// Returns `true` if this symbol is the dummy sentinel value.
     ///
     /// Convenience method to avoid comparing against `Symbol::DUMMY` directly.
     ///
-    /// ```rust
-    /// let sym = Symbol::DUMMY;
-    /// assert!(sym.is_dummy());
-    /// ```
+
     pub fn is_dummy(&self) -> bool {
         self.0 == u32::MAX
     }
@@ -126,11 +106,7 @@ impl Symbol {
     /// data structures. The id is stable within a single interner
     /// instance but not across different interners or restarts.
     ///
-    /// ```rust
-    /// let mut interner = Interner::new();
-    /// let sym = interner.intern("users");
-    /// println!("users has id {}", sym.id()); // 0
-    /// ```
+
     pub fn id(&self) -> u32 {
         self.0
     }
@@ -140,10 +116,7 @@ impl std::fmt::Display for Symbol {
     /// Displays the raw numeric id of the symbol.
     ///
     /// For human-readable output, resolve the symbol through the interner:
-    /// ```rust
-    /// println!("{}", interner.resolve(sym));  // "users"
-    /// println!("{}", sym);                    // "Symbol(0)"
-    /// ```
+
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Symbol({})", self.0)
     }

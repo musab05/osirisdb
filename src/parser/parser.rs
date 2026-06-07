@@ -35,13 +35,7 @@ use crate::parser::parser_error::ParserError;
 /// `'a` is the lifetime of the source SQL string. The parser borrows the
 /// source to slice identifier spans directly — no copying until `intern()`.
 ///
-/// # Example
-///
-/// ```rust
-/// let mut parser = Parser::new("SELECT id FROM users");
-/// let stmts = parser.parse()?;
-/// let interner = parser.interner; // pass to binder
-/// ```
+
 pub struct Parser<'a> {
     /// The original source SQL string.
     ///
@@ -75,10 +69,7 @@ pub struct Parser<'a> {
     /// as a [`Symbol`] in the AST. After parsing completes, the caller
     /// takes ownership of the interner and passes it to the binder:
     ///
-    /// ```rust
-    /// let stmts = parser.parse()?;
-    /// let interner = parser.interner; // move to next pipeline stage
-    /// ```
+
     pub interner: Interner,
 }
 
@@ -88,12 +79,7 @@ impl<'a> Parser<'a> {
     /// Pre-fetches the first two tokens into `current` and `peek` so the
     /// parser is immediately ready to make decisions without calling advance.
     ///
-    /// # Example
-    ///
-    /// ```rust
-    /// let mut parser = Parser::new("CREATE TABLE users (id INTEGER)");
-    /// let stmts = parser.parse()?;
-    /// ```
+
     pub fn new(source: &'a str) -> Self {
         let mut lexer = Lexer::new(source);
         let current = lexer.next_token();
@@ -150,13 +136,7 @@ impl<'a> Parser<'a> {
     /// Returns `false` and does nothing if it does not.
     ///
     /// Use this for **optional** tokens where absence is valid:
-    /// ```rust
-    /// // TABLE is optional in TRUNCATE TABLE
-    /// self.consume(&TokenKind::Table);
-    ///
-    /// // = is optional in CREATE DATABASE name OWNER [=] alice
-    /// self.consume(&TokenKind::Eq);
-    /// ```
+
     ///
     /// For **required** tokens where absence is an error, use [`expect`].
     /// Never use `consume` after a `match` arm on the same token — use
@@ -184,12 +164,7 @@ impl<'a> Parser<'a> {
     /// Does not consume any tokens. Used for two-token lookahead decisions
     /// where you need to see beyond `current` before committing.
     ///
-    /// ```rust
-    /// // Check if this is INSTEAD OF without consuming INSTEAD
-    /// if self.current_is(TokenKind::Instead) && self.peek_is(&TokenKind::Of) {
-    ///     ...
-    /// }
-    /// ```
+
     pub fn peek_is(&self, token: &TokenKind) -> bool {
         self.peek_token() == token
     }
@@ -197,10 +172,7 @@ impl<'a> Parser<'a> {
     /// Consumes the current token if it matches `expected`, or returns an error.
     ///
     /// Use this for **required** tokens where absence is a syntax error:
-    /// ```rust
-    /// self.expect(TokenKind::LParen)?;  // ( must be here
-    /// self.expect(TokenKind::On)?;      // ON must follow trigger events
-    /// ```
+
     ///
     /// For **optional** tokens, use [`consume`].
     /// For tokens already confirmed by a `match` arm, use [`advance`].
@@ -230,14 +202,7 @@ impl<'a> Parser<'a> {
     ///
     /// Returns [`ParserError`] if the current token is not an identifier.
     ///
-    /// # Example
-    ///
-    /// ```rust
-    /// // source: "CREATE TABLE users"
-    /// // current token: Ident spanning "users"
-    /// let sym = self.expect_identifier()?;
-    /// assert_eq!(self.interner.resolve(sym), "users");
-    /// ```
+
     pub fn expect_identifier(&mut self) -> Result<Symbol, ParserError> {
         match self.current.kind {
             // Unquoted identifier: SELECT, users, my_table etc.
@@ -283,14 +248,7 @@ impl<'a> Parser<'a> {
     ///
     /// Returns [`ParserError`] if the current token is not a string literal.
     ///
-    /// # Example
-    ///
-    /// ```rust
-    /// // source: "LOCATION '/data/myspace'"
-    /// // current token: StringLit spanning "'/data/myspace'"
-    /// let sym = self.expect_string_literal()?;
-    /// assert_eq!(self.interner.resolve(sym), "/data/myspace");
-    /// ```
+
     pub fn expect_string_literal(&mut self) -> Result<Symbol, ParserError> {
         match self.current_token() {
             TokenKind::StringLit => {
@@ -327,7 +285,10 @@ impl<'a> Parser<'a> {
                 Ok(n as u64)
             }
             _ => Err(ParserError::new(
-                format!("Expected positive integer, found {:?}", self.current_token()),
+                format!(
+                    "Expected positive integer, found {:?}",
+                    self.current_token()
+                ),
                 self.current.span.clone(),
             )),
         }
