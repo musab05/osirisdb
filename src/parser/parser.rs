@@ -34,7 +34,6 @@ use crate::parser::parser_error::ParserError;
 ///
 /// `'a` is the lifetime of the source SQL string. The parser borrows the
 /// source to slice identifier spans directly — no copying until `intern()`.
-///
 
 pub struct Parser<'a> {
     /// The original source SQL string.
@@ -77,8 +76,7 @@ impl<'a> Parser<'a> {
     ///
     /// Pre-fetches the first two tokens into `current` and `peek` so the
     /// parser is immediately ready to make decisions without calling advance.
-    ///
-
+    
     pub fn new(source: &'a str) -> Self {
         let mut lexer = Lexer::new(source);
         let current = lexer.next_token();
@@ -134,9 +132,7 @@ impl<'a> Parser<'a> {
     /// Returns `true` and advances if the token matches.
     /// Returns `false` and does nothing if it does not.
     ///
-    /// Use this for **optional** tokens where absence is valid:
-
-    ///
+    /// Use this for **optional** tokens where absence is valid.
     /// For **required** tokens where absence is an error, use [`expect`].
     /// Never use `consume` after a `match` arm on the same token — use
     /// [`advance`] instead since the match already confirmed the token.
@@ -162,17 +158,14 @@ impl<'a> Parser<'a> {
     ///
     /// Does not consume any tokens. Used for two-token lookahead decisions
     /// where you need to see beyond `current` before committing.
-    ///
-
+    
     pub fn peek_is(&self, token: &TokenKind) -> bool {
         self.peek_token() == token
     }
 
     /// Consumes the current token if it matches `expected`, or returns an error.
     ///
-    /// Use this for **required** tokens where absence is a syntax error:
-
-    ///
+    /// Use this for **required** tokens where absence is a syntax error.
     /// For **optional** tokens, use [`consume`].
     /// For tokens already confirmed by a `match` arm, use [`advance`].
     pub fn expect(&mut self, expected: TokenKind) -> Result<(), ParserError> {
@@ -200,7 +193,6 @@ impl<'a> Parser<'a> {
     /// # Errors
     ///
     /// Returns [`ParserError`] if the current token is not an identifier.
-    ///
 
     pub fn expect_identifier(&mut self) -> Result<Symbol, ParserError> {
         match self.current.kind {
@@ -246,7 +238,6 @@ impl<'a> Parser<'a> {
     /// # Errors
     ///
     /// Returns [`ParserError`] if the current token is not a string literal.
-    ///
 
     pub fn expect_string_literal(&mut self) -> Result<Symbol, ParserError> {
         match self.current_token() {
