@@ -378,6 +378,9 @@ impl<'a> Parser<'a> {
         }
         self.expect(TokenKind::RParen)?;
 
-        Ok(TriggerFunction { name: ObjectName(name), args })
+        Ok(TriggerFunction {
+            name: ObjectName(name),
+            args,
+        })
     }
 }

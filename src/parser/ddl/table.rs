@@ -1,18 +1,17 @@
 use crate::ast::*;
+use crate::common::symbol::Symbol;
 use crate::lexer::*;
 use crate::parser::parser::Parser;
 use crate::parser::parser_error::ParserError;
-use crate::common::symbol::Symbol;
 
 impl<'a> Parser<'a> {
-/// Executes parsing or lookup for the `parse_create_table` operation.
+    /// Executes parsing or lookup for the `parse_create_table` operation.
     /// Parses a detailed `CREATE TABLE` DDL statement, capturing columns, constraints, inheritance, partitions, and storage settings.
     pub fn parse_create_table(
         &mut self,
         temporary: bool,
         unlogged: bool,
     ) -> Result<CreateStmt, ParserError> {
-
         let if_not_exist = self.parse_if_not_exist()?;
 
         let name = ObjectName(self.parse_qualified_name()?);
@@ -360,8 +359,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-
-
     /// Parses a comma-separated list of column identifiers inside parentheses (e.g., `(user_id, order_id)`).
     fn parse_column_list(&mut self) -> Result<Vec<Symbol>, ParserError> {
         self.expect(TokenKind::LParen)?;
@@ -452,7 +449,7 @@ impl<'a> Parser<'a> {
     }
 
     // Drop table
-/// Executes parsing or lookup for the `parse_drop_table` operation.
+    /// Executes parsing or lookup for the `parse_drop_table` operation.
     /// Parses a `DROP TABLE` DDL statement.
     pub fn parse_drop_table(&mut self, temporary: bool) -> Result<DropTableStmt, ParserError> {
         self.consume(&TokenKind::Table);
@@ -489,7 +486,7 @@ impl<'a> Parser<'a> {
     }
 
     // Alter table
-/// Executes parsing or lookup for the `parse_alter_table` operation.
+    /// Executes parsing or lookup for the `parse_alter_table` operation.
     /// Parses an `ALTER TABLE` schema modification statement containing a list of sub-actions.
     pub fn parse_alter_table(&mut self) -> Result<AlterTableStmt, ParserError> {
         self.consume(&TokenKind::Table);

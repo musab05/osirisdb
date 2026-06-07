@@ -14,7 +14,7 @@
 //!
 
 pub mod ast;
+pub mod catalog;
+pub mod common;
 pub mod lexer;
 pub mod parser;
-pub mod common;
-pub mod catalog;

@@ -151,7 +151,7 @@ fn test_connection_limit_with_eq() {
 #[test]
 fn test_all_options() {
     let stmts = parse(
-        "CREATE DATABASE mydb OWNER alice ENCODING 'UTF8' LOCALE 'en_US' TABLESPACE myspace CONNECTION LIMIT 50;"
+        "CREATE DATABASE mydb OWNER alice ENCODING 'UTF8' LOCALE 'en_US' TABLESPACE myspace CONNECTION LIMIT 50;",
     );
     match &stmts[0] {
         Statement::CreateDatabase(s) => {

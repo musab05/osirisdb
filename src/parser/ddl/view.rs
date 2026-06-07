@@ -1,11 +1,11 @@
 use crate::{
-    ast::{CreateViewStmt, ViewCheckOption, ObjectName},
+    ast::{CreateViewStmt, ObjectName, ViewCheckOption},
     lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
 };
 
 impl<'a> Parser<'a> {
-/// Executes parsing or lookup for the `parse_create_view` operation.
+    /// Executes parsing or lookup for the `parse_create_view` operation.
     pub fn parse_create_view(
         &mut self,
         or_replace: bool,

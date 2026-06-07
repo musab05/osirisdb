@@ -13,4 +13,3 @@ pub enum PartitionKind {
     List,
     Hash,
 }
-

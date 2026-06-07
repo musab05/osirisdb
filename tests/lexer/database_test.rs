@@ -28,11 +28,10 @@ fn test_database_keyword() {
 
 #[test]
 fn test_create_database_keywords() {
-    assert_eq!(lex("CREATE DATABASE"), vec![
-        TokenKind::Create,
-        TokenKind::Database,
-        TokenKind::Eof,
-    ]);
+    assert_eq!(
+        lex("CREATE DATABASE"),
+        vec![TokenKind::Create, TokenKind::Database, TokenKind::Eof,]
+    );
 }
 
 #[test]
@@ -45,12 +44,15 @@ fn test_keywords_case_insensitive() {
 
 #[test]
 fn test_if_not_exists_tokens() {
-    assert_eq!(lex("IF NOT EXISTS"), vec![
-        TokenKind::If,
-        TokenKind::Not,
-        TokenKind::Exists,
-        TokenKind::Eof,
-    ]);
+    assert_eq!(
+        lex("IF NOT EXISTS"),
+        vec![
+            TokenKind::If,
+            TokenKind::Not,
+            TokenKind::Exists,
+            TokenKind::Eof,
+        ]
+    );
 }
 
 #[test]
@@ -70,108 +72,128 @@ fn test_locale_keyword() {
 
 #[test]
 fn test_tablespace_keyword() {
-    assert_eq!(lex("TABLESPACE"), vec![TokenKind::Tablespace, TokenKind::Eof]);
+    assert_eq!(
+        lex("TABLESPACE"),
+        vec![TokenKind::Tablespace, TokenKind::Eof]
+    );
 }
 
 #[test]
 fn test_connection_limit_keywords() {
-    assert_eq!(lex("CONNECTION LIMIT"), vec![
-        TokenKind::Connection,
-        TokenKind::Limit,
-        TokenKind::Eof,
-    ]);
+    assert_eq!(
+        lex("CONNECTION LIMIT"),
+        vec![TokenKind::Connection, TokenKind::Limit, TokenKind::Eof,]
+    );
 }
 
 // ── Full statements ───────────────────────────────────────────────────────────
 
 #[test]
 fn test_full_create_database_minimal() {
-    assert_eq!(lex("CREATE DATABASE mydb;"), vec![
-        TokenKind::Create,
-        TokenKind::Database,
-        TokenKind::Ident,
-        TokenKind::Semicolon,
-        TokenKind::Eof,
-    ]);
+    assert_eq!(
+        lex("CREATE DATABASE mydb;"),
+        vec![
+            TokenKind::Create,
+            TokenKind::Database,
+            TokenKind::Ident,
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
 }
 
 #[test]
 fn test_full_create_database_if_not_exists() {
-    assert_eq!(lex("CREATE DATABASE IF NOT EXISTS mydb;"), vec![
-        TokenKind::Create,
-        TokenKind::Database,
-        TokenKind::If,
-        TokenKind::Not,
-        TokenKind::Exists,
-        TokenKind::Ident,
-        TokenKind::Semicolon,
-        TokenKind::Eof,
-    ]);
+    assert_eq!(
+        lex("CREATE DATABASE IF NOT EXISTS mydb;"),
+        vec![
+            TokenKind::Create,
+            TokenKind::Database,
+            TokenKind::If,
+            TokenKind::Not,
+            TokenKind::Exists,
+            TokenKind::Ident,
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
 }
 
 #[test]
 fn test_full_create_database_with_owner() {
-    assert_eq!(lex("CREATE DATABASE mydb OWNER alice;"), vec![
-        TokenKind::Create,
-        TokenKind::Database,
-        TokenKind::Ident,
-        TokenKind::Owner,
-        TokenKind::Ident,
-        TokenKind::Semicolon,
-        TokenKind::Eof,
-    ]);
+    assert_eq!(
+        lex("CREATE DATABASE mydb OWNER alice;"),
+        vec![
+            TokenKind::Create,
+            TokenKind::Database,
+            TokenKind::Ident,
+            TokenKind::Owner,
+            TokenKind::Ident,
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
 }
 
 #[test]
 fn test_full_create_database_with_encoding() {
-    assert_eq!(lex("CREATE DATABASE mydb ENCODING 'UTF8';"), vec![
-        TokenKind::Create,
-        TokenKind::Database,
-        TokenKind::Ident,
-        TokenKind::Encoding,
-        TokenKind::StringLit,
-        TokenKind::Semicolon,
-        TokenKind::Eof,
-    ]);
+    assert_eq!(
+        lex("CREATE DATABASE mydb ENCODING 'UTF8';"),
+        vec![
+            TokenKind::Create,
+            TokenKind::Database,
+            TokenKind::Ident,
+            TokenKind::Encoding,
+            TokenKind::StringLit,
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
 }
 
 #[test]
 fn test_full_create_database_with_connection_limit() {
-    assert_eq!(lex("CREATE DATABASE mydb CONNECTION LIMIT 100;"), vec![
-        TokenKind::Create,
-        TokenKind::Database,
-        TokenKind::Ident,
-        TokenKind::Connection,
-        TokenKind::Limit,
-        TokenKind::IntLit(100),
-        TokenKind::Semicolon,
-        TokenKind::Eof,
-    ]);
+    assert_eq!(
+        lex("CREATE DATABASE mydb CONNECTION LIMIT 100;"),
+        vec![
+            TokenKind::Create,
+            TokenKind::Database,
+            TokenKind::Ident,
+            TokenKind::Connection,
+            TokenKind::Limit,
+            TokenKind::IntLit(100),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
 }
 
 #[test]
 fn test_full_create_database_all_options() {
     let tokens = lex(
-        "CREATE DATABASE mydb OWNER alice ENCODING 'UTF8' LOCALE 'en_US' TABLESPACE myspace CONNECTION LIMIT 50;"
+        "CREATE DATABASE mydb OWNER alice ENCODING 'UTF8' LOCALE 'en_US' TABLESPACE myspace CONNECTION LIMIT 50;",
     );
-    assert_eq!(tokens, vec![
-        TokenKind::Create,
-        TokenKind::Database,
-        TokenKind::Ident,    // mydb
-        TokenKind::Owner,
-        TokenKind::Ident,    // alice
-        TokenKind::Encoding,
-        TokenKind::StringLit, // 'UTF8'
-        TokenKind::Locale,
-        TokenKind::StringLit, // 'en_US'
-        TokenKind::Tablespace,
-        TokenKind::Ident,    // myspace
-        TokenKind::Connection,
-        TokenKind::Limit,
-        TokenKind::IntLit(50),
-        TokenKind::Semicolon,
-        TokenKind::Eof,
-    ]);
+    assert_eq!(
+        tokens,
+        vec![
+            TokenKind::Create,
+            TokenKind::Database,
+            TokenKind::Ident, // mydb
+            TokenKind::Owner,
+            TokenKind::Ident, // alice
+            TokenKind::Encoding,
+            TokenKind::StringLit, // 'UTF8'
+            TokenKind::Locale,
+            TokenKind::StringLit, // 'en_US'
+            TokenKind::Tablespace,
+            TokenKind::Ident, // myspace
+            TokenKind::Connection,
+            TokenKind::Limit,
+            TokenKind::IntLit(50),
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ]
+    );
 }
 
 // ── Spans ─────────────────────────────────────────────────────────────────────

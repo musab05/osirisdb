@@ -1,8 +1,5 @@
 use crate::{
-    ast::{
-        CreateProcedureStmt, FunctionAccess,
-        ObjectName, SecurityMode, SqlOption,
-    },
+    ast::{CreateProcedureStmt, FunctionAccess, ObjectName, SecurityMode, SqlOption},
     common::symbol::Symbol,
     lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
@@ -102,7 +99,7 @@ impl<'a> Parser<'a> {
                                     self.current_token()
                                 ),
                                 self.current.span.clone(),
-                            ))
+                            ));
                         }
                     };
                 }
@@ -145,7 +142,7 @@ impl<'a> Parser<'a> {
                                     self.current_token()
                                 ),
                                 self.current.span.clone(),
-                            ))
+                            ));
                         }
                     };
                 }

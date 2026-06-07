@@ -1,5 +1,8 @@
 use crate::{
-    ast::{BaseTypeDef, CompositeField, CreateTypeStmt, DataType, DomainConstraint, DomainDef, ObjectName, RangeTypeDef, TypeKind},
+    ast::{
+        BaseTypeDef, CompositeField, CreateTypeStmt, DataType, DomainConstraint, DomainDef,
+        ObjectName, RangeTypeDef, TypeKind,
+    },
     lexer::TokenKind,
     parser::{Parser, ParserError},
 };
@@ -236,7 +239,8 @@ impl<'a> Parser<'a> {
                             base_def.preferred = false;
                         } else {
                             let pref_sym = self.expect_identifier()?;
-                            base_def.preferred = self.interner.resolve(pref_sym).to_uppercase() == "TRUE";
+                            base_def.preferred =
+                                self.interner.resolve(pref_sym).to_uppercase() == "TRUE";
                         }
                     }
                     "DEFAULT" => {

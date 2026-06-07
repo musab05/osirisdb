@@ -7,4 +7,3 @@ pub struct DropTableStmt {
     pub names: Vec<ObjectName>,
     pub behaviour: Option<DropBehavior>,
 }
-

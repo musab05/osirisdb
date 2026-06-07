@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use crate::catalog::objects::database::DatabaseEntry;
 use crate::common::symbol::Symbol;
+use std::collections::HashMap;
 
 /// The in-memory catalog — single source of truth for all database metadata.
 ///

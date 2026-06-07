@@ -69,7 +69,6 @@ pub struct Parser<'a> {
     /// as a [`Symbol`] in the AST. After parsing completes, the caller
     /// takes ownership of the interner and passes it to the binder:
     ///
-
     pub interner: Interner,
 }
 

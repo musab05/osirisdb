@@ -553,7 +553,10 @@ impl<'a> Lexer<'a> {
                             self.advance();
                         }
                         return TokenKind::UnterminatedString;
-                    } else if self.peek().map_or(false, |c| c.is_ascii_alphabetic() || c == b'_') {
+                    } else if self
+                        .peek()
+                        .map_or(false, |c| c.is_ascii_alphabetic() || c == b'_')
+                    {
                         // Tagged dollar-quoted string: e.g. $tag$
                         self.advance(); // consume first '$'
                         let mut tag = vec![];
@@ -573,7 +576,7 @@ impl<'a> Lexer<'a> {
                             return TokenKind::UnterminatedString;
                         }
                         self.advance(); // consume second '$' of start tag
-                        
+
                         // Now search for the closing tag: $ + tag + $
                         let tag_len = tag.len();
                         loop {
@@ -584,12 +587,17 @@ impl<'a> Lexer<'a> {
                                 // Check if the following characters match tag + $
                                 let mut matches = true;
                                 for i in 0..tag_len {
-                                    if self.input.get(self.position + 1 + i).copied() != Some(tag[i]) {
+                                    if self.input.get(self.position + 1 + i).copied()
+                                        != Some(tag[i])
+                                    {
                                         matches = false;
                                         break;
                                     }
                                 }
-                                if matches && self.input.get(self.position + 1 + tag_len).copied() == Some(b'$') {
+                                if matches
+                                    && self.input.get(self.position + 1 + tag_len).copied()
+                                        == Some(b'$')
+                                {
                                     // Found the closing tag!
                                     self.advance(); // consume '$'
                                     for _ in 0..tag_len {

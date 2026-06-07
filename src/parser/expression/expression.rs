@@ -323,9 +323,7 @@ impl<'a> Parser<'a> {
                         let inner = &s[1..s.len() - 1];
                         (self.interner.intern(inner), inner.to_string())
                     }
-                    _ => {
-                        (self.interner.intern(s), s.to_string())
-                    }
+                    _ => (self.interner.intern(s), s.to_string()),
                 };
                 self.advance();
                 match name.to_uppercase().as_str() {

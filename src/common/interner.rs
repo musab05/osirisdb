@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::common::symbol::Symbol;
+use std::collections::HashMap;
 
 /// A string interner that maps strings to compact numeric [`Symbol`]s.
 ///
@@ -131,7 +131,7 @@ impl Interner {
         let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
 
         // Store in both directions for O(1) lookup in either direction.
-        self.strings.push(leaked);  // Symbol → &str  (resolve)
+        self.strings.push(leaked); // Symbol → &str  (resolve)
         self.map.insert(leaked, id); // &str → Symbol  (intern)
 
         id

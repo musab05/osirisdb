@@ -263,7 +263,7 @@ pub enum TokenKind {
     After,
     Instead,
     Of,
-    InsteadOf,   // two words — handle as Ident "INSTEAD" + consume "OF"
+    InsteadOf, // two words — handle as Ident "INSTEAD" + consume "OF"
     Each,
     Execute,
     Procedure,
@@ -324,10 +324,10 @@ pub enum TokenKind {
     Uuid,
     Bytea,
     // ── Trigger Extensions ──
-    Priority,   // PRIORITY n
-    Tags,       // TAGS ('tag1', ...)
-    Enabled,    // ENABLED
-    Disabled,   // DISABLED
+    Priority, // PRIORITY n
+    Tags,     // TAGS ('tag1', ...)
+    Enabled,  // ENABLED
+    Disabled, // DISABLED
     // ── DDL Modifiers ──
     /// A DDL modifier keyword (e.g. `TEMPORARY`, `UNLOGGED`). See [`Modifier`].
     Modifier(Modifier),

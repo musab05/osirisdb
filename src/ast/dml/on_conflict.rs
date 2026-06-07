@@ -5,4 +5,3 @@ pub struct OnConflict {
     pub target: Option<ConflictTarget>,
     pub action: ConflictAction,
 }
-

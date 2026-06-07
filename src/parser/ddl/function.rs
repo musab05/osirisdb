@@ -1,8 +1,8 @@
 use crate::{
     ast::{
-        CreateFunctionStmt, FunctionAccess, FunctionBody, FunctionLanguage, FunctionParam,
-        FunctionParallel, FunctionReturn, FunctionVolatility, NullBehavior, ObjectName,
-        ParamMode, SecurityMode, SqlOption,
+        CreateFunctionStmt, FunctionAccess, FunctionBody, FunctionLanguage, FunctionParallel,
+        FunctionParam, FunctionReturn, FunctionVolatility, NullBehavior, ObjectName, ParamMode,
+        SecurityMode, SqlOption,
     },
     common::symbol::Symbol,
     lexer::TokenKind,
@@ -53,14 +53,14 @@ impl<'a> Parser<'a> {
 
         // ── Optional clauses — all have defaults, order independent ──
 
-        let mut volatility = FunctionVolatility::Volatile;      // default per SQL standard
-        let mut null_behavior = NullBehavior::CalledOnNull;     // default per SQL standard
-        let mut security = SecurityMode::Invoker;               // default per SQL standard
-        let mut parallel = FunctionParallel::Unsafe;            // default per SQL standard
+        let mut volatility = FunctionVolatility::Volatile; // default per SQL standard
+        let mut null_behavior = NullBehavior::CalledOnNull; // default per SQL standard
+        let mut security = SecurityMode::Invoker; // default per SQL standard
+        let mut parallel = FunctionParallel::Unsafe; // default per SQL standard
         let mut cost = None;
         let mut rows = None;
         let mut set_options: Vec<SqlOption> = vec![];
-        let mut access = FunctionAccess::Public;                // our default
+        let mut access = FunctionAccess::Public; // our default
         let mut raises: Vec<Symbol> = vec![];
 
         loop {
@@ -135,7 +135,7 @@ impl<'a> Parser<'a> {
                                     self.current_token()
                                 ),
                                 self.current.span.clone(),
-                            ))
+                            ));
                         }
                     };
                 }
@@ -167,7 +167,7 @@ impl<'a> Parser<'a> {
                                     self.current_token()
                                 ),
                                 self.current.span.clone(),
-                            ))
+                            ));
                         }
                     };
                 }
@@ -224,7 +224,7 @@ impl<'a> Parser<'a> {
                                     self.current_token()
                                 ),
                                 self.current.span.clone(),
-                            ))
+                            ));
                         }
                     };
                 }
@@ -324,8 +324,10 @@ impl<'a> Parser<'a> {
         // Optional parameter name — present if current token is an identifier
         // AND the next token is not a type keyword.
         // e.g. `a INTEGER` → name=a, `INTEGER` → no name
-        let name = if matches!(self.current_token(), TokenKind::Ident | TokenKind::QuotedIdent)
-            && !self.is_type_keyword()
+        let name = if matches!(
+            self.current_token(),
+            TokenKind::Ident | TokenKind::QuotedIdent
+        ) && !self.is_type_keyword()
         {
             Some(self.expect_identifier()?)
         } else {
@@ -520,7 +522,7 @@ impl<'a> Parser<'a> {
                         return Err(ParserError::new(
                             "Unterminated BEGIN...END block in function body",
                             self.current.span.clone(),
-                        ))
+                        ));
                     }
                     _ => {
                         self.advance();

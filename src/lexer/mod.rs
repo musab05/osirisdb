@@ -12,12 +12,12 @@
 //! - [`lookup_keyword()`] — maps identifier strings to SQL keyword token kinds.
 //! - [`spanned_token`] — the [`Span`] type used for source-location tracking.
 
-pub mod token;
 pub mod lexer;
 pub mod lookup_keyword;
 pub mod spanned_token;
+pub mod token;
 
 pub use lexer::*;
-pub use token::*;
 pub use lookup_keyword::*;
 pub use spanned_token::*;
+pub use token::*;

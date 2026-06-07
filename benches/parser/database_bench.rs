@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use rust_sql::parser::parser::Parser;
 
 const MINIMAL: &str = "CREATE DATABASE mydb;";
@@ -8,7 +8,11 @@ const FULL: &str = "CREATE DATABASE mydb OWNER alice ENCODING 'UTF8' LOCALE 'en_
 pub fn bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("parser_database");
 
-    for (name, sql) in [("minimal", MINIMAL), ("with_owner", WITH_OWNER), ("full", FULL)] {
+    for (name, sql) in [
+        ("minimal", MINIMAL),
+        ("with_owner", WITH_OWNER),
+        ("full", FULL),
+    ] {
         group.throughput(Throughput::Bytes(sql.len() as u64));
         group.bench_with_input(BenchmarkId::new("parse", name), sql, |b, sql| {
             b.iter(|| Parser::new(black_box(sql)).parse())

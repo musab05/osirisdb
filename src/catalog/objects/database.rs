@@ -90,8 +90,8 @@ impl DatabaseEntry {
             locale,
             tablespace,
             connection_limit,
-            allow_connections: true,  // always true for user-created databases
-            is_template: false,       // always false for user-created databases
+            allow_connections: true, // always true for user-created databases
+            is_template: false,      // always false for user-created databases
         }
     }
 }

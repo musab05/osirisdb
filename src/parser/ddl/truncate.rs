@@ -5,7 +5,7 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
-/// Executes parsing or lookup for the `parse_truncate` operation.
+    /// Executes parsing or lookup for the `parse_truncate` operation.
     pub fn parse_truncate(&mut self) -> Result<TruncateStmt, ParserError> {
         self.consume(&TokenKind::Truncate);
 

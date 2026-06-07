@@ -56,7 +56,6 @@ pub struct CreateTriggerStmt {
     pub function: TriggerFunction,
 
     // ── Our extensions ──
-
     /// PRIORITY n — integer priority for ordering trigger execution
     /// when multiple triggers fire on the same event and table.
     /// Lower number = fires first. Default is 0 if not specified.
@@ -122,7 +121,7 @@ pub enum TriggerTiming {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TriggerEvent {
     Insert,
-    Update(Vec<Symbol>),  // empty Vec = all columns
+    Update(Vec<Symbol>), // empty Vec = all columns
     Delete,
     Truncate,
 }

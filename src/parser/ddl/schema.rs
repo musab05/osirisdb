@@ -5,12 +5,14 @@ use crate::{
 };
 
 impl<'a> Parser<'a> {
-/// Executes parsing or lookup for the `parse_create_schema` operation.
+    /// Executes parsing or lookup for the `parse_create_schema` operation.
     pub fn parse_create_schema(&mut self) -> Result<CreateSchemaStmt, ParserError> {
-
         let if_not_exists = self.parse_if_not_exist()?;
 
-        let name = if matches!(self.current_token(), TokenKind::Ident | TokenKind::QuotedIdent) {
+        let name = if matches!(
+            self.current_token(),
+            TokenKind::Ident | TokenKind::QuotedIdent
+        ) {
             Some(self.expect_identifier()?)
         } else {
             None
