@@ -5,6 +5,19 @@ All notable changes to the `rust_sql` project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-06-07
+
+### Added
+
+- **Testing Framework**: Initialized project-wide testing. Relocated integration tests from `src/tests` to the root-level `tests/` directory so they are automatically run by Cargo.
+- **Benchmarking & Profiling**: Integrated the `criterion` benchmarking crate as a dev-dependency and configured catalog, lexer, and parser benchmarks with custom profiling harnesses.
+
+### Fixed
+
+- **Doctest Maintenance**: Removed illustrative test code blocks from doc comments in favor of the dedicated integration test suites.
+- **AST Consistency**: Renamed the `Statement::CreateDataBase` variant to `CreateDatabase` in `src/ast/statement.rs` and `src/parser/ddl/create.rs` to fix spelling consistency.
+- **Lexer Test Harness**: Fixed the `lex` helper in the lexer integration tests to correctly scan up to `TokenKind::Eof`.
+
 ## [0.1.0] - 2026-05-31
 
 ### Added
