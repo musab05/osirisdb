@@ -112,4 +112,23 @@ impl CatalogManager {
         }
         Ok(())
     }
+
+    /// Returns `true` if a role with the given name exists.
+    ///
+    /// Used by the binder to validate OWNER clauses.
+    /// Returns `false` for now since roles are not yet implemented —
+    /// remove this stub when the role catalog is added.
+    pub fn role_exists(&self, _name: Symbol) -> bool {
+        // TODO: implement when role catalog is added
+        // For now allow any role name to pass validation
+        true
+    }
+
+    /// Returns `true` if a tablespace with the given name exists.
+    ///
+    /// Used by the binder to validate TABLESPACE clauses.
+    pub fn tablespace_exists(&self, _name: Symbol) -> bool {
+        // TODO: implement when tablespace catalog is added
+        true
+    }
 }
