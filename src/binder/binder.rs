@@ -1,9 +1,6 @@
 use crate::{
     ast::CreateDatabaseStmt,
-    binder::{
-        bound::database::BoundCreateDatabaseStmt,
-        error::BindError,
-    },
+    binder::{bound::database::BoundCreateDatabaseStmt, error::BindError},
     catalog::CatalogManager,
     common::symbol::Symbol,
 };
@@ -43,7 +40,10 @@ impl<'c> Binder<'c> {
     /// `session_user` is the symbol of the currently connected role,
     /// used to resolve ownership defaults.
     pub fn new(catalog: &'c CatalogManager, session_user: Symbol) -> Self {
-        Self { catalog, session_user }
+        Self {
+            catalog,
+            session_user,
+        }
     }
 
     /// Binds a `CREATE DATABASE` statement.
