@@ -32,3 +32,8 @@ harness = false
 name = "parser_bench"
 path = "benches/parser/database_bench.rs"
 harness = false
+
+[[bench]]
+name = "binder_bench"
+path = "benches/binder/database_bench.rs"
+harness = false
