@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use rust_sql::ast::CreateDatabaseStmt;
 use rust_sql::binder::Binder;
 use rust_sql::catalog::CatalogManager;
@@ -60,11 +60,7 @@ fn bench_bind_create_database(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("catalog_size", n),
             &new_name,
-            |b, &name| {
-                b.iter(|| {
-                    binder.bind_create_database(black_box(stmt(name, false)))
-                })
-            },
+            |b, &name| b.iter(|| binder.bind_create_database(black_box(stmt(name, false)))),
         );
     }
 
@@ -83,9 +79,7 @@ fn bench_bind_if_not_exists(c: &mut Criterion) {
     let binder = Binder::new(&m, session);
 
     c.bench_function("binder_create_database_if_not_exists", |b| {
-        b.iter(|| {
-            binder.bind_create_database(black_box(stmt(name, true)))
-        })
+        b.iter(|| binder.bind_create_database(black_box(stmt(name, true))))
     });
 }
 

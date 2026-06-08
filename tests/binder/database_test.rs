@@ -97,8 +97,12 @@ fn test_connection_limit_zero_valid() {
     let (m, s) = setup(&["mydb", "postgres"]);
     let binder = Binder::new(&m, s[1]);
     let with_limit = CreateDatabaseStmt {
-        name: s[0], if_not_exists: false, owner: None,
-        encoding: None, locale: None, tablespace: None,
+        name: s[0],
+        if_not_exists: false,
+        owner: None,
+        encoding: None,
+        locale: None,
+        tablespace: None,
         connection_limit: Some(0),
     };
     assert!(binder.bind_create_database(with_limit).is_ok());
@@ -109,8 +113,12 @@ fn test_connection_limit_positive_valid() {
     let (m, s) = setup(&["mydb", "postgres"]);
     let binder = Binder::new(&m, s[1]);
     let with_limit = CreateDatabaseStmt {
-        name: s[0], if_not_exists: false, owner: None,
-        encoding: None, locale: None, tablespace: None,
+        name: s[0],
+        if_not_exists: false,
+        owner: None,
+        encoding: None,
+        locale: None,
+        tablespace: None,
         connection_limit: Some(100),
     };
     assert!(binder.bind_create_database(with_limit).is_ok());
@@ -121,8 +129,12 @@ fn test_connection_limit_negative_one_valid() {
     let (m, s) = setup(&["mydb", "postgres"]);
     let binder = Binder::new(&m, s[1]);
     let with_limit = CreateDatabaseStmt {
-        name: s[0], if_not_exists: false, owner: None,
-        encoding: None, locale: None, tablespace: None,
+        name: s[0],
+        if_not_exists: false,
+        owner: None,
+        encoding: None,
+        locale: None,
+        tablespace: None,
         connection_limit: Some(-1), // -1 = unlimited, always valid
     };
     assert!(binder.bind_create_database(with_limit).is_ok());
@@ -133,8 +145,12 @@ fn test_connection_limit_below_negative_one_invalid() {
     let (m, s) = setup(&["mydb", "postgres"]);
     let binder = Binder::new(&m, s[1]);
     let with_limit = CreateDatabaseStmt {
-        name: s[0], if_not_exists: false, owner: None,
-        encoding: None, locale: None, tablespace: None,
+        name: s[0],
+        if_not_exists: false,
+        owner: None,
+        encoding: None,
+        locale: None,
+        tablespace: None,
         connection_limit: Some(-2),
     };
     let err = binder.bind_create_database(with_limit).unwrap_err();
@@ -146,8 +162,12 @@ fn test_connection_limit_large_negative_invalid() {
     let (m, s) = setup(&["mydb", "postgres"]);
     let binder = Binder::new(&m, s[1]);
     let with_limit = CreateDatabaseStmt {
-        name: s[0], if_not_exists: false, owner: None,
-        encoding: None, locale: None, tablespace: None,
+        name: s[0],
+        if_not_exists: false,
+        owner: None,
+        encoding: None,
+        locale: None,
+        tablespace: None,
         connection_limit: Some(-100),
     };
     let err = binder.bind_create_database(with_limit).unwrap_err();
@@ -177,8 +197,12 @@ fn test_bound_preserves_encoding() {
     let (m, s) = setup(&["mydb", "postgres", "UTF8"]);
     let binder = Binder::new(&m, s[1]);
     let with_encoding = CreateDatabaseStmt {
-        name: s[0], if_not_exists: false, owner: None,
-        encoding: Some(s[2]), locale: None, tablespace: None,
+        name: s[0],
+        if_not_exists: false,
+        owner: None,
+        encoding: Some(s[2]),
+        locale: None,
+        tablespace: None,
         connection_limit: None,
     };
     let bound = binder.bind_create_database(with_encoding).unwrap();
@@ -190,8 +214,12 @@ fn test_bound_preserves_locale() {
     let (m, s) = setup(&["mydb", "postgres", "en_US"]);
     let binder = Binder::new(&m, s[1]);
     let with_locale = CreateDatabaseStmt {
-        name: s[0], if_not_exists: false, owner: None,
-        encoding: None, locale: Some(s[2]), tablespace: None,
+        name: s[0],
+        if_not_exists: false,
+        owner: None,
+        encoding: None,
+        locale: Some(s[2]),
+        tablespace: None,
         connection_limit: None,
     };
     let bound = binder.bind_create_database(with_locale).unwrap();
@@ -203,8 +231,12 @@ fn test_bound_preserves_connection_limit() {
     let (m, s) = setup(&["mydb", "postgres"]);
     let binder = Binder::new(&m, s[1]);
     let with_limit = CreateDatabaseStmt {
-        name: s[0], if_not_exists: false, owner: None,
-        encoding: None, locale: None, tablespace: None,
+        name: s[0],
+        if_not_exists: false,
+        owner: None,
+        encoding: None,
+        locale: None,
+        tablespace: None,
         connection_limit: Some(50),
     };
     let bound = binder.bind_create_database(with_limit).unwrap();
