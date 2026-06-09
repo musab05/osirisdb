@@ -1,4 +1,4 @@
-use crate::{binder::error::BindError, catalog::error::CatalogError};
+use crate::catalog::error::CatalogError;
 
 /// Errors that can occur during statement execution.
 ///

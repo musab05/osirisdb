@@ -37,3 +37,8 @@ harness = false
 name = "binder_bench"
 path = "benches/binder/database_bench.rs"
 harness = false
+
+[[bench]]
+name = "executor_bench"
+path = "benches/executor/database_bench.rs"
+harness = false
