@@ -5,6 +5,17 @@ All notable changes to the `rust_sql` project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.3.0] - 2026-06-09
+
+### Added
+
+- **Execution Engine**: Implemented the baseline execution framework (`Executor`) to apply bound statements to the catalog.
+- **Database DDL Executor**: Added support for executing `CREATE DATABASE` statements (with optional owner, encoding, locale, tablespace, connection limits, and `IF NOT EXISTS` handling).
+- **Integration Tests**: Added an integration test suite under `tests/executor/` to verify executor correctness, catalog state persistence, and OID increments.
+- **Performance Benchmarks**: Added Criterion benchmark suite under `benches/executor/` to measure catalog-size impact on binding and execution speeds.
+
 ## [0.2.0] - 2026-06-07
 
 ### Added
