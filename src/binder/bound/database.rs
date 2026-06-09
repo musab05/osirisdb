@@ -1,4 +1,4 @@
-use crate::common::symbol::Symbol;
+use crate::{ast::CreateDatabaseStmt, common::symbol::Symbol};
 
 /// A fully resolved and validated `CREATE DATABASE` statement.
 ///
@@ -41,4 +41,23 @@ pub struct BoundCreateDatabaseStmt {
     ///
     /// Validated to be >= -1. `None` means unlimited.
     pub connection_limit: Option<i64>,
+}
+
+/// Converts a bound statement back into a raw AST statement for the catalog.
+///
+/// The bound statement has already resolved all defaults (e.g. owner),
+/// so the resulting `CreateDatabaseStmt` has `owner` set to the resolved
+/// value and `if_not_exists` preserved as-is.
+impl From<BoundCreateDatabaseStmt> for CreateDatabaseStmt {
+    fn from(b: BoundCreateDatabaseStmt) -> Self {
+        CreateDatabaseStmt {
+            name: b.name,
+            if_not_exists: b.if_not_exists,
+            owner: Some(b.owner), // owner is always resolved in bound stmt
+            encoding: b.encoding,
+            locale: b.locale,
+            tablespace: b.tablespace,
+            connection_limit: b.connection_limit,
+        }
+    }
 }

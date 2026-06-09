@@ -17,5 +17,6 @@ pub mod ast;
 pub mod binder;
 pub mod catalog;
 pub mod common;
+pub mod executor;
 pub mod lexer;
 pub mod parser;
