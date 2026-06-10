@@ -20,3 +20,4 @@ pub mod common;
 pub mod executor;
 pub mod lexer;
 pub mod parser;
+pub mod storage;

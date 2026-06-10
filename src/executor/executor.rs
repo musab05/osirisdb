@@ -1,4 +1,4 @@
-use crate::{catalog::CatalogManager, common::symbol::Symbol};
+use crate::{catalog::CatalogManager, common::symbol::Symbol, storage::Storage};
 
 /// The execution engine — receives bound statements and applies them
 /// to the catalog and storage.
@@ -31,6 +31,11 @@ pub struct Executor {
     /// Used as the default owner for objects created without an explicit
     /// OWNER clause. Resolved during session initialization.
     pub session_user: Symbol,
+    /// The storage engine — manages on-disk layout.
+    ///
+    /// `None` when running in memory-only mode (e.g. tests that
+    /// don't need disk I/O). `Some` in production.
+    pub storage: Option<Storage>,
 }
 
 impl Executor {
@@ -39,10 +44,23 @@ impl Executor {
     /// `catalog` is moved into the executor — the executor takes full
     /// ownership and is the only component that may write to it.
     /// `session_user` is the symbol of the currently connected role.
-    pub fn new(catalog: CatalogManager, session_user: Symbol) -> Self {
+    pub fn new(catalog: CatalogManager, session_user: Symbol, storage: Storage) -> Self {
         Self {
             catalog,
             session_user,
+            storage: Some(storage),
+        }
+    }
+
+    /// Creates an executor without storage — catalog only.
+    ///
+    /// Used in tests and early pipeline stages where disk I/O
+    /// is not needed. Storage operations are silently skipped.
+    pub fn new_in_memory(catalog: CatalogManager, session_user: Symbol) -> Self {
+        Self {
+            catalog,
+            session_user,
+            storage: None,
         }
     }
 }

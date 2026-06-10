@@ -12,7 +12,7 @@ fn setup(names: &[&str]) -> (Executor, Vec<Symbol>) {
     let symbols: Vec<Symbol> = names.iter().map(|n| interner.intern(n)).collect();
     let catalog = CatalogManager::new(interner);
     let session = symbols[symbols.len() - 1]; // last name is always session user
-    (Executor::new(catalog, session), symbols)
+    (Executor::new_in_memory(catalog, session), symbols)
 }
 
 /// Minimal `CreateDatabaseStmt` with only name and if_not_exists set.
@@ -235,4 +235,43 @@ fn test_execute_is_template_defaults_false() {
     bind_and_execute_ok(&mut ex, stmt(s[0], false));
     let db = ex.catalog.get_database(s[0]).unwrap();
     assert!(!db.is_template);
+}
+
+// ── Storage integration ───────────────────────────────────────────────────────
+
+#[test]
+fn test_execute_creates_database_directory() {
+    use rust_sql::storage::Storage;
+    use std::path::PathBuf;
+
+    let tmp = std::env::temp_dir().join("rust_sql_test_create_db");
+    let _ = std::fs::remove_dir_all(&tmp); // clean up from previous runs
+    std::fs::create_dir_all(&tmp).unwrap();
+
+    let mut interner = Interner::new();
+    let name = interner.intern("mydb");
+    let session = interner.intern("postgres");
+    let catalog = CatalogManager::new(interner);
+    let storage = Storage::new(&tmp).unwrap();
+    let mut executor = Executor::new(catalog, session, storage);
+
+    let binder = Binder::new(&executor.catalog, session);
+    let bound = binder.bind_create_database(stmt(name, false)).unwrap();
+    executor.execute_create_database(bound).unwrap();
+
+    // database directory must exist
+    assert!(tmp.join("mydb").exists());
+    // default public schema directory must exist
+    assert!(tmp.join("mydb").join("public").exists());
+
+    std::fs::remove_dir_all(&tmp).unwrap(); // cleanup
+}
+
+#[test]
+fn test_execute_in_memory_skips_storage() {
+    // new_in_memory should succeed without touching disk
+    let (mut ex, s) = setup(&["mydb", "postgres"]);
+    let result = bind_and_execute_ok(&mut ex, stmt(s[0], false));
+    assert_eq!(result.command_tag(), "CREATE DATABASE");
+    // no directory created — nothing to assert on disk
 }

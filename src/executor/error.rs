@@ -1,4 +1,4 @@
-use crate::catalog::error::CatalogError;
+use crate::{catalog::error::CatalogError, storage::StorageError};
 
 /// Errors that can occur during statement execution.
 ///
@@ -18,6 +18,12 @@ pub enum ExecutionError {
 impl From<CatalogError> for ExecutionError {
     fn from(e: CatalogError) -> Self {
         ExecutionError::Catalog(e)
+    }
+}
+
+impl From<StorageError> for ExecutionError {
+    fn from(e: StorageError) -> Self {
+        ExecutionError::Storage(e.to_string())
     }
 }
 

@@ -31,7 +31,7 @@ fn setup_with_n_databases(n: usize) -> (Executor, Symbol, Symbol) {
     for &name in &existing {
         catalog.create_database(stmt(name, false), session).unwrap();
     }
-    let executor = Executor::new(catalog, session);
+    let executor = Executor::new_in_memory(catalog, session);
     (executor, new_name, session)
 }
 
@@ -102,7 +102,7 @@ fn bench_execute_if_not_exists_existing(c: &mut Criterion) {
                 let session = interner.intern("postgres");
                 let mut catalog = CatalogManager::new(interner);
                 catalog.create_database(stmt(name, false), session).unwrap();
-                let executor = Executor::new(catalog, session);
+                let executor = Executor::new_in_memory(catalog, session);
                 let binder = Binder::new(&executor.catalog, session);
                 let bound = binder.bind_create_database(stmt(name, true)).unwrap();
                 (executor, bound)
@@ -130,7 +130,7 @@ fn bench_execute_full_statement(c: &mut Criterion) {
                 let locale = interner.intern("en_US");
                 let ts = interner.intern("myspace");
                 let catalog = CatalogManager::new(interner);
-                let executor = Executor::new(catalog, session);
+                let executor = Executor::new_in_memory(catalog, session);
                 let binder = Binder::new(&executor.catalog, session);
                 let bound = binder
                     .bind_create_database(CreateDatabaseStmt {

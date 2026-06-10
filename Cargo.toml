@@ -42,3 +42,8 @@ harness = false
 name = "executor_bench"
 path = "benches/executor/database_bench.rs"
 harness = false
+
+[[bench]]
+name = "storage_bench"
+path = "benches/storage/database_bench.rs"
+harness = false

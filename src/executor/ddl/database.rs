@@ -30,15 +30,23 @@ impl Executor {
     ) -> Result<ExecutionResult, ExecutionError> {
         let name = stmt.name;
 
-        // Convert bound stmt → raw AST stmt for the catalog.
+        // Resolve the database name string for storage operations.
+        // Storage works with &str paths, not Symbols.
+        let name_str = self.catalog.interner.resolve(name).to_string();
+
+        // 1. Convert bound stmt → raw AST stmt for the catalog.
         // Owner is always resolved at this point — Some() guaranteed.
         self.catalog
             .create_database(stmt.into(), self.session_user)
             .map_err(ExecutionError::from)?;
 
-        // Storage — create the on-disk directory for this database.
-        // Stubbed until the storage layer is implemented.
-        // TODO: self.storage.create_database_dir(name)?;
+        // 2. Create on-disk directory if storage is enabled.
+        //    Skipped silently in memory-only mode (tests, early pipeline).
+        if let Some(storage) = &self.storage {
+            storage
+                .create_database_dir(&name_str)
+                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+        }
 
         Ok(ExecutionResult::DatabaseCreated { name })
     }
