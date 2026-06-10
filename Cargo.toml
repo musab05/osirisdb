@@ -1,6 +1,6 @@
 [package]
 name = "rust_sql"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 authors = ["Musab Khan <musab05ahs@gmail.com>"]
 description = "A hand-written SQL lexer and parser built from scratch in Rust, producing a fully typed Abstract Syntax Tree (AST)"

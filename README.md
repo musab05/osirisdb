@@ -56,13 +56,13 @@ The system is designed around a classic 11-stage query compilation and execution
 | **2. Lexer** | [`src/lexer/`](src/lexer/) (Implemented) | Zero-copy lexical analyzer. Splits input characters into distinct tokens with precise `Span` locations. |
 | **3. Parser** | [`src/parser/`](src/parser/) (Implemented) | Hand-written recursive descent and Pratt parser. Converts tokens into structured syntax elements. |
 | **4. AST** | [`src/ast/`](src/ast/) (Implemented) | Strongly-typed Abstract Syntax Tree representing the statements (DDL/DML/Queries) and expressions. |
-| **5. Binder** | Planned | Resolves identifiers (tables, columns, views) against the catalog schema, matches functions, and produces a bound AST. |
+| **5. Binder** | [`src/binder/`](src/binder/) (Implemented) | Resolves identifiers (tables, columns, views) against the catalog schema, matches functions, and produces a bound AST. |
 | **6. Semantic Analyzer**| Planned | Validates semantic rules (e.g. correct usage of window and aggregate functions, type safety, user privileges). |
 | **7. Logical Planner** | Planned | Translates the bound AST into a tree of relational algebra operators (e.g. Scan, Filter, Project, Join, Limit). |
 | **8. Optimizer** | Planned | Rewrites logical plans using rule-based transformations (predicate pushdown) and cost-based plan searches. |
 | **9. Physical Planner**| Planned | Translates the logical plan into a tree of concrete physical execution operators (e.g. HashJoin, IndexScan, SeqScan). |
-| **10. Executor** | Planned | Executes the physical plan streamingly using a Volcano-style iterator model (pull-based) or vectorized batching. |
-| **11. Storage Engine**| Planned | Manages low-level table/index files on disk, heap page allocations, WAL, transaction MVCC, and buffer pools. |
+| **10. Executor** | [`src/executor/`](src/executor/) (Implemented) | Receives bound statements and applies them to the catalog and storage. Currently executes database DDL statements. |
+| **11. Storage Engine**| [`src/storage/`](src/storage/) (Implemented) | Manages on-disk layout, directories, and files. Currently supports directory creation and drop operations for databases and schemas. |
 
 ## Quick Start
 
@@ -126,6 +126,10 @@ fn main() {
   - [`parser.rs`](src/parser/parser.rs): Main Parser shell.
   - [`expression.rs`](src/parser/expression.rs): Pratt expression parser.
   - [`table.rs`](src/parser/table.rs): `CREATE TABLE` and table constraint parser.
+- [`src/binder/`](src/binder/): Name binding and query compilation. Maps the raw AST into a strongly typed, resolved AST.
+- [`src/catalog/`](src/catalog/): The system catalog metadata manager, tracking databases, schemas, tables, and roles.
+- [`src/executor/`](src/executor/): Volcano-style iterator model execution engine, currently executing DDL statements.
+- [`src/storage/`](src/storage/): The disk storage engine. Manages layout, file storage, database folders, and schemas on disk.
 
 ## License
 

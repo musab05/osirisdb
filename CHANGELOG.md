@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-10
+
+### Added
+
+- **Storage Engine**: Introduced a synchronous disk-storage engine (`src/storage/`) to manage on-disk layout under a root data directory (`data_dir`).
+- **Database Directory DDL**: Implemented creation and removal of database directories on disk, including automatic setup of default `public` schema directories.
+- **Executor Integration**: Configured `Executor` to accept an optional `Storage` engine and added `Executor::new_in_memory` fallback for tests and benchmarks.
+- **Storage Benchmarks & Tests**: Added Criterion benchmark suite (`benches/storage/`) and integration tests (`tests/executor/database_test.rs`) to verify storage behaviour.
+
 ## [0.3.0] - 2026-06-09
 
 ### Added
