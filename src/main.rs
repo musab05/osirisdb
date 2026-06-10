@@ -1,10 +1,6 @@
 use rust_sql::{
-    binder::Binder,
-    catalog::CatalogManager,
-    executor::Executor,
-    parser::Parser,
+    ast::Statement, binder::Binder, catalog::CatalogManager, executor::Executor, parser::Parser,
     storage::Storage,
-    ast::Statement,
 };
 
 fn main() {
@@ -53,9 +49,11 @@ fn main() {
                         println!("{}", result.command_tag());
                         // show what was created
                         let name = executor.catalog.interner.resolve(
-                            executor.catalog.get_database(
-                                executor.catalog.interner.get("mydb").unwrap()
-                            ).unwrap().name
+                            executor
+                                .catalog
+                                .get_database(executor.catalog.interner.get("mydb").unwrap())
+                                .unwrap()
+                                .name,
                         );
                         println!("Database '{}' created successfully.", name);
                     }
