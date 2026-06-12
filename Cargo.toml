@@ -9,14 +9,14 @@ repository = "https://github.com/musab05/osirisdb"
 homepage = "https://github.com/musab05/osirisdb"
 documentation = "https://docs.rs/osirisdb"
 readme = "README.md"
-keywords = ["sql", "parser", "lexer", "ast", "database"]
+keywords = ["sql", "database", "dbms", "query-engine", "rust"]
 categories = ["parser-implementations", "database"]
-rust-version = "1.85"
+rust-version = "1.91.1"
 
 [dependencies]
 
 [dev-dependencies]
-criterion = "0.7.0"
+criterion = "0.8.2"
 
 [[bench]]
 name = "catalog_bench"
