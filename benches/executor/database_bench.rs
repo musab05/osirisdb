@@ -1,10 +1,10 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use rust_sql::ast::CreateDatabaseStmt;
-use rust_sql::binder::Binder;
-use rust_sql::catalog::CatalogManager;
-use rust_sql::common::interner::Interner;
-use rust_sql::common::symbol::Symbol;
-use rust_sql::executor::Executor;
+use osirisdb::ast::CreateDatabaseStmt;
+use osirisdb::binder::Binder;
+use osirisdb::catalog::CatalogManager;
+use osirisdb::common::interner::Interner;
+use osirisdb::common::symbol::Symbol;
+use osirisdb::executor::Executor;
 
 fn stmt(name: Symbol, if_not_exists: bool) -> CreateDatabaseStmt {
     CreateDatabaseStmt {

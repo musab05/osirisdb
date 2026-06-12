@@ -1,5 +1,5 @@
-use rust_sql::ast::Statement;
-use rust_sql::parser::parser::Parser;
+use osirisdb::ast::Statement;
+use osirisdb::parser::parser::Parser;
 
 fn parse(sql: &str) -> Vec<Statement> {
     Parser::new(sql).parse().expect("expected successful parse")

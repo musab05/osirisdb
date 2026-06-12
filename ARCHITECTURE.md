@@ -1,6 +1,6 @@
-# Architecture of rust_sql
+# Architecture of OsirisDB
 
-This document outlines the high-level architecture and design decisions behind the `rust_sql` lexer and parser.
+This document outlines the high-level architecture and design decisions behind the `OsirisDB` lexer and parser.
 
 ## Core Design Philosophy
 

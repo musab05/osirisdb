@@ -1,9 +1,9 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use rust_sql::storage::Storage;
+use osirisdb::storage::Storage;
 use std::hint::black_box;
 
 fn bench_create_database_dir(c: &mut Criterion) {
-    let tmp = std::env::temp_dir().join("rust_sql_bench_storage");
+    let tmp = std::env::temp_dir().join("osirisdb_bench_storage");
     // clean up any leftover from previous runs before starting
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
@@ -22,7 +22,7 @@ fn bench_create_database_dir(c: &mut Criterion) {
 }
 
 fn bench_drop_database_dir(c: &mut Criterion) {
-    let tmp = std::env::temp_dir().join("rust_sql_bench_storage_drop");
+    let tmp = std::env::temp_dir().join("osirisdb_bench_storage_drop");
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
     let storage = Storage::new(&tmp).unwrap();

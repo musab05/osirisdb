@@ -1,13 +1,13 @@
 [package]
-name = "rust_sql"
+name = "osirisdb"
 version = "0.4.0"
 edition = "2024"
 authors = ["Musab Khan <musab05ahs@gmail.com>"]
-description = "A hand-written SQL lexer and parser built from scratch in Rust, producing a fully typed Abstract Syntax Tree (AST)"
+description = "A SQL database engine implemented in Rust, featuring a custom parser, binder, query planner, optimizer, catalog, and storage engine. (Currently under active development)"
 license = "Apache-2.0"
-repository = "https://github.com/musab05/rust_sql"
-homepage = "https://github.com/musab05/rust_sql"
-documentation = "https://docs.rs/rust_sql"
+repository = "https://github.com/musab05/osirisdb"
+homepage = "https://github.com/musab05/osirisdb"
+documentation = "https://docs.rs/osirisdb"
 readme = "README.md"
 keywords = ["sql", "parser", "lexer", "ast", "database"]
 categories = ["parser-implementations", "database"]

@@ -1,9 +1,9 @@
-use rust_sql::ast::CreateDatabaseStmt;
-use rust_sql::binder::Binder;
-use rust_sql::catalog::CatalogManager;
-use rust_sql::common::interner::Interner;
-use rust_sql::common::symbol::Symbol;
-use rust_sql::executor::{ExecutionResult, Executor};
+use osirisdb::ast::CreateDatabaseStmt;
+use osirisdb::binder::Binder;
+use osirisdb::catalog::CatalogManager;
+use osirisdb::common::interner::Interner;
+use osirisdb::common::symbol::Symbol;
+use osirisdb::executor::{ExecutionResult, Executor};
 
 /// Builds an `Executor` and interns all provided names in one step.
 /// Returns the executor and the interned symbols in the same order as `names`.
@@ -32,7 +32,7 @@ fn stmt(name: Symbol, if_not_exists: bool) -> CreateDatabaseStmt {
 fn bind_and_execute(
     executor: &mut Executor,
     stmt: CreateDatabaseStmt,
-) -> rust_sql::executor::error::ExecutionError {
+) -> osirisdb::executor::error::ExecutionError {
     let binder = Binder::new(&executor.catalog, executor.session_user);
     let bound = binder.bind_create_database(stmt).expect("bind failed");
     executor.execute_create_database(bound).unwrap_err()
@@ -241,10 +241,10 @@ fn test_execute_is_template_defaults_false() {
 
 #[test]
 fn test_execute_creates_database_directory() {
-    use rust_sql::storage::Storage;
+    use osirisdb::storage::Storage;
     use std::path::PathBuf;
 
-    let tmp = std::env::temp_dir().join("rust_sql_test_create_db");
+    let tmp = std::env::temp_dir().join("osirisdb_test_create_db");
     let _ = std::fs::remove_dir_all(&tmp); // clean up from previous runs
     std::fs::create_dir_all(&tmp).unwrap();
 

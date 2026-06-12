@@ -1,10 +1,13 @@
-# rust_sql
+# OsirisDB
 
-[![crates.io](https://img.shields.io/crates/v/rust_sql.svg)](https://crates.io/crates/rust_sql)
+[![crates.io](https://img.shields.io/crates/v/osirisdb.svg)](https://crates.io/crates/osirisdb)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Build Status](https://github.com/musab05/rust_sql/workflows/CI/badge.svg)](https://github.com/musab05/rust_sql/actions)
+[![Build Status](https://github.com/musab05/osirisdb/workflows/CI/badge.svg)](https://github.com/musab05/osirisdb/actions)
 
-A modular, zero-dependency, hand-written SQL lexer and parser implemented in Rust. It compiles raw SQL query strings into a fully typed Abstract Syntax Tree (AST) resembling PostgreSQL syntax.
+> [!WARNING]
+> **Project Status**: OsirisDB is currently under active development and is not yet ready for production use. APIs and interfaces are subject to change before the first stable release on crates.io.
+
+A modular SQL database engine implemented in Rust, featuring a custom parser, binder, query planner, optimizer, catalog, and storage engine. It compiles raw SQL query strings into a fully typed Abstract Syntax Tree (AST) resembling PostgreSQL syntax.
 
 This project is built from scratch to provide a clean, extensible foundation for SQL parsing, query analysis, and database engine implementation.
 
@@ -66,17 +69,17 @@ The system is designed around a classic 11-stage query compilation and execution
 
 ## Quick Start
 
-Add `rust_sql` to your `Cargo.toml`:
+Add `osirisdb` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust_sql = { git = "https://github.com/musab05/rust_sql.git" }
+osirisdb = { git = "https://github.com/musab05/osirisdb.git" }
 ```
 
 ### Usage Example
 
 ```rust
-use rust_sql::parser::Parser;
+use osirisdb::parser::Parser;
 
 fn main() {
     let sql = "SELECT id, name FROM users WHERE age >= 18 ORDER BY name ASC;";

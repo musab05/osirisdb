@@ -1,6 +1,8 @@
-//! # rust_sql
+//! # OsirisDB
 //!
-//! A modular, zero-dependency, hand-written SQL lexer and parser implemented in Rust.
+//! A modular SQL database engine implemented in Rust, featuring a custom parser, binder, query planner, optimizer, catalog, and storage engine.
+//!
+//! > **Warning**: This project is currently under active development and is not yet ready for production use.
 //!
 //! This crate parses raw SQL strings into a fully typed Abstract Syntax Tree (AST) representing
 //! statements, expressions, constraints, data types, and operations.

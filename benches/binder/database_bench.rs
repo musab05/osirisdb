@@ -1,9 +1,9 @@
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use rust_sql::ast::CreateDatabaseStmt;
-use rust_sql::binder::Binder;
-use rust_sql::catalog::CatalogManager;
-use rust_sql::common::interner::Interner;
-use rust_sql::common::symbol::Symbol;
+use osirisdb::ast::CreateDatabaseStmt;
+use osirisdb::binder::Binder;
+use osirisdb::catalog::CatalogManager;
+use osirisdb::common::interner::Interner;
+use osirisdb::common::symbol::Symbol;
 
 /// Builds a catalog with `n` existing databases and returns
 /// the manager plus a fresh name symbol not yet in the catalog.

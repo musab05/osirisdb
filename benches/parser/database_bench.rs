@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use rust_sql::parser::parser::Parser;
+use osirisdb::parser::parser::Parser;
 
 const MINIMAL: &str = "CREATE DATABASE mydb;";
 const WITH_OWNER: &str = "CREATE DATABASE mydb OWNER alice;";

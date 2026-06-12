@@ -1,4 +1,4 @@
-use rust_sql::lexer::{Lexer, TokenKind};
+use osirisdb::lexer::{Lexer, TokenKind};
 
 fn lex(input: &str) -> Vec<TokenKind> {
     let mut lexer = Lexer::new(input);

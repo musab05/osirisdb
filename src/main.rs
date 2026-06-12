@@ -1,4 +1,4 @@
-use rust_sql::{
+use osirisdb::{
     ast::Statement, binder::Binder, catalog::CatalogManager, executor::Executor, parser::Parser,
     storage::Storage,
 };

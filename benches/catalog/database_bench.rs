@@ -1,8 +1,8 @@
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use rust_sql::ast::CreateDatabaseStmt;
-use rust_sql::catalog::CatalogManager;
-use rust_sql::common::interner::Interner;
-use rust_sql::common::symbol::Symbol;
+use osirisdb::ast::CreateDatabaseStmt;
+use osirisdb::catalog::CatalogManager;
+use osirisdb::common::interner::Interner;
+use osirisdb::common::symbol::Symbol;
 
 fn make_manager(n: usize) -> (CatalogManager, Vec<Symbol>) {
     let mut interner = Interner::new();

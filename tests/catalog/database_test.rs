@@ -1,7 +1,7 @@
-use rust_sql::ast::CreateDatabaseStmt;
-use rust_sql::catalog::{CatalogError, CatalogManager};
-use rust_sql::common::interner::Interner;
-use rust_sql::common::symbol::Symbol;
+use osirisdb::ast::CreateDatabaseStmt;
+use osirisdb::catalog::{CatalogError, CatalogManager};
+use osirisdb::common::interner::Interner;
+use osirisdb::common::symbol::Symbol;
 
 fn setup(names: &[&str]) -> (CatalogManager, Vec<Symbol>) {
     let mut interner = Interner::new();

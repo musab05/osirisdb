@@ -1,6 +1,6 @@
-# Contributing to rust_sql
+# Contributing to OsirisDB
 
-Thank you for your interest in contributing to `rust_sql`! We welcome contributions of all forms, including bug fixes, feature implementations, documentation improvements, and bug reports.
+Thank you for your interest in contributing to `OsirisDB`! We welcome contributions of all forms, including bug fixes, feature implementations, documentation improvements, and bug reports.
 
 ## Code of Conduct
 
@@ -19,8 +19,8 @@ To set up your workspace:
 1. Install Rust (latest stable recommended) from [rustup.rs](https://rustup.rs).
 2. Clone the repository:
    ```bash
-   git clone https://github.com/musab05/rust_sql.git
-   cd rust_sql
+   git clone https://github.com/musab05/osirisdb.git
+   cd osirisdb
    ```
 3. Build the project:
    ```bash

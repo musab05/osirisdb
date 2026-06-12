@@ -1,8 +1,8 @@
-use rust_sql::ast::CreateDatabaseStmt;
-use rust_sql::binder::{BindError, Binder};
-use rust_sql::catalog::CatalogManager;
-use rust_sql::common::interner::Interner;
-use rust_sql::common::symbol::Symbol;
+use osirisdb::ast::CreateDatabaseStmt;
+use osirisdb::binder::{BindError, Binder};
+use osirisdb::catalog::CatalogManager;
+use osirisdb::common::interner::Interner;
+use osirisdb::common::symbol::Symbol;
 
 /// Builds a `CatalogManager` and interns all provided names in one step.
 fn setup(names: &[&str]) -> (CatalogManager, Vec<Symbol>) {
