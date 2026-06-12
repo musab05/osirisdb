@@ -2,7 +2,7 @@ pub mod alter;
 pub mod create;
 pub mod database;
 pub mod drop;
-pub mod extnsion;
+pub mod extension;
 pub mod function;
 pub mod index;
 pub mod procedure;
