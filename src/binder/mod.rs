@@ -36,5 +36,7 @@ pub mod error;
 /// ready to be handed directly to the executor.
 pub mod bound;
 
+pub mod ddl;
+
 pub use binder::Binder;
 pub use error::BindError;
