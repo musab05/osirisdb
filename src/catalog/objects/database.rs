@@ -1,4 +1,6 @@
-use crate::common::symbol::Symbol;
+use std::collections::HashMap;
+
+use crate::{catalog::objects::SchemaEntry, common::symbol::Symbol};
 
 /// The catalog's runtime representation of a database.
 ///
@@ -66,6 +68,9 @@ pub struct DatabaseEntry {
     /// Defaults to `false` for user-created databases.
     /// Template databases are typically locked and cannot be modified.
     pub is_template: bool,
+
+    /// All schemas in this database, keyed by name symbol.
+    pub schemas: HashMap<Symbol, SchemaEntry>,
 }
 
 impl DatabaseEntry {
@@ -92,6 +97,7 @@ impl DatabaseEntry {
             connection_limit,
             allow_connections: true, // always true for user-created databases
             is_template: false,      // always false for user-created databases
+            schemas: HashMap::new(),
         }
     }
 }

@@ -13,6 +13,13 @@ pub enum CatalogError {
 
     /// An operation referenced a database that does not exist.
     DatabaseNotFound(Symbol),
+
+    /// `CREATE SCHEMA` failed - a schema with this name already exist
+    /// and `IF NOT EXIST` was not specified.
+    SchemaAlreadyExists(Symbol),
+
+    /// An operation referenced a schema that does not exist.
+    SchemaNotFound(Symbol),
 }
 
 impl std::fmt::Display for CatalogError {
@@ -23,6 +30,12 @@ impl std::fmt::Display for CatalogError {
             }
             CatalogError::DatabaseNotFound(sym) => {
                 write!(f, "database {:?} does not exist", sym)
+            }
+            CatalogError::SchemaAlreadyExists(sym) => {
+                write!(f, "schema {:?} already exists", sym)
+            }
+            CatalogError::SchemaNotFound(sym) => {
+                write!(f, "schema {:?} does not exist", sym)
             }
         }
     }
