@@ -26,8 +26,25 @@ pub enum BindError {
     /// A `CREATE SCHEMA` referenced a database that does not exist.
     DatabaseNotFound(Symbol),
 
+    /// A `CREATE TABLE` referenced a schema that does not exist.
     SchemaNotFound(Symbol),
+
+    /// A `CREATE TABLE` was attempted but the table already exists
+    /// and `IF NOT EXISTS` was not specified.
     TableAlreadyExists(Symbol),
+
+    /// A `CREATE TABLE` defined the same column name more than once.
+    DuplicateColumnName(Symbol),
+
+    /// A table-level constraint (e.g. `PRIMARY KEY (col)`, `UNIQUE (col)`,
+    /// `FOREIGN KEY (col) ...`) referenced a column name that is not
+    /// defined on this table.
+    ColumnNotFound(Symbol),
+
+    /// More than one `PRIMARY KEY` was specified for a table — either
+    /// via multiple column-level `PRIMARY KEY` constraints, multiple
+    /// table-level `PRIMARY KEY` constraints, or a combination of both.
+    MultiplePrimaryKeys,
 }
 
 impl std::fmt::Display for BindError {
@@ -56,6 +73,15 @@ impl std::fmt::Display for BindError {
             }
             BindError::TableAlreadyExists(s) => {
                 write!(f, "table {:?} already exist", s)
+            }
+            BindError::DuplicateColumnName(s) => {
+                write!(f, "column {:?} specified more than once", s)
+            }
+            BindError::ColumnNotFound(s) => {
+                write!(f, "column {:?} does not exist", s)
+            }
+            BindError::MultiplePrimaryKeys => {
+                write!(f, "multiple primary keys for table specified")
             }
         }
     }

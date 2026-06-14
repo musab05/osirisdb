@@ -41,9 +41,13 @@ fn test_create_table_success() {
     let columns = vec![ColumnEntry {
         name: s[3],
         data_type: DataType::Int,
+        nullable: true,
+        default: None,
+        is_unique: false,
+        is_primary_key: false,
     }];
     assert!(
-        m.create_table(s[0], s[1], s[2], columns.clone(), false)
+        m.create_table(s[0], s[1], s[2], columns.clone(), vec![], false)
             .is_ok()
     );
     assert!(m.table_exists(s[0], s[1], s[2]));
@@ -58,7 +62,9 @@ fn test_create_table_schema_not_found() {
     let (mut m, s) = setup(&["mydb", "myschema", "mytable", "postgres"]);
     m.create_database(create_db_stmt(s[0]), s[3]).unwrap();
 
-    let err = m.create_table(s[0], s[1], s[2], vec![], false).unwrap_err();
+    let err = m
+        .create_table(s[0], s[1], s[2], vec![], vec![], false)
+        .unwrap_err();
     assert_eq!(err, CatalogError::SchemaNotFound(s[1]));
 }
 
@@ -69,10 +75,12 @@ fn test_create_table_already_exists_error() {
     m.create_schema(s[0], schema_stmt(Some(s[1])), s[3])
         .unwrap();
 
-    m.create_table(s[0], s[1], s[2], vec![], false).unwrap();
-    // CatalogManager returns CatalogError::DatabaseAlreadyExists on table exists (due to codebase implementation)
-    let err = m.create_table(s[0], s[1], s[2], vec![], false).unwrap_err();
-    assert_eq!(err, CatalogError::DatabaseAlreadyExists(s[2]));
+    m.create_table(s[0], s[1], s[2], vec![], vec![], false)
+        .unwrap();
+    let err = m
+        .create_table(s[0], s[1], s[2], vec![], vec![], false)
+        .unwrap_err();
+    assert_eq!(err, CatalogError::TableAlreadyExists(s[2]));
 }
 
 #[test]
@@ -82,8 +90,12 @@ fn test_create_table_if_not_exists_silent() {
     m.create_schema(s[0], schema_stmt(Some(s[1])), s[3])
         .unwrap();
 
-    m.create_table(s[0], s[1], s[2], vec![], false).unwrap();
-    assert!(m.create_table(s[0], s[1], s[2], vec![], true).is_ok());
+    m.create_table(s[0], s[1], s[2], vec![], vec![], false)
+        .unwrap();
+    assert!(
+        m.create_table(s[0], s[1], s[2], vec![], vec![], true)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -104,8 +116,10 @@ fn test_table_oid_increments() {
     m.create_schema(s[0], schema_stmt(Some(s[1])), s[4])
         .unwrap();
 
-    m.create_table(s[0], s[1], s[2], vec![], false).unwrap();
-    m.create_table(s[0], s[1], s[3], vec![], false).unwrap();
+    m.create_table(s[0], s[1], s[2], vec![], vec![], false)
+        .unwrap();
+    m.create_table(s[0], s[1], s[3], vec![], vec![], false)
+        .unwrap();
 
     let oid1 = m.get_table(s[0], s[1], s[2]).unwrap().oid;
     let oid2 = m.get_table(s[0], s[1], s[3]).unwrap().oid;

@@ -1,31 +1,28 @@
+use crate::ast::TableConstraint;
 use crate::{
     catalog::{
-        CatalogError, CatalogManager,
-        objects::{TableEntry, column::ColumnEntry},
+        error::CatalogError,
+        manager::CatalogManager,
+        objects::{ColumnEntry, TableEntry},
     },
     common::symbol::Symbol,
 };
 
 impl CatalogManager {
-    /// Executes a `CREATE TABLE` statement against the catalog.
+    /// Inserts a new table into the given database and schema.
     ///
     /// # Behavior
     ///
-    /// - Database must exist — returns `DatabaseNotFound` if not.
-    /// - Schema must exist — returns `SchemaNotFound` if not.
-    /// - Table already exists + `if_not_exists` → silent success.
-    /// - Table already exists + no `if_not_exists` → returns `DatabaseAlreadyExists`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`CatalogError::DatabaseNotFound`], [`CatalogError::SchemaNotFound`], or
-    /// [`CatalogError::DatabaseAlreadyExists`] if validation fails.
+    /// - Database or schema not found → corresponding `*NotFound` error
+    /// - Table already exists + `if_not_exists` → silent success
+    /// - Table already exists + not `if_not_exists` → `TableAlreadyExists`
     pub fn create_table(
         &mut self,
         db: Symbol,
         schema: Symbol,
         name: Symbol,
         columns: Vec<ColumnEntry>,
+        constraints: Vec<TableConstraint>,
         if_not_exists: bool,
     ) -> Result<(), CatalogError> {
         let db_entry = self
@@ -33,7 +30,6 @@ impl CatalogManager {
             .databases
             .get(&db)
             .ok_or(CatalogError::DatabaseNotFound(db))?;
-
         let schema_entry = db_entry
             .schemas
             .get(&schema)
@@ -43,19 +39,21 @@ impl CatalogManager {
             if if_not_exists {
                 return Ok(());
             }
-            return Err(CatalogError::DatabaseAlreadyExists(name));
+            return Err(CatalogError::TableAlreadyExists(name));
         }
 
+        // get OID before borrowing mutably — avoids double mutable borrow
         let oid = self.catalog.next_oid();
 
         let db_entry = self.catalog.databases.get_mut(&db).unwrap();
         let schema_entry = db_entry.schemas.get_mut(&schema).unwrap();
-        let entry = TableEntry::new(oid, name, columns);
+        let entry = TableEntry::new(oid, name, columns, constraints);
         schema_entry.tables.insert(name, entry);
         Ok(())
     }
 
-    /// Returns `true` if a table exists in the given database and schema.
+    /// Returns `true` if a table with the given name exists in the
+    /// given database and schema.
     pub fn table_exists(&self, db: Symbol, schema: Symbol, name: Symbol) -> bool {
         self.catalog
             .databases
@@ -67,11 +65,9 @@ impl CatalogManager {
 
     /// Looks up a table by database, schema, and name.
     ///
-    /// # Errors
-    ///
-    /// Returns [`CatalogError::DatabaseNotFound`] if the database does not exist.
-    /// Returns [`CatalogError::SchemaNotFound`] if the schema does not exist.
-    /// Returns [`CatalogError::TableNotFound`] if the table does not exist.
+    /// Returns [`CatalogError::DatabaseNotFound`] / [`CatalogError::SchemaNotFound`]
+    /// if the database or schema does not exist, or
+    /// [`CatalogError::TableNotFound`] if the table does not exist.
     pub fn get_table(
         &self,
         db: Symbol,

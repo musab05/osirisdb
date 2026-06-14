@@ -1,10 +1,12 @@
-use crate::{catalog::objects::column::ColumnEntry, common::symbol::Symbol};
+use crate::{ast::TableConstraint, catalog::objects::column::ColumnEntry, common::symbol::Symbol};
 
 /// The catalog's runtime representation of a table.
 ///
 /// A `TableEntry` represents a table stored in a database schema.
 /// It contains a unique object identifier (OID), the table name,
-/// and the definitions of its columns.
+/// its column definitions (with resolved constraint flags), and
+/// any table-level constraints that could not be folded into a
+/// single column (composite `PRIMARY KEY`/`UNIQUE`, `CHECK`, `FOREIGN KEY`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableEntry {
     /// Internal unique identifier — never changes after creation.
@@ -13,15 +15,36 @@ pub struct TableEntry {
     /// The name of the table.
     pub name: Symbol,
 
-    /// The columns belonging to this table.
+    /// The columns belonging to this table, with constraints resolved
+    /// into per-column flags by the binder.
     pub columns: Vec<ColumnEntry>,
+
+    /// Table-level constraints that span multiple columns or cannot be
+    /// represented as a single-column flag.
+    ///
+    /// Includes composite `PRIMARY KEY`/`UNIQUE`, `CHECK` expressions,
+    /// and `FOREIGN KEY` constraints. Referenced column names have been
+    /// validated to exist on this table at bind time — cross-table
+    /// validation (e.g. that a referenced foreign table/columns exist)
+    /// is deferred until the catalog supports that lookup.
+    pub constraints: Vec<TableConstraint>,
 }
 
 impl TableEntry {
     /// Creates a new `TableEntry`.
     ///
     /// The `oid` is assigned by the catalog manager.
-    pub fn new(oid: u32, name: Symbol, columns: Vec<ColumnEntry>) -> Self {
-        Self { oid, name, columns }
+    pub fn new(
+        oid: u32,
+        name: Symbol,
+        columns: Vec<ColumnEntry>,
+        constraints: Vec<TableConstraint>,
+    ) -> Self {
+        Self {
+            oid,
+            name,
+            columns,
+            constraints,
+        }
     }
 }

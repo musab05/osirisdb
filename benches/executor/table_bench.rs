@@ -61,7 +61,7 @@ fn setup_with_n_tables(n: usize) -> (Executor, Symbol, Symbol, Symbol, Symbol) {
     for i in 0..n {
         let name = catalog.interner.intern(&format!("table{}", i));
         catalog
-            .create_table(db, schema, name, vec![], false)
+            .create_table(db, schema, name, vec![], vec![], false)
             .unwrap();
     }
 

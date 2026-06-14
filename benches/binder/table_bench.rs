@@ -40,7 +40,7 @@ fn setup_with_n_tables(n: usize) -> (CatalogManager, Symbol, Symbol, Symbol, Sym
 
     for i in 0..n {
         let table_name = m.interner.intern(&format!("table{}", i));
-        m.create_table(db, schema, table_name, vec![], false)
+        m.create_table(db, schema, table_name, vec![], vec![], false)
             .unwrap();
     }
 

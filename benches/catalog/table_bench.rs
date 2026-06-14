@@ -40,7 +40,8 @@ fn make_manager(n: usize) -> (CatalogManager, Symbol, Symbol, Vec<Symbol>) {
     .unwrap();
 
     for &name in &names {
-        m.create_table(db, schema, name, vec![], false).unwrap();
+        m.create_table(db, schema, name, vec![], vec![], false)
+            .unwrap();
     }
     (m, db, schema, names)
 }
@@ -81,7 +82,7 @@ pub fn bench(c: &mut Criterion) {
                 (m, db, schema, table)
             },
             |(mut m, db, schema, table)| {
-                m.create_table(db, schema, black_box(table), vec![], false)
+                m.create_table(db, schema, black_box(table), vec![], vec![], false)
                     .unwrap();
             },
             criterion::BatchSize::SmallInput,
