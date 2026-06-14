@@ -18,6 +18,13 @@ pub enum BindError {
 
     /// `CONNECTION LIMIT` was given a value below -1.
     InvalidConnectionLimit(i64),
+
+    /// A `CREATE SCHEMA` was attempted but the schema already exists
+    /// and `IF NOT EXISTS` was not specified.
+    SchemaAlreadyExists(Symbol),
+
+    /// A `CREATE SCHEMA` referenced a database that does not exist.
+    DatabaseNotFound(Symbol),
 }
 
 impl std::fmt::Display for BindError {
@@ -34,6 +41,12 @@ impl std::fmt::Display for BindError {
             }
             BindError::InvalidConnectionLimit(n) => {
                 write!(f, "invalid connection limit {}, must be >= -1", n)
+            }
+            BindError::SchemaAlreadyExists(s) => {
+                write!(f, "schema {:?} already exist", s)
+            }
+            BindError::DatabaseNotFound(s) => {
+                write!(f, "database {:?} does not exist", s)
             }
         }
     }
