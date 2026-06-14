@@ -15,6 +15,10 @@ pub enum ExecutionResult {
 
     /// A `DROP DATABASE` statement completed successfully.
     DatabaseDropped { name: Symbol },
+
+    /// A `CREATE SCHEMA` statement completed successfully.
+    /// Carries the name of the created schema.
+    SchemaCreated { name: Symbol },
 }
 
 impl ExecutionResult {
@@ -29,6 +33,7 @@ impl ExecutionResult {
         match self {
             ExecutionResult::DatabaseCreated { .. } => "CREATE DATABASE",
             ExecutionResult::DatabaseDropped { .. } => "DROP DATABASE",
+            ExecutionResult::SchemaCreated { .. } => "CREATE SCHEMA",
         }
     }
 }

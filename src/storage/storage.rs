@@ -75,4 +75,17 @@ impl Storage {
     pub fn database_dir_exists(&self, db_name: &str) -> bool {
         self.database_path(db_name).exists()
     }
+
+    /// Returns the expected on-disk path for a schema directory.
+    ///
+    /// Does not check whether the directory exists.
+    pub fn schema_path(&self, db_name: &str, schema_name: &str) -> PathBuf {
+        self.database_path(db_name).join(schema_name)
+    }
+
+    /// Returns `true` if the on-disk directory for `schema_name` exists
+    /// within `db_name`.
+    pub fn schema_dir_exists(&self, db_name: &str, schema_name: &str) -> bool {
+        self.schema_path(db_name, schema_name).exists()
+    }
 }

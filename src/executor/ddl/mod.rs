@@ -3,5 +3,5 @@
 /// Each file contains `impl Executor` methods for executing
 /// the corresponding DDL statement variants.
 pub mod database;
-// pub mod schema;    ← add when ready
+pub mod schema;
 // pub mod table;     ← add when ready

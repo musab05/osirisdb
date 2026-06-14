@@ -1,10 +1,14 @@
 use osirisdb::{
-    ast::Statement, binder::Binder, catalog::CatalogManager, executor::Executor, parser::Parser,
+    ast::Statement,
+    binder::Binder,
+    catalog::CatalogManager,
+    executor::{ExecutionResult, Executor},
+    parser::Parser,
     storage::Storage,
 };
 
 fn main() {
-    let sql = "CREATE DATABASE mydb OWNER postgres ENCODING 'UTF8' CONNECTION LIMIT 100;";
+    let sql = "CREATE DATABASE mydb OWNER postgres ENCODING 'UTF8' CONNECTION LIMIT 100; CREATE SCHEMA myschema;";
 
     // ── 1. Parse ──────────────────────────────────────────────────────────────
     let mut parser = Parser::new(sql);
@@ -20,6 +24,11 @@ fn main() {
     // ── 2. Setup catalog + storage + executor ─────────────────────────────────
     let mut catalog = CatalogManager::new(interner);
     let session_user = catalog.interner.intern("postgres");
+
+    // NOTE: there is no connection/session layer yet, so "current database"
+    // is hardcoded here. In a real engine this comes from the connection
+    // (e.g. `\c mydb` in psql) and would be tracked per-session.
+    let current_db = catalog.interner.intern("mydb");
 
     let storage = match Storage::new_or_create("./data") {
         Ok(s) => s,
@@ -56,6 +65,29 @@ fn main() {
                                 .name,
                         );
                         println!("Database '{}' created successfully.", name);
+                    }
+                    Err(e) => eprintln!("Execution error: {}", e),
+                }
+            }
+            Statement::CreateSchema(s) => {
+                let binder = Binder::new(&executor.catalog, executor.session_user);
+                let bound = match binder.bind_create_schema(current_db, s) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        eprintln!("Bind error: {}", e);
+                        return;
+                    }
+                };
+
+                match executor.execute_create_schema(current_db, bound) {
+                    Ok(result) => {
+                        println!("{}", result.command_tag());
+                        // show what was created
+                        let name = executor.catalog.interner.resolve(match &result {
+                            ExecutionResult::SchemaCreated { name } => *name,
+                            _ => unreachable!("execute_create_schema only returns SchemaCreated"),
+                        });
+                        println!("Schema '{}' created successfully.", name);
                     }
                     Err(e) => eprintln!("Execution error: {}", e),
                 }
