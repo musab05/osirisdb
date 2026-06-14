@@ -7,7 +7,7 @@ use crate::common::symbol::Symbol;
 /// table inheritance, partitioning, constraint specifications, custom tablespaces,
 /// storage options (`WITH`), and creation from query results (`CREATE TABLE AS SELECT`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct CreateStmt {
+pub struct CreateTableStmt {
     /// Skip error creation if the table already exists (`IF NOT EXISTS`).
     pub if_not_exist: bool,
     /// If `true`, the table is temporary to the session (`TEMPORARY` or `TEMP`).

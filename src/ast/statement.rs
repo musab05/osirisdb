@@ -9,7 +9,7 @@ pub enum Statement {
     /// A `SELECT` query statement representing data retrieval, CTEs, joins, aggregates, and set ops.
     Select(SelectStmt),
     /// A `CREATE TABLE` DDL statement representing table schemas, column lists, and table constraints.
-    CreateTable(CreateStmt),
+    CreateTable(CreateTableStmt),
     /// An `ALTER TABLE` DDL statement representing column additions/removals, default modifications, etc.
     AlterTable(AlterTableStmt),
     /// A `DROP TABLE` DDL statement.

@@ -5,7 +5,7 @@
 pub mod alter;
 pub mod column;
 pub mod column_constraint;
-pub mod create;
+pub mod table;
 pub mod database;
 pub mod drop;
 pub mod drop_behaviour;
@@ -30,7 +30,7 @@ pub mod view;
 pub use alter::*;
 pub use column::*;
 pub use column_constraint::*;
-pub use create::*;
+pub use table::*;
 pub use database::*;
 pub use drop::*;
 pub use drop_behaviour::*;

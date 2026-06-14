@@ -11,7 +11,7 @@ impl<'a> Parser<'a> {
         &mut self,
         temporary: bool,
         unlogged: bool,
-    ) -> Result<CreateStmt, ParserError> {
+    ) -> Result<CreateTableStmt, ParserError> {
         let if_not_exist = self.parse_if_not_exist()?;
 
         let name = ObjectName(self.parse_qualified_name()?);
@@ -146,7 +146,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(CreateStmt {
+        Ok(CreateTableStmt {
             if_not_exist,
             temporary,
             unlogged,
