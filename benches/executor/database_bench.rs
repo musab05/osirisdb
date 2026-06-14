@@ -155,11 +155,9 @@ fn bench_execute_full_statement(c: &mut Criterion) {
     });
 }
 
-criterion_group!(
-    benches,
-    bench_bind_and_execute,
-    bench_execute_only,
-    bench_execute_if_not_exists_existing,
-    bench_execute_full_statement,
-);
-criterion_main!(benches);
+pub fn bench(c: &mut Criterion) {
+    bench_bind_and_execute(c);
+    bench_execute_only(c);
+    bench_execute_if_not_exists_existing(c);
+    bench_execute_full_statement(c);
+}

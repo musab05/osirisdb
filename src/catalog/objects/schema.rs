@@ -1,4 +1,6 @@
-use crate::common::symbol::Symbol;
+use std::collections::HashMap;
+
+use crate::{catalog::objects::TableEntry, common::symbol::Symbol};
 
 /// The catalog's runtime representation of a schema.
 ///
@@ -23,6 +25,9 @@ pub struct SchemaEntry {
 
     /// The database this schema belongs to.
     pub database: Symbol,
+
+    /// the tables which belongs to this schema
+    pub tables: HashMap<Symbol, TableEntry>,
 }
 
 impl SchemaEntry {
@@ -36,6 +41,7 @@ impl SchemaEntry {
             name,
             owner,
             database,
+            tables: HashMap::new(),
         }
     }
 }

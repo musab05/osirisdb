@@ -10,7 +10,7 @@ use crate::{
 
 pub mod database;
 pub mod schema;
-// pub mod table;
+pub mod table;
 // pub mod role;
 // pub mod tablespace;
 

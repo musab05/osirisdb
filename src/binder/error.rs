@@ -25,6 +25,9 @@ pub enum BindError {
 
     /// A `CREATE SCHEMA` referenced a database that does not exist.
     DatabaseNotFound(Symbol),
+
+    SchemaNotFound(Symbol),
+    TableAlreadyExists(Symbol),
 }
 
 impl std::fmt::Display for BindError {
@@ -47,6 +50,12 @@ impl std::fmt::Display for BindError {
             }
             BindError::DatabaseNotFound(s) => {
                 write!(f, "database {:?} does not exist", s)
+            }
+            BindError::SchemaNotFound(s) => {
+                write!(f, "schema {:?} does not exist", s)
+            }
+            BindError::TableAlreadyExists(s) => {
+                write!(f, "table {:?} already exist", s)
             }
         }
     }

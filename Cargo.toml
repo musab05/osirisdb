@@ -20,7 +20,7 @@ criterion = "0.8.2"
 
 [[bench]]
 name = "catalog_bench"
-path = "benches/catalog/database_bench.rs"
+path = "benches/catalog_bench.rs"
 harness = false
 
 [[bench]]
@@ -35,12 +35,12 @@ harness = false
 
 [[bench]]
 name = "binder_bench"
-path = "benches/binder/database_bench.rs"
+path = "benches/binder_bench.rs"
 harness = false
 
 [[bench]]
 name = "executor_bench"
-path = "benches/executor/database_bench.rs"
+path = "benches/executor_bench.rs"
 harness = false
 
 [[bench]]

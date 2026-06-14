@@ -4,4 +4,4 @@
 /// the corresponding DDL statement variants.
 pub mod database;
 pub mod schema;
-// pub mod table;     ← add when ready
+pub mod table;

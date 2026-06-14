@@ -19,6 +19,10 @@ pub enum ExecutionResult {
     /// A `CREATE SCHEMA` statement completed successfully.
     /// Carries the name of the created schema.
     SchemaCreated { name: Symbol },
+
+    /// A `CREATE TABLE` statement completed successfully.
+    /// Carries the name of the created table.
+    TableCreated { name: Symbol },
 }
 
 impl ExecutionResult {
@@ -34,6 +38,7 @@ impl ExecutionResult {
             ExecutionResult::DatabaseCreated { .. } => "CREATE DATABASE",
             ExecutionResult::DatabaseDropped { .. } => "DROP DATABASE",
             ExecutionResult::SchemaCreated { .. } => "CREATE SCHEMA",
+            ExecutionResult::TableCreated { .. } => "CREATE TABLE",
         }
     }
 }

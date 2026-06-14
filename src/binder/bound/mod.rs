@@ -21,6 +21,8 @@
 /// ready for the executor to apply to the catalog.
 pub mod database;
 pub mod schema;
+pub mod table;
 
 pub use database::BoundCreateDatabaseStmt;
 pub use schema::BoundCreateSchemaStmt;
+pub use table::BoundCreateTableStmt;

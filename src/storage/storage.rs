@@ -88,4 +88,9 @@ impl Storage {
     pub fn schema_dir_exists(&self, db_name: &str, schema_name: &str) -> bool {
         self.schema_path(db_name, schema_name).exists()
     }
+
+    // storage.rs additions
+    pub fn table_path(&self, db: &str, schema: &str, table: &str) -> PathBuf {
+        self.schema_path(db, schema).join(format!("{}.dat", table))
+    }
 }

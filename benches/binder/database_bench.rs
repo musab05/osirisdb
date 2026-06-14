@@ -111,10 +111,8 @@ fn bench_bind_full_statement(c: &mut Criterion) {
     });
 }
 
-criterion_group!(
-    benches,
-    bench_bind_create_database,
-    bench_bind_if_not_exists,
-    bench_bind_full_statement,
-);
-criterion_main!(benches);
+pub fn bench(c: &mut Criterion) {
+    bench_bind_create_database(c);
+    bench_bind_if_not_exists(c);
+    bench_bind_full_statement(c);
+}
