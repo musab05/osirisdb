@@ -1,6 +1,6 @@
 use crate::{
     ast::CreateDatabaseStmt,
-    catalog::{error::CatalogError, manager::CatalogManager, objects::database::DatabaseEntry},
+    catalog::{error::CatalogError, manager::CatalogManager, objects::{SchemaEntry, database::DatabaseEntry}},
     common::symbol::Symbol,
 };
 
@@ -38,6 +38,18 @@ impl CatalogManager {
         );
 
         self.catalog.databases.insert(stmt.name, entry);
+
+        // Every database gets a default `public` schema, mirroring the
+        // `public/` directory storage creates alongside the database.
+        let public = self.interner.intern("public");
+        let public_oid = self.catalog.next_oid();
+        let public_schema = SchemaEntry::new(public_oid, public, owner, stmt.name);
+        self.catalog
+            .databases
+            .get_mut(&stmt.name)
+            .unwrap()
+            .schemas
+            .insert(public, public_schema);
         Ok(())
     }
 
