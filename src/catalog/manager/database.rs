@@ -1,6 +1,10 @@
 use crate::{
     ast::CreateDatabaseStmt,
-    catalog::{error::CatalogError, manager::CatalogManager, objects::{SchemaEntry, database::DatabaseEntry}},
+    catalog::{
+        error::CatalogError,
+        manager::CatalogManager,
+        objects::{SchemaEntry, database::DatabaseEntry},
+    },
     common::symbol::Symbol,
 };
 
