@@ -287,4 +287,29 @@ impl Page {
             }
         }
     }
+
+    /// Constructs a page from a raw on-disk page image.
+    ///
+    /// `HeapFile::read_page` reads exactly `PAGE_SIZE` bytes from disk and
+    /// passes them here to reconstruct the in-memory `Page` representation.
+    ///
+    /// No validation is performed — the caller is responsible for ensuring
+    /// the bytes originated from a valid page written by this storage engine.
+    pub fn from_bytes(data: [u8; PAGE_SIZE]) -> Self {
+        Self { data }
+    }
+
+    /// Returns the page's raw byte representation.
+    ///
+    /// The returned slice contains the complete page image, including the
+    /// header, slot array, free space, and tuple data regions. This is used
+    /// by `HeapFile::write_page` to persist the page to disk with a single
+    /// `write_all` call.
+    ///
+    /// The returned bytes should be treated as opaque by callers; page
+    /// contents should normally be accessed through the page API rather than
+    /// by manually parsing the byte array.
+    pub fn as_bytes(&self) -> &[u8; PAGE_SIZE] {
+        &self.data
+    }
 }

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fmt::write, path::PathBuf};
 
 /// Errors that can occur during storage operations.
 ///
@@ -22,6 +22,9 @@ pub enum StorageError {
     /// Carries the path that was being operated on and the
     /// OS-level error description.
     Io { path: PathBuf, reason: String },
+
+    /// A page read/write was attempted with a page_id that does not exist.
+    PageOutOfBounds { page_id: u32, num_pages: u32 },
 }
 
 impl StorageError {
@@ -45,6 +48,13 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::Io { path, reason } => {
                 write!(f, "I/O error at {}: {}", path.display(), reason)
+            }
+            StorageError::PageOutOfBounds { page_id, num_pages } => {
+                write!(
+                    f,
+                    "page {} out of bounds (file has {} pages)",
+                    page_id, num_pages
+                )
             }
         }
     }

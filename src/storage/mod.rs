@@ -24,8 +24,9 @@
 
 pub mod ddl;
 pub mod error;
-pub mod storage;
+pub mod heap_file;
 pub mod page;
+pub mod storage;
 
 pub use error::StorageError;
 pub use storage::Storage;
