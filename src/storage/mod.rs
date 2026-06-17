@@ -22,11 +22,13 @@
 //! - [`error`]   — [`StorageError`] variants
 //! - [`ddl`]     — DDL storage operations, one file per object type
 
+pub mod buffer_pool;
 pub mod ddl;
 pub mod error;
 pub mod heap_file;
 pub mod page;
 pub mod storage;
 
+pub use buffer_pool::BufferPool;
 pub use error::StorageError;
 pub use storage::Storage;

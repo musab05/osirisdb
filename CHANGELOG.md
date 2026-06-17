@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-17
+
+### Added
+
+- **Buffer Pool Manager**: Implemented `BufferPool` to manage a fixed-capacity, in-memory cache of pages backed by `HeapFile` using an LRU eviction policy.
+- **Storage Error Handling**: Added `StorageError::BufferPoolFull` to handle cases where all frames are pinned.
+- **Integration Tests**: Added an integration test suite for verifying buffer pool pinning/unpinning, LRU eviction, dirty page flushing, and error handling.
+
 ## [0.4.0] - 2026-06-10
 
 ### Added

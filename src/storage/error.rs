@@ -25,6 +25,11 @@ pub enum StorageError {
 
     /// A page read/write was attempted with a page_id that does not exist.
     PageOutOfBounds { page_id: u32, num_pages: u32 },
+
+    /// All buffer pool frames are pinned — no victim can be evicted.
+    ///
+    /// Caller must unpin at least one frame before requesting another page.
+    BufferPoolFull,
 }
 
 impl StorageError {
@@ -55,6 +60,9 @@ impl std::fmt::Display for StorageError {
                     "page {} out of bounds (file has {} pages)",
                     page_id, num_pages
                 )
+            }
+            StorageError::BufferPoolFull => {
+                write!(f, "buffer pool is full: all frames are pinned")
             }
         }
     }
