@@ -30,6 +30,10 @@ pub enum StorageError {
     ///
     /// Caller must unpin at least one frame before requesting another page.
     BufferPoolFull,
+
+    /// A value's type did not match the column's declared type,
+    /// or the column count did not match the schema.
+    TupleError(String),
 }
 
 impl StorageError {
@@ -63,6 +67,9 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::BufferPoolFull => {
                 write!(f, "buffer pool is full: all frames are pinned")
+            }
+            StorageError::TupleError(msg) => {
+                write!(f, "tuple error: {}", msg)
             }
         }
     }

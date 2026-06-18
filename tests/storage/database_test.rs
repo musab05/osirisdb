@@ -1,5 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use osirisdb::ast::{DataType, Value};
+    use osirisdb::catalog::objects::ColumnEntry;
+    use osirisdb::common::Interner;
+    use osirisdb::storage::tuple::{deserialize_tuple, serialize_tuple};
     use osirisdb::storage::{BufferPool, StorageError, heap_file::HeapFile};
     use std::env;
     use std::path::{Path, PathBuf};
@@ -217,5 +221,130 @@ mod tests {
         assert!(matches!(bp.new_page(), Err(StorageError::BufferPoolFull)));
 
         rm(&path);
+    }
+
+    /// Builds a minimal `ColumnEntry` for testing — only `name` and
+    /// `data_type` matter here; constraints are irrelevant to serialization.
+    fn col(
+        interner: &mut Interner,
+        name: &str,
+        data_type: DataType,
+        nullable: bool,
+    ) -> ColumnEntry {
+        ColumnEntry {
+            name: interner.intern(name),
+            data_type,
+            nullable,
+            default: None,
+            is_unique: false,
+            is_primary_key: false,
+        }
+    }
+
+    #[test]
+    fn round_trip_integers_and_string() {
+        let mut interner = Interner::new();
+        let schema = vec![
+            col(&mut interner, "id", DataType::Int, false),
+            col(&mut interner, "name", DataType::VarChar(None), false),
+            col(&mut interner, "score", DataType::BigInt, false),
+        ];
+
+        let name_sym = interner.intern("alice");
+        let values = vec![Value::Int(42), Value::String(name_sym), Value::Int(9999)];
+
+        let bytes = serialize_tuple(&schema, &values, &interner).unwrap();
+        let decoded = deserialize_tuple(&schema, &bytes, &mut interner).unwrap();
+
+        assert_eq!(decoded[0], Value::Int(42));
+        assert_eq!(decoded[2], Value::Int(9999));
+        // String round-trip: the symbol may differ in value from the original
+        // (interning is idempotent so it should be the same), but resolving
+        // it should give back the original string.
+        if let Value::String(sym) = &decoded[1] {
+            assert_eq!(interner.resolve(*sym), "alice");
+        } else {
+            panic!("expected String value");
+        }
+    }
+
+    #[test]
+    fn round_trip_boolean() {
+        let mut interner = Interner::new();
+        let schema = vec![col(&mut interner, "active", DataType::Boolean, false)];
+        let values = vec![Value::Boolean(true)];
+
+        let bytes = serialize_tuple(&schema, &values, &interner).unwrap();
+        let decoded = deserialize_tuple(&schema, &bytes, &mut interner).unwrap();
+        assert_eq!(decoded[0], Value::Boolean(true));
+    }
+
+    #[test]
+    fn null_column_no_value_bytes() {
+        let mut interner = Interner::new();
+        let schema = vec![
+            col(&mut interner, "id", DataType::Int, false),
+            col(&mut interner, "email", DataType::VarChar(None), true), // nullable
+        ];
+        let values = vec![Value::Int(1), Value::Null];
+
+        let bytes = serialize_tuple(&schema, &values, &interner).unwrap();
+
+        // Bitmap = 1 byte (2 columns). Column 1 is NULL → bit 1 set = 0b00000010.
+        assert_eq!(bytes[0], 0b00000010);
+
+        let decoded = deserialize_tuple(&schema, &bytes, &mut interner).unwrap();
+        assert_eq!(decoded[0], Value::Int(1));
+        assert_eq!(decoded[1], Value::Null);
+    }
+
+    #[test]
+    fn null_on_not_null_column_errors() {
+        let mut interner = Interner::new();
+        let schema = vec![col(&mut interner, "id", DataType::Int, false)]; // NOT NULL
+        let values = vec![Value::Null];
+
+        assert!(matches!(
+            serialize_tuple(&schema, &values, &interner),
+            Err(StorageError::TupleError(_))
+        ));
+    }
+
+    #[test]
+    fn wrong_column_count_errors() {
+        let mut interner = Interner::new();
+        let schema = vec![col(&mut interner, "id", DataType::Int, false)];
+        let values = vec![Value::Int(1), Value::Int(2)]; // too many
+
+        assert!(matches!(
+            serialize_tuple(&schema, &values, &interner),
+            Err(StorageError::TupleError(_))
+        ));
+    }
+
+    #[test]
+    fn type_mismatch_errors() {
+        let mut interner = Interner::new();
+        let schema = vec![col(&mut interner, "id", DataType::Int, false)];
+        let values = vec![Value::Boolean(true)]; // wrong type for INT column
+
+        assert!(matches!(
+            serialize_tuple(&schema, &values, &interner),
+            Err(StorageError::TupleError(_))
+        ));
+    }
+
+    #[test]
+    fn smallint_range_check() {
+        let mut interner = Interner::new();
+        let schema = vec![col(&mut interner, "x", DataType::SmallInt, false)];
+
+        // Valid SMALLINT value.
+        let ok = serialize_tuple(&schema, &[Value::Int(32767)], &interner);
+        assert!(ok.is_ok());
+
+        // Overflow.
+        let overflow = serialize_tuple(&schema, &[Value::Int(32768)], &interner);
+        assert!(matches!(overflow, Err(StorageError::TupleError(_))));
     }
 }
