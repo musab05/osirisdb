@@ -4,6 +4,7 @@
 //! in modular submodules. Employs recursive descent for statements and Pratt parsing for operator expressions.
 
 pub mod ddl;
+pub mod dml;
 pub mod expression;
 pub mod parser;
 pub mod parser_error;

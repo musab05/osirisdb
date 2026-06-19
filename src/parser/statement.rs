@@ -45,6 +45,7 @@ impl<'a> Parser<'a> {
             TokenKind::Create => self.parse_create()?,
             TokenKind::Drop => self.parse_drop()?,
             TokenKind::Alter => self.parse_alter()?,
+            TokenKind::Insert => Statement::Insert(self.parser_insert()?),
 
             _ => {
                 return Err(ParserError::new(
