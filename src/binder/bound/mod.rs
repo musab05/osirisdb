@@ -22,7 +22,9 @@
 pub mod database;
 pub mod schema;
 pub mod table;
+pub mod insert;
 
 pub use database::BoundCreateDatabaseStmt;
 pub use schema::BoundCreateSchemaStmt;
 pub use table::BoundCreateTableStmt;
+pub use insert::BoundInsertStmt;

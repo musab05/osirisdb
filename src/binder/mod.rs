@@ -37,6 +37,7 @@ pub mod error;
 pub mod bound;
 
 pub mod ddl;
+pub mod dml;
 
 pub use binder::Binder;
 pub use error::BindError;

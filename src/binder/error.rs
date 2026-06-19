@@ -45,6 +45,31 @@ pub enum BindError {
     /// via multiple column-level `PRIMARY KEY` constraints, multiple
     /// table-level `PRIMARY KEY` constraints, or a combination of both.
     MultiplePrimaryKeys,
+
+    /// A table referenced by a query does not exist in the catalog.
+    TableNotFound(Symbol),
+
+    /// The query specifies an INSERT source that is not supported.
+    UnsupportedInsertSource,
+
+    /// The query contains an expression that is not supported.
+    UnsupportedExpression,
+
+    /// The query contains an ON CONFLICT clause that is not supported.
+    UnsupportedOnConflict,
+
+    /// The query contains a RETURNING clause that is not supported.
+    UnsupportedReturning,
+
+    /// The number of target columns does not match the number of source columns.
+    ColumnCountMismatch { expected: usize, found: usize },
+
+    /// An `INSERT` left a `NOT NULL` column with no supplied value.
+    ///
+    /// Distinct from [`BindError::ColumnCountMismatch`] — the row had the
+    /// right number of values, but a required column simply wasn't among
+    /// the columns targeted by the statement.
+    MissingNotNullColumn(Symbol),
 }
 
 impl std::fmt::Display for BindError {
@@ -82,6 +107,31 @@ impl std::fmt::Display for BindError {
             }
             BindError::MultiplePrimaryKeys => {
                 write!(f, "multiple primary keys for table specified")
+            }
+            BindError::TableNotFound(s) => {
+                write!(f, "table {:?} does not exist", s)
+            }
+            BindError::UnsupportedInsertSource => {
+                write!(f, "unsupported insert source")
+            }
+            BindError::UnsupportedExpression => {
+                write!(f, "unsupported expression")
+            }
+            BindError::UnsupportedOnConflict => {
+                write!(f, "unsupported ON CONFLICT clause")
+            }
+            BindError::UnsupportedReturning => {
+                write!(f, "unsupported RETURNING clause")
+            }
+            BindError::ColumnCountMismatch { expected, found } => {
+                write!(
+                    f,
+                    "column count mismatch: expected {}, found {}",
+                    expected, found
+                )
+            }
+            BindError::MissingNotNullColumn(s) => {
+                write!(f, "column {:?} is NOT NULL but was not given a value", s)
             }
         }
     }
