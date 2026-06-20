@@ -80,7 +80,8 @@ impl<'c> Binder<'c> {
         //    - Explicit column list: resolve each named column against
         //      the table, preserving the order the user wrote them in
         //      (this may differ from table-declared order).
-        let target_columns: Vec<&crate::catalog::objects::ColumnEntry> = if stmt.columns.is_empty() {
+        let target_columns: Vec<&crate::catalog::objects::ColumnEntry> = if stmt.columns.is_empty()
+        {
             table_columns.iter().collect()
         } else {
             let mut resolved = Vec::with_capacity(stmt.columns.len());

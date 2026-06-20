@@ -28,8 +28,11 @@ pub mod error;
 pub mod heap_file;
 pub mod page;
 pub mod storage;
+pub mod table_heap;
 pub mod tuple;
 
 pub use buffer_pool::BufferPool;
 pub use error::StorageError;
+pub use heap_file::HeapFile;
 pub use storage::Storage;
+pub use table_heap::TableHeap;

@@ -15,6 +15,7 @@
 //! - [`ddl`]      — DDL execution, one file per object type
 
 pub mod ddl;
+pub mod dml;
 pub mod error;
 pub mod executor;
 pub mod result;

@@ -20,11 +20,11 @@
 /// Bound `CREATE DATABASE` statement — resolved and validated,
 /// ready for the executor to apply to the catalog.
 pub mod database;
+pub mod insert;
 pub mod schema;
 pub mod table;
-pub mod insert;
 
 pub use database::BoundCreateDatabaseStmt;
+pub use insert::BoundInsertStmt;
 pub use schema::BoundCreateSchemaStmt;
 pub use table::BoundCreateTableStmt;
-pub use insert::BoundInsertStmt;

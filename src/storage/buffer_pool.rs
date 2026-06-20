@@ -325,4 +325,9 @@ impl BufferPool {
 
         Ok(())
     }
+
+    /// Returns the number of pages in the backing heap file.
+    pub fn num_pages(&self) -> u32 {
+        self.heap_file.num_pages
+    }
 }
