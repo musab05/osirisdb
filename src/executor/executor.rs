@@ -1,4 +1,11 @@
-use crate::{catalog::CatalogManager, common::symbol::Symbol, storage::Storage};
+use std::collections::{HashMap, hash_map::Entry};
+
+use crate::{
+    catalog::CatalogManager,
+    common::symbol::Symbol,
+    executor::ExecutionError,
+    storage::{Storage, TableHeap},
+};
 
 /// The execution engine — receives bound statements and applies them
 /// to the catalog and storage.
@@ -31,11 +38,15 @@ pub struct Executor {
     /// Used as the default owner for objects created without an explicit
     /// OWNER clause. Resolved during session initialization.
     pub session_user: Symbol,
+
     /// The storage engine — manages on-disk layout.
     ///
     /// `None` when running in memory-only mode (e.g. tests that
     /// don't need disk I/O). `Some` in production.
     pub storage: Option<Storage>,
+
+    /// Table Heap so that we dont have to repone Heap every Insert
+    pub table_heaps: HashMap<(Symbol, Symbol, Symbol), TableHeap>,
 }
 
 impl Executor {
@@ -49,6 +60,7 @@ impl Executor {
             catalog,
             session_user,
             storage: Some(storage),
+            table_heaps: HashMap::new(),
         }
     }
 
@@ -61,6 +73,32 @@ impl Executor {
             catalog,
             session_user,
             storage: None,
+            table_heaps: HashMap::new(),
+        }
+    }
+
+    pub fn get_or_open_table_heap(
+        &mut self,
+        db: Symbol,
+        schema: Symbol,
+        table: Symbol,
+    ) -> Result<&mut TableHeap, ExecutionError> {
+        match self.table_heaps.entry((db, schema, table)) {
+            Entry::Occupied(entry) => Ok(entry.into_mut()),
+            Entry::Vacant(entry) => {
+                let db_name = self.catalog.interner.resolve(db);
+                let schema_name = self.catalog.interner.resolve(schema);
+                let table_name = self.catalog.interner.resolve(table);
+
+                let storage = self.storage.as_ref().ok_or_else(|| {
+                    ExecutionError::Storage("storage engine not initialized".to_string())
+                })?;
+
+                let heap = TableHeap::open(storage, db_name, schema_name, table_name)
+                    .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+
+                Ok(entry.insert(heap))
+            }
         }
     }
 }
