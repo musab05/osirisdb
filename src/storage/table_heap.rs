@@ -2,7 +2,10 @@ use crate::{
     ast::Value,
     catalog::objects::ColumnEntry,
     common::interner::Interner,
-    storage::{BufferPool, HeapFile, Storage, StorageError, tuple::serialize_tuple},
+    storage::{
+        BufferPool, HeapFile, Storage, StorageError,
+        tuple::{deserialize_tuple, serialize_tuple},
+    },
 };
 
 /// Default number of frames each table's buffer pool gets.
@@ -106,5 +109,30 @@ impl TableHeap {
                 "tuple too large to fit in an empty page".to_string(),
             )),
         }
+    }
+
+    pub fn scan(
+        &mut self,
+        schema: &[ColumnEntry],
+        interner: &mut Interner,
+    ) -> Result<Vec<Vec<Value>>, StorageError> {
+        let mut all_rows = Vec::new();
+
+        for page_id in 0..self.buffer_pool.num_pages() {
+            let frame_id = self.buffer_pool.pin_page(page_id)?;
+
+            let page = self.buffer_pool.get_page(frame_id);
+
+            for slot_id in 0..page.slot_count() {
+                if let Some(bytes) = page.get_tuple(slot_id) {
+                    let values = deserialize_tuple(schema, bytes, interner)?;
+                    all_rows.push(values);
+                }
+            }
+
+            self.buffer_pool.unpin_page(frame_id, false);
+        }
+
+        Ok(all_rows)
     }
 }

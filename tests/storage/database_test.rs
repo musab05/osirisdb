@@ -4,7 +4,7 @@ mod tests {
     use osirisdb::catalog::objects::ColumnEntry;
     use osirisdb::common::Interner;
     use osirisdb::storage::tuple::{deserialize_tuple, serialize_tuple};
-    use osirisdb::storage::{BufferPool, StorageError, heap_file::HeapFile};
+    use osirisdb::storage::{BufferPool, Storage, StorageError, TableHeap, heap_file::HeapFile};
     use std::env;
     use std::path::{Path, PathBuf};
 
@@ -346,5 +346,46 @@ mod tests {
         // Overflow.
         let overflow = serialize_tuple(&schema, &[Value::Int(32768)], &interner);
         assert!(matches!(overflow, Err(StorageError::TupleError(_))));
+    }
+
+    #[test]
+    fn table_heap_insert_and_scan() {
+        let path = env::temp_dir().join("osirisdb_th_insert_and_scan");
+        if path.exists() {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+
+        let storage = Storage::new_or_create(&path).unwrap();
+        std::fs::create_dir_all(storage.schema_path("test_db", "test_schema")).unwrap();
+
+        let mut th = TableHeap::open(&storage, "test_db", "test_schema", "test_table").unwrap();
+        let mut interner = Interner::new();
+
+        let schema = vec![
+            col(&mut interner, "id", DataType::Int, false),
+            col(&mut interner, "name", DataType::VarChar(None), false),
+        ];
+
+        let name1 = interner.intern("alice");
+        let row1 = vec![Value::Int(1), Value::String(name1)];
+
+        let name2 = interner.intern("bob");
+        let row2 = vec![Value::Int(2), Value::String(name2)];
+
+        let name3 = interner.intern("charlie");
+        let row3 = vec![Value::Int(3), Value::String(name3)];
+
+        th.insert_tuple(&schema, &row1, &interner).unwrap();
+        th.insert_tuple(&schema, &row2, &interner).unwrap();
+        th.insert_tuple(&schema, &row3, &interner).unwrap();
+
+        let scanned = th.scan(&schema, &mut interner).unwrap();
+
+        assert_eq!(scanned.len(), 3);
+        assert_eq!(scanned[0], row1);
+        assert_eq!(scanned[1], row2);
+        assert_eq!(scanned[2], row3);
+
+        let _ = std::fs::remove_dir_all(&path);
     }
 }
