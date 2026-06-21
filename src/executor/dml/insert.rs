@@ -1,5 +1,8 @@
 use crate::{
-    binder::bound::BoundInsertStmt, common::symbol::Symbol, executor::{ExecutionError, ExecutionResult, Executor}, storage::TableHeap
+    binder::bound::BoundInsertStmt,
+    common::symbol::Symbol,
+    executor::{ExecutionError, ExecutionResult, Executor},
+    storage::TableHeap,
 };
 
 impl Executor {
