@@ -1,8 +1,6 @@
 use crate::{
     binder::bound::BoundInsertStmt,
-    common::symbol::Symbol,
     executor::{ExecutionError, ExecutionResult, Executor},
-    storage::TableHeap,
 };
 
 impl Executor {
@@ -16,7 +14,10 @@ impl Executor {
     ///
     /// 1. Looks up the target table's schema (`TableEntry.columns`) from
     ///    the catalog — needed to serialize each row correctly.
-    /// 2. Opens (or reuses) the table's heap file via [`TableHeap`].
+    /// 2. Gets (or opens and caches) the table's heap via
+    ///    [`Executor::get_or_open_table_heap`] — subsequent INSERTs into
+    ///    the same table reuse the same open heap file and buffer pool
+    ///    instead of reopening from disk every time.
     /// 3. Inserts each row in `stmt.rows`, one at a time.
     ///
     /// # Storage-disabled mode
@@ -43,24 +44,33 @@ impl Executor {
         let rows = stmt.rows;
 
         // Look up the table's schema — needed by serialize_tuple inside
-        // TableHeap::insert_tuple. Clone the columns so we don't hold a
-        // borrow on self.catalog while also borrowing self.storage below.
+        // TableHeap::insert_tuple. Clone the columns so this doesn't hold
+        // a borrow on self.catalog while self.table_heaps is borrowed
+        // mutably below.
         let table_entry = self.catalog.get_table(db, schema, table)?;
         let columns = table_entry.columns.clone();
 
         let row_count = rows.len();
 
-        // Resolve names to strings before any mutable borrow of storage,
-        // same pattern used in execute_create_table.
-        let db_name = self.catalog.interner.resolve(db).to_string();
-        let schema_name = self.catalog.interner.resolve(schema).to_string();
-        let table_name = self.catalog.interner.resolve(table).to_string();
+        // Memory-only mode (no Storage configured) skips persistence
+        // entirely, matching the DDL executors' convention.
+        if self.storage.is_some() {
+            let key = (db, schema, table);
 
-        if let Some(storage) = &self.storage {
-            let mut table_heap = TableHeap::open(storage, &db_name, &schema_name, &table_name)
-                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+            // Ensure the heap is open and cached. The returned &mut
+            // TableHeap is intentionally not kept — holding it across the
+            // loop below would conflict with the &self.catalog.interner
+            // borrow each insert_tuple call needs. Instead each iteration
+            // re-fetches it fresh from the map, which is a cheap HashMap
+            // lookup, not a disk reopen.
+            self.get_or_open_table_heap(db, schema, table)?;
 
             for row in &rows {
+                let table_heap = self
+                    .table_heaps
+                    .get_mut(&key)
+                    .expect("just inserted by get_or_open_table_heap above");
+
                 table_heap
                     .insert_tuple(&columns, row, &self.catalog.interner)
                     .map_err(|e| ExecutionError::Storage(e.to_string()))?;
