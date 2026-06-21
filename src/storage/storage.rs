@@ -59,7 +59,7 @@ impl Storage {
         Ok(Self { data_dir })
     }
 
-    /// Returns the root data directory path.
+    /// Returns the root data directory path
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
     }
