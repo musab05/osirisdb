@@ -9,8 +9,18 @@ use osirisdb::{
 
 fn main() {
     let sql = "CREATE DATABASE mydb OWNER postgres ENCODING 'UTF8' CONNECTION LIMIT 100; \
-                CREATE SCHEMA myschema; \
-                CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(255) NOT NULL, email VARCHAR(255) UNIQUE);";
+           CREATE SCHEMA myschema; \
+           CREATE TABLE users (
+               id INT PRIMARY KEY,
+               name VARCHAR(255) NOT NULL,
+               email VARCHAR(255) UNIQUE
+           ); \
+           INSERT INTO users (id, name, email)
+           VALUES (1, 'Alice', 'alice@example.com'); \
+           INSERT INTO users (id, name, email)
+           VALUES (2, 'Bob', 'bob@example.com'); \
+           INSERT INTO users (id, name, email)
+           VALUES (3, 'Charlie', 'charlie@example.com');";
 
     // ── 1. Parse ──────────────────────────────────────────────────────────────
     let mut parser = Parser::new(sql);
@@ -115,6 +125,29 @@ fn main() {
                             _ => unreachable!("execute_create_table only returns TableCreated"),
                         });
                         println!("Table '{}' created successfully.", name);
+                    }
+                    Err(e) => eprintln!("Execution error: {}", e),
+                }
+            }
+            Statement::Insert(s) => {
+                let binder = Binder::new(&executor.catalog, executor.session_user);
+                let bound = match binder.bind_insert_table(current_db, public_schema, s) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        eprintln!("Bind error: {}", e);
+                        return;
+                    }
+                };
+
+                match executor.execute_insert_table(bound) {
+                    Ok(result) => {
+                        println!("{}", result.command_tag());
+                        let (name, count) = match &result {
+                            ExecutionResult::Inserted { name, count } => (*name, *count),
+                            _ => unreachable!("execute_insert_table only returns Inserted"),
+                        };
+                        let table_name = executor.catalog.interner.resolve(name);
+                        println!("{} row(s) inserted into '{}'.", count, table_name);
                     }
                     Err(e) => eprintln!("Execution error: {}", e),
                 }
