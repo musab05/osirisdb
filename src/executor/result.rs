@@ -1,4 +1,4 @@
-use crate::common::symbol::Symbol;
+use crate::{ast::Value, common::symbol::Symbol};
 
 /// The result of a successfully executed statement.
 ///
@@ -27,6 +27,10 @@ pub enum ExecutionResult {
     /// A `INSERT TABLE` statement completed successfully.
     /// Carries the name of the inserted table
     Inserted { name: Symbol, count: usize },
+
+    /// A `SELECT` statement completed successfully.
+    /// Carries the rows returned by the scan.
+    Selected { rows: Vec<Vec<Value>> },
 }
 
 impl ExecutionResult {
@@ -44,6 +48,7 @@ impl ExecutionResult {
             ExecutionResult::SchemaCreated { .. } => "CREATE SCHEMA",
             ExecutionResult::TableCreated { .. } => "CREATE TABLE",
             ExecutionResult::Inserted { .. } => "INSERT TABLE",
+            ExecutionResult::Selected { .. } => "SELECT",
         }
     }
 }

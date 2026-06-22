@@ -18,6 +18,7 @@ pub mod ddl;
 pub mod dml;
 pub mod error;
 pub mod executor;
+pub mod query;
 pub mod result;
 
 pub use error::ExecutionError;

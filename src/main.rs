@@ -1,7 +1,8 @@
 use osirisdb::{
-    ast::Statement,
+    ast::{Statement, Value},
     binder::Binder,
     catalog::CatalogManager,
+    common::{Interner, interner},
     executor::{ExecutionResult, Executor},
     parser::Parser,
     storage::Storage,
@@ -20,7 +21,8 @@ fn main() {
            INSERT INTO users (id, name, email)
            VALUES (2, 'Bob', 'bob@example.com'); \
            INSERT INTO users (id, name, email)
-           VALUES (3, 'Charlie', 'charlie@example.com');";
+           VALUES (3, 'Charlie', 'charlie@example.com');
+           SELECT * FROM users;";
 
     // ── 1. Parse ──────────────────────────────────────────────────────────────
     let mut parser = Parser::new(sql);
@@ -152,7 +154,58 @@ fn main() {
                     Err(e) => eprintln!("Execution error: {}", e),
                 }
             }
+            Statement::Select(s) => {
+                let binder = Binder::new(&executor.catalog, executor.session_user);
+                let bound = match binder.bind_select(current_db, public_schema, s) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        eprintln!("Bind error: {}", e);
+                        return;
+                    }
+                };
+
+                match executor.execute_select_table(bound) {
+                    Ok(result) => {
+                        println!("{}", result.command_tag());
+
+                        let rows = match result {
+                            // move, not &result
+                            ExecutionResult::Selected { rows } => rows,
+                            _ => unreachable!(),
+                        };
+
+                        if rows.is_empty() {
+                            println!("(0 rows)");
+                        } else {
+                            for row in &rows {
+                                let formatted: Vec<String> = row
+                                    .iter()
+                                    .map(|v| format_value(v.clone(), &executor.catalog.interner))
+                                    .collect();
+                                println!("{}", formatted.join(" | "));
+                            }
+                            println!(
+                                "({} row{})",
+                                rows.len(),
+                                if rows.len() == 1 { "" } else { "s" }
+                            );
+                        }
+                    }
+                    Err(e) => eprintln!("Execution error: {}", e),
+                }
+            }
             _ => eprintln!("Unsupported statement"),
         }
+    }
+}
+
+fn format_value(v: Value, interner: &Interner) -> String {
+    match v {
+        Value::Int(n) => n.to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::String(sym) => interner.resolve(sym).to_string(),
+        Value::Boolean(b) => b.to_string(),
+        Value::Null => "NULL".to_string(),
+        _ => "(unsupported)".to_string(),
     }
 }
