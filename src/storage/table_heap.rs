@@ -135,4 +135,8 @@ impl TableHeap {
 
         Ok(all_rows)
     }
+
+    pub fn from_buffer_pool(bp: BufferPool) -> Self {
+        Self { buffer_pool: bp }
+    }
 }

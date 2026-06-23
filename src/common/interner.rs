@@ -191,3 +191,12 @@ impl Default for Interner {
         Self::new()
     }
 }
+
+impl Clone for Interner {
+    fn clone(&self) -> Self {
+        Self {
+            map: self.map.clone(),
+            strings: self.strings.clone(),
+        }
+    }
+}
