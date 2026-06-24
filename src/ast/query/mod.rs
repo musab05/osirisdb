@@ -8,7 +8,7 @@ pub mod null_ordering;
 pub mod operators;
 pub mod order;
 pub mod select;
-pub mod table;
+pub mod table_ref;
 
 pub use cte::*;
 pub use join::*;
@@ -16,4 +16,4 @@ pub use null_ordering::*;
 pub use operators::*;
 pub use order::*;
 pub use select::*;
-pub use table::*;
+pub use table_ref::*;

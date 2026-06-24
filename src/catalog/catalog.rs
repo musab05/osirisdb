@@ -31,6 +31,10 @@ impl Catalog {
         self.next_oid += 1;
         oid
     }
+
+    pub(crate) fn set_next_oid(&mut self, oid: u32) {
+        self.next_oid = oid;
+    }
 }
 
 impl Default for Catalog {

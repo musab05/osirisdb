@@ -38,13 +38,25 @@ impl<'a> Parser<'a> {
         let mut lhs = self.parse_prefix()?;
 
         loop {
-            if let Some(expr) = self.try_parse_postfix(lhs.clone())? {
-                lhs = expr;
-                continue;
+            // ── Postfix operators ────────────────────────────────────
+            // Peek at the token to decide if postfix parsing applies,
+            // then pass lhs by move — no clone needed.
+            if self.is_postfix_start() {
+                match self.try_parse_postfix(lhs)? {
+                    (Some(expr), _) => {
+                        lhs = expr;
+                        continue;
+                    }
+                    (None, returned_lhs) => {
+                        lhs = returned_lhs;
+                    }
+                }
             }
 
-            let token = self.current_token().clone();
-            let Some((l_bp, r_bp)) = infix_binding_power(&token) else {
+            // ── Infix operators ──────────────────────────────────────
+            // Borrow the token kind for the binding power lookup —
+            // no clone unless we actually need to consume it.
+            let Some(&(l_bp, r_bp)) = infix_binding_power(self.current_token()).as_ref() else {
                 break;
             };
 
@@ -52,6 +64,9 @@ impl<'a> Parser<'a> {
                 break;
             }
 
+            // We've committed to consuming this operator — now clone
+            // the kind (cheap: all infix variants are Copy-sized).
+            let token = self.current_token().clone();
             self.advance();
 
             if token == TokenKind::Dot {
@@ -92,15 +107,14 @@ impl<'a> Parser<'a> {
 
     /// Parses unary prefix operators (`NOT`, `-`) or basic literals/identifiers (e.g., `TRUE`, `123`, `users.name`).
     fn parse_prefix(&mut self) -> Result<Expr, ParserError> {
-        let token = self.current_token().clone();
-
-        if let Some(r_bp) = prefix_binding_power(&token) {
-            self.advance();
-            let op = match token {
+        // Check prefix binding power by reference — no clone.
+        if let Some(r_bp) = prefix_binding_power(self.current_token()) {
+            let op = match self.current_token() {
                 TokenKind::Not => UnaryOpKind::Not,
                 TokenKind::Minus => UnaryOpKind::Minus,
                 _ => unreachable!(),
             };
+            self.advance();
 
             let expr = self.parser_expr_bp(r_bp)?;
             return Ok(Expr::UnaryOp {
@@ -109,7 +123,7 @@ impl<'a> Parser<'a> {
             });
         }
 
-        match token {
+        match self.current_token().clone() {
             TokenKind::IntLit(n) => {
                 self.advance();
                 Ok(Expr::Literal(Value::Int(n)))
@@ -205,21 +219,39 @@ impl<'a> Parser<'a> {
             }
 
             _ => Err(ParserError::new(
-                format!("Unexpected token in expression: {:?}", token),
+                format!("Unexpected token in expression: {:?}", self.current_token()),
                 self.current.span.clone(),
             )),
         }
     }
 
-    /// Attempts to parse trailing postfix operators that follow an expression (e.g., `IS NULL`, `BETWEEN`, `IN`, `LIKE`).
-    fn try_parse_postfix(&mut self, lhs: Expr) -> Result<Option<Expr>, ParserError> {
+    /// Returns `true` if the current token could start a postfix operator.
+    ///
+    /// Used to avoid passing `lhs` into `try_parse_postfix` (by move)
+    /// when there is clearly no postfix to parse.
+    fn is_postfix_start(&self) -> bool {
+        matches!(
+            self.current_token(),
+            TokenKind::Is | TokenKind::Between | TokenKind::In | TokenKind::Like | TokenKind::Not
+        )
+    }
+
+    /// Attempts to parse trailing postfix operators that follow an expression
+    /// (e.g., `IS NULL`, `BETWEEN`, `IN`, `LIKE`).
+    ///
+    /// Takes `lhs` by **move** to avoid cloning. Returns `(Some(expr), _)` if
+    /// a postfix was parsed, or `(None, lhs)` to hand the expression back.
+    fn try_parse_postfix(&mut self, lhs: Expr) -> Result<(Option<Expr>, Expr), ParserError> {
         if self.consume(&TokenKind::Is) {
             let negated = self.consume(&TokenKind::Not);
             self.expect(TokenKind::Null)?;
-            return Ok(Some(Expr::IsNull {
-                expr: Box::new(lhs),
-                negated,
-            }));
+            return Ok((
+                Some(Expr::IsNull {
+                    expr: Box::new(lhs),
+                    negated,
+                }),
+                Expr::Literal(Value::Null), /* unused */
+            ));
         }
 
         let negated = if self.current_token() == &TokenKind::Not
@@ -237,12 +269,15 @@ impl<'a> Parser<'a> {
             let low = self.parser_expr_bp(4)?;
             self.expect(TokenKind::And)?;
             let high = self.parser_expr_bp(4)?;
-            return Ok(Some(Expr::Between {
-                expr: Box::new(lhs),
-                low: Box::new(low),
-                high: Box::new(high),
-                negated,
-            }));
+            return Ok((
+                Some(Expr::Between {
+                    expr: Box::new(lhs),
+                    low: Box::new(low),
+                    high: Box::new(high),
+                    negated,
+                }),
+                Expr::Literal(Value::Null),
+            ));
         }
 
         if self.consume(&TokenKind::In) {
@@ -264,7 +299,7 @@ impl<'a> Parser<'a> {
                     negated,
                 }
             };
-            return Ok(Some(expr));
+            return Ok((Some(expr), Expr::Literal(Value::Null)));
         }
 
         if self.consume(&TokenKind::Like) {
@@ -275,12 +310,15 @@ impl<'a> Parser<'a> {
                 rhs: Box::new(pattern),
             };
             if negated {
-                return Ok(Some(Expr::UnaryOp {
-                    op: UnaryOpKind::Not,
-                    expr: Box::new(like_expr),
-                }));
+                return Ok((
+                    Some(Expr::UnaryOp {
+                        op: UnaryOpKind::Not,
+                        expr: Box::new(like_expr),
+                    }),
+                    Expr::Literal(Value::Null),
+                ));
             }
-            return Ok(Some(like_expr));
+            return Ok((Some(like_expr), Expr::Literal(Value::Null)));
         }
 
         if negated {
@@ -290,113 +328,151 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        Ok(None)
+        Ok((None, lhs))
     }
 
-    /// Executes parsing or lookup for the `parse_data_type` operation.
     /// Parses a SQL data type specification, including array brackets and parameter lengths (e.g., `VARCHAR(255)`, `INT[]`).
+    ///
+    /// Matches directly on [`TokenKind`] variants — no string allocation
+    /// or case conversion needed for built-in types.
     pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
         let mut base_type = match self.current_token().clone() {
-            TokenKind::Ident
-            | TokenKind::Int
-            | TokenKind::Integer
-            | TokenKind::Bigint
-            | TokenKind::Smallint
-            | TokenKind::Boolean
-            | TokenKind::Text
-            | TokenKind::Varchar
-            | TokenKind::Char
-            | TokenKind::Real
-            | TokenKind::Double
-            | TokenKind::Numeric
-            | TokenKind::Decimal
-            | TokenKind::Date
-            | TokenKind::Timestamp
-            | TokenKind::Interval
-            | TokenKind::Json
-            | TokenKind::Jsonb
-            | TokenKind::Uuid
-            | TokenKind::Bytea => {
-                let s = &self.source[self.current.span.start..self.current.span.end];
-                let (sym, name) = match self.current_token() {
-                    TokenKind::QuotedIdent => {
-                        let inner = &s[1..s.len() - 1];
-                        (self.interner.intern(inner), inner.to_string())
-                    }
-                    _ => (self.interner.intern(s), s.to_string()),
-                };
+            // ── Integer types ────────────────────────────────────────────
+            TokenKind::Smallint | TokenKind::Int2 => {
                 self.advance();
-                match name.to_uppercase().as_str() {
-                    "SMALLINT" | "INT2" => DataType::SmallInt,
-                    "INT" | "INTEGER" | "INT4" => DataType::Int,
-                    "BIGINT" | "INT8" => DataType::BigInt,
-                    "BOOLEAN" | "BOOL" => DataType::Boolean,
-                    "FLOAT" | "FLOAT4" | "REAL" => DataType::Float,
-                    "DOUBLE" => {
-                        self.consume(&TokenKind::Precision);
-                        DataType::Double
-                    }
-                    "FLOAT8" => DataType::Double,
-                    "TEXT" => DataType::Text,
-                    "JSON" => DataType::Json,
-                    "JSONB" => DataType::JsonB,
-                    "DATE" => DataType::Date,
-                    "TIMESTAMP" | "TIMESTAMPTZ" => DataType::Timestamp,
-                    "UUID" => DataType::UUID,
-                    "BINARY" => DataType::Binary,
+                DataType::SmallInt
+            }
+            TokenKind::Int | TokenKind::Integer | TokenKind::Int4 => {
+                self.advance();
+                DataType::Int
+            }
+            TokenKind::Bigint | TokenKind::Int8 => {
+                self.advance();
+                DataType::BigInt
+            }
 
-                    "CHAR" => {
-                        let n = self.parse_optional_length()?;
-                        DataType::Char(n)
-                    }
-                    "CHARACTER" => {
-                        if *self.current_token() == TokenKind::Varying {
-                            self.advance();
-                            let n = self.parse_optional_length()?;
-                            DataType::VarChar(n)
-                        } else {
-                            let n = self.parse_optional_length()?;
-                            DataType::Char(n)
-                        }
-                    }
-                    "VARCHAR" => {
-                        let n = self.parse_optional_length()?;
-                        DataType::VarChar(n)
-                    }
-                    "VARBINARY" => {
-                        let n = self.parse_optional_length()?;
-                        DataType::VarBinary(n)
-                    }
-                    "DECIMAL" | "NUMERIC" => {
-                        // DECIMAL(precision, scale) — both optional
-                        if self.consume(&TokenKind::LParen) {
-                            let precision = self.expect_int_literal()? as u8;
-                            let scale = if self.consume(&TokenKind::Comma) {
-                                Some(self.expect_int_literal()? as u8)
-                            } else {
-                                None
-                            };
-                            self.expect(TokenKind::RParen)?;
-                            DataType::Decimal(Some(precision), scale)
-                        } else {
-                            DataType::Decimal(None, None)
-                        }
-                    }
-                    // Multi-part custom types: schema.type_name
-                    _ => {
-                        let mut parts = vec![sym];
-                        while self.consume(&TokenKind::Dot) {
-                            parts.push(self.expect_identifier()?);
-                        }
-                        DataType::Custom(parts)
-                    }
+            // ── Boolean ──────────────────────────────────────────────────
+            TokenKind::Boolean | TokenKind::Bool => {
+                self.advance();
+                DataType::Boolean
+            }
+
+            // ── Floating-point types ─────────────────────────────────────
+            TokenKind::Float | TokenKind::Float4 | TokenKind::Real => {
+                self.advance();
+                DataType::Float
+            }
+            TokenKind::Double => {
+                self.advance();
+                self.consume(&TokenKind::Precision);
+                DataType::Double
+            }
+            TokenKind::Float8 => {
+                self.advance();
+                DataType::Double
+            }
+
+            // ── Text / String types ──────────────────────────────────────
+            TokenKind::Text => {
+                self.advance();
+                DataType::Text
+            }
+            TokenKind::Char => {
+                self.advance();
+                let n = self.parse_optional_length()?;
+                DataType::Char(n)
+            }
+            TokenKind::Character => {
+                self.advance();
+                if *self.current_token() == TokenKind::Varying {
+                    self.advance();
+                    let n = self.parse_optional_length()?;
+                    DataType::VarChar(n)
+                } else {
+                    let n = self.parse_optional_length()?;
+                    DataType::Char(n)
+                }
+            }
+            TokenKind::Varchar => {
+                self.advance();
+                let n = self.parse_optional_length()?;
+                DataType::VarChar(n)
+            }
+
+            // ── Binary types ─────────────────────────────────────────────
+            TokenKind::Binary => {
+                self.advance();
+                DataType::Binary
+            }
+            TokenKind::VarBinary => {
+                self.advance();
+                let n = self.parse_optional_length()?;
+                DataType::VarBinary(n)
+            }
+
+            // ── Exact numeric types ──────────────────────────────────────
+            TokenKind::Decimal | TokenKind::Numeric => {
+                self.advance();
+                if self.consume(&TokenKind::LParen) {
+                    let precision = self.expect_int_literal()? as u8;
+                    let scale = if self.consume(&TokenKind::Comma) {
+                        Some(self.expect_int_literal()? as u8)
+                    } else {
+                        None
+                    };
+                    self.expect(TokenKind::RParen)?;
+                    DataType::Decimal(Some(precision), scale)
+                } else {
+                    DataType::Decimal(None, None)
                 }
             }
 
-            // Handle TIME as a data type
+            // ── JSON types ───────────────────────────────────────────────
+            TokenKind::Json => {
+                self.advance();
+                DataType::Json
+            }
+            TokenKind::Jsonb => {
+                self.advance();
+                DataType::JsonB
+            }
+
+            // ── Temporal types ───────────────────────────────────────────
+            TokenKind::Date => {
+                self.advance();
+                DataType::Date
+            }
             TokenKind::Time => {
                 self.advance();
                 DataType::Time
+            }
+            TokenKind::Timestamp | TokenKind::Timestamptz => {
+                self.advance();
+                DataType::Timestamp
+            }
+            TokenKind::Interval => {
+                self.advance();
+                DataType::Interval
+            }
+
+            // ── Other types ──────────────────────────────────────────────
+            TokenKind::Uuid => {
+                self.advance();
+                DataType::UUID
+            }
+            TokenKind::Bytea => {
+                self.advance();
+                DataType::Bytea
+            }
+
+            // ── Custom / user-defined types ──────────────────────────────
+            TokenKind::Ident | TokenKind::QuotedIdent => {
+                let sym = self.expect_identifier()?;
+                let mut parts = vec![sym];
+                while self.consume(&TokenKind::Dot) {
+                    parts.push(self.expect_identifier()?);
+                }
+                DataType::Custom(parts)
             }
 
             _ => {

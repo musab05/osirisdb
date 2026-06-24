@@ -2,7 +2,7 @@ use osirisdb::{
     ast::{Statement, Value},
     binder::Binder,
     catalog::CatalogManager,
-    common::{Interner, interner},
+    common::Interner,
     executor::{ExecutionResult, Executor},
     parser::Parser,
     storage::Storage,
@@ -11,18 +11,18 @@ use osirisdb::{
 fn main() {
     let sql = "CREATE DATABASE mydb OWNER postgres ENCODING 'UTF8' CONNECTION LIMIT 100; \
            CREATE SCHEMA myschema; \
-           CREATE TABLE users (
+           CREATE TABLE myschema.users (
                id INT PRIMARY KEY,
                name VARCHAR(255) NOT NULL,
                email VARCHAR(255) UNIQUE
            ); \
-           INSERT INTO users (id, name, email)
+           INSERT INTO myschema.users (id, name, email)
            VALUES (1, 'Alice', 'alice@example.com'); \
-           INSERT INTO users (id, name, email)
+           INSERT INTO myschema.users (id, name, email)
            VALUES (2, 'Bob', 'bob@example.com'); \
-           INSERT INTO users (id, name, email)
-           VALUES (3, 'Charlie', 'charlie@example.com');
-           SELECT * FROM users;";
+           INSERT INTO myschema.users (id, name, email)
+           VALUES (3, 'Charlie', 'charlie@example.com');";
+    let sql = "SELECT * FROM myschema.users;";
 
     // ── 1. Parse ──────────────────────────────────────────────────────────────
     let mut parser = Parser::new(sql);

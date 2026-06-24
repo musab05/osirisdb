@@ -1,7 +1,10 @@
-use std::collections::{HashMap, hash_map::Entry};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    iter,
+};
 
 use crate::{
-    catalog::CatalogManager,
+    catalog::{CatalogManager, system::catalog::SystemCatalog},
     common::symbol::Symbol,
     executor::ExecutionError,
     storage::{Storage, TableHeap},
@@ -47,6 +50,9 @@ pub struct Executor {
 
     /// Table Heap so that we dont have to repone Heap every Insert
     pub table_heaps: HashMap<(Symbol, Symbol, Symbol), TableHeap>,
+
+    /// System catalog
+    pub system_catalog: Option<SystemCatalog>,
 }
 
 impl Executor {
@@ -56,11 +62,42 @@ impl Executor {
     /// ownership and is the only component that may write to it.
     /// `session_user` is the symbol of the currently connected role.
     pub fn new(catalog: CatalogManager, session_user: Symbol, storage: Storage) -> Self {
+        let data_dir = storage.data_dir().to_path_buf();
+        let system_catalog = SystemCatalog::new(data_dir);
+        system_catalog.init().ok(); // create _system/ if missing
+
+        let mut catalog = catalog;
+
+        // Rebuild in-memory catalog from system tables on startup.
+        // If system tables are empty (first run), load_all returns an
+        // empty Vec and the catalog stays empty — DDL will populate it.
+        if let Ok(databses) = system_catalog.load_all(&mut catalog.interner) {
+            for db_entry in databses {
+                catalog.catalog.databases.insert(db_entry.name, db_entry);
+            }
+            // Restore the OID counter to max(existing OIDs) + 1 so new
+            // objects don't collide with ones loaded from disk.
+            let max_oid =
+                catalog
+                    .catalog
+                    .databases
+                    .values()
+                    .flat_map(|db| {
+                        iter::once(db.oid).chain(db.schemas.values().flat_map(|s| {
+                            iter::once(s.oid).chain(s.tables.values().map(|t| t.oid))
+                        }))
+                    })
+                    .max()
+                    .unwrap_or(0);
+            catalog.catalog.set_next_oid(max_oid + 1);
+        }
+
         Self {
             catalog,
             session_user,
             storage: Some(storage),
             table_heaps: HashMap::new(),
+            system_catalog: Some(system_catalog),
         }
     }
 
@@ -74,6 +111,7 @@ impl Executor {
             session_user,
             storage: None,
             table_heaps: HashMap::new(),
+            system_catalog: None,
         }
     }
 

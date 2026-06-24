@@ -331,3 +331,10 @@ impl BufferPool {
         self.heap_file.num_pages
     }
 }
+
+impl Drop for BufferPool {
+    fn drop(&mut self) {
+        // Flush all dirty pages to the heap file on disk before dropping
+        let _ = self.flush_all();
+    }
+}

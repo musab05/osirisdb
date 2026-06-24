@@ -1,4 +1,4 @@
-use std::{fmt::write, path::PathBuf};
+use std::path::PathBuf;
 
 /// Errors that can occur during storage operations.
 ///

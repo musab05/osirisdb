@@ -1,7 +1,6 @@
 use crate::{
     binder::bound::BoundSelectStmt,
     executor::{ExecutionError, ExecutionResult, Executor},
-    storage::table_heap,
 };
 
 impl Executor {

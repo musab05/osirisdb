@@ -363,19 +363,30 @@ impl<'a> Parser<'a> {
             self.current_token(),
             TokenKind::Int
                 | TokenKind::Integer
+                | TokenKind::Int2
+                | TokenKind::Int4
+                | TokenKind::Int8
                 | TokenKind::Bigint
                 | TokenKind::Smallint
                 | TokenKind::Boolean
+                | TokenKind::Bool
                 | TokenKind::Text
                 | TokenKind::Varchar
                 | TokenKind::Char
+                | TokenKind::Character
                 | TokenKind::Real
                 | TokenKind::Double
+                | TokenKind::Float
+                | TokenKind::Float4
+                | TokenKind::Float8
                 | TokenKind::Numeric
                 | TokenKind::Decimal
+                | TokenKind::Binary
+                | TokenKind::VarBinary
                 | TokenKind::Date
                 | TokenKind::Time
                 | TokenKind::Timestamp
+                | TokenKind::Timestamptz
                 | TokenKind::Interval
                 | TokenKind::Json
                 | TokenKind::Jsonb

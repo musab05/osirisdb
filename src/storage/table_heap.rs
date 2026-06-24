@@ -69,7 +69,7 @@ impl TableHeap {
 
         // Decide which page to try first: the last one if any exist,
         // otherwise allocate the table's very first page.
-        let (page_id, frame_id) = if self.buffer_pool.num_pages() == 0 {
+        let (_page_id, frame_id) = if self.buffer_pool.num_pages() == 0 {
             self.buffer_pool.new_page()?
         } else {
             let last_page_id = self.buffer_pool.num_pages() - 1;

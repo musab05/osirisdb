@@ -52,7 +52,18 @@ impl Executor {
             .create_schema(db, stmt.into(), self.session_user)
             .map_err(ExecutionError::from)?;
 
-        // 2. Create on-disk directory if storage is enabled.
+        // 2. Persist to system catalog.
+        if let Some(sys) = &self.system_catalog {
+            let entry = self
+                .catalog
+                .get_schema(db, name)
+                .map_err(ExecutionError::from)?
+                .clone();
+            sys.write_schema(&entry, &mut self.catalog.interner)
+                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+        }
+
+        // 3. Create on-disk directory if storage is enabled.
         //    Skipped silently in memory-only mode (tests, early pipeline).
         if let Some(storage) = &self.storage {
             storage

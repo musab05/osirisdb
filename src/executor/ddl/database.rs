@@ -40,7 +40,26 @@ impl Executor {
             .create_database(stmt.into(), self.session_user)
             .map_err(ExecutionError::from)?;
 
-        // 2. Create on-disk directory if storage is enabled.
+        // 2. Persist to system catalog
+        if let Some(sys) = &self.system_catalog {
+            let entry = self
+                .catalog
+                .get_database(name)
+                .map_err(ExecutionError::from)?
+                .clone();
+            sys.write_database(&entry, &mut self.catalog.interner)
+                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+
+            // Persist the default `public` schema!
+            let public_sym = self.catalog.interner.intern("public");
+            if let Ok(public_schema) = self.catalog.get_schema(name, public_sym) {
+                let public_schema = public_schema.clone();
+                sys.write_schema(&public_schema, &mut self.catalog.interner)
+                    .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+            }
+        }
+
+        // 3. Create on-disk directory if storage is enabled.
         //    Skipped silently in memory-only mode (tests, early pipeline).
         if let Some(storage) = &self.storage {
             storage

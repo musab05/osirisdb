@@ -306,18 +306,40 @@ pub enum TokenKind {
     Void,
     Int,
     Integer,
+    /// PostgreSQL `INT2` — alias for `SMALLINT`.
+    Int2,
+    /// PostgreSQL `INT4` — alias for `INTEGER`.
+    Int4,
+    /// PostgreSQL `INT8` — alias for `BIGINT`.
+    Int8,
     Bigint,
     Smallint,
     Boolean,
+    /// Alias for `BOOLEAN`.
+    Bool,
     Text,
     Varchar,
     Char,
+    /// SQL `CHARACTER` — resolves to `CHAR` or `CHARACTER VARYING` (VARCHAR).
+    Character,
     Real,
     Double,
+    /// SQL `FLOAT` — single-precision floating point.
+    Float,
+    /// PostgreSQL `FLOAT4` — alias for `REAL`.
+    Float4,
+    /// PostgreSQL `FLOAT8` — alias for `DOUBLE PRECISION`.
+    Float8,
     Numeric,
     Decimal,
+    /// SQL `BINARY` — fixed-length binary string.
+    Binary,
+    /// SQL `VARBINARY` — variable-length binary string.
+    VarBinary,
     Date,
     Timestamp,
+    /// PostgreSQL `TIMESTAMPTZ` — timestamp with time zone.
+    Timestamptz,
     Interval,
     Json,
     Jsonb,

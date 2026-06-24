@@ -73,13 +73,11 @@ impl SystemCatalog {
         interner: &mut Interner,
     ) -> Result<(), StorageError> {
         let schema = osiris_database_schema(interner);
-        let name = interner.resolve(entry.name).to_string();
-        let owner = interner.resolve(entry.owner).to_string();
 
         let row = vec![
             Value::Int(entry.oid as i64),
-            Value::String(interner.get(&name).unwrap_or(entry.name)),
-            Value::String(interner.get(&owner).unwrap_or(entry.owner)),
+            Value::String(entry.name),
+            Value::String(entry.owner),
             entry
                 .encoding
                 .map(|s| Value::String(s))
@@ -131,17 +129,17 @@ impl SystemCatalog {
         let class_row = vec![
             Value::Int(entry.oid as i64),
             Value::String(entry.name),
-            Value::String(interner.get(schema_name).unwrap_or(entry.name)),
-            Value::String(interner.get(db).unwrap_or(entry.name)),
+            Value::String(interner.intern(schema_name)),
+            Value::String(interner.intern(db)),
         ];
         self.heap("osiris_class")?
             .insert_tuple(&class_schema, &class_row, interner)?;
 
-        let attr_schema = osiris_attribute_schema(&mut interner.clone());
+        let attr_schema = osiris_attribute_schema(interner);
         let mut attr_heap = self.heap("osiris_attribute")?;
         for (i, col) in entry.columns.iter().enumerate() {
             let type_str = format_data_type(&col.data_type);
-            let type_sym = interner.get(&type_str).unwrap_or(col.name);
+            let type_sym = interner.intern(&type_str);
             let attr_row = vec![
                 Value::Int(entry.oid as i64),
                 Value::Int(i as i64),
@@ -258,12 +256,28 @@ fn format_data_type(dt: &DataType) -> String {
         VarChar(None) => "VARCHAR".into(),
         Char(Some(n)) => format!("CHAR({})", n),
         Char(None) => "CHAR".into(),
-        _ => "TEXT".into(), // fallback for unsupported types
+        Binary => "BINARY".into(),
+        VarBinary(Some(n)) => format!("VARBINARY({})", n),
+        VarBinary(None) => "VARBINARY".into(),
+        Decimal(Some(p), Some(s)) => format!("DECIMAL({},{})", p, s),
+        Decimal(Some(p), None) => format!("DECIMAL({})", p),
+        Decimal(None, _) => "DECIMAL".into(),
+        Json => "JSON".into(),
+        JsonB => "JSONB".into(),
+        Date => "DATE".into(),
+        Time => "TIME".into(),
+        Timestamp => "TIMESTAMP".into(),
+        Interval => "INTERVAL".into(),
+        UUID => "UUID".into(),
+        Bytea => "BYTEA".into(),
+        Array(inner) => format!("{}[]", format_data_type(inner)),
+        Custom(_) => "TEXT".into(), // fallback for custom types
     }
 }
 
 fn parse_data_type(s: &str) -> crate::ast::DataType {
     use crate::ast::DataType::*;
+    // Parameterised types: VARCHAR(n), CHAR(n), VARBINARY(n), DECIMAL(p,s)
     if s.starts_with("VARCHAR(") {
         let n: u64 = s[8..s.len() - 1].parse().unwrap_or(255);
         return VarChar(Some(n));
@@ -271,6 +285,21 @@ fn parse_data_type(s: &str) -> crate::ast::DataType {
     if s.starts_with("CHAR(") {
         let n: u64 = s[5..s.len() - 1].parse().unwrap_or(1);
         return Char(Some(n));
+    }
+    if s.starts_with("VARBINARY(") {
+        let n: u64 = s[10..s.len() - 1].parse().unwrap_or(255);
+        return VarBinary(Some(n));
+    }
+    if s.starts_with("DECIMAL(") {
+        let inner = &s[8..s.len() - 1];
+        let parts: Vec<&str> = inner.split(',').collect();
+        let p = parts[0].parse().ok();
+        let sc = parts.get(1).and_then(|v| v.parse().ok());
+        return Decimal(p, sc);
+    }
+    if s.ends_with("[]") {
+        let inner = parse_data_type(&s[..s.len() - 2]);
+        return Array(Box::new(inner));
     }
     match s {
         "SMALLINT" => SmallInt,
@@ -282,6 +311,17 @@ fn parse_data_type(s: &str) -> crate::ast::DataType {
         "TEXT" => Text,
         "VARCHAR" => VarChar(None),
         "CHAR" => Char(None),
+        "BINARY" => Binary,
+        "VARBINARY" => VarBinary(None),
+        "DECIMAL" => Decimal(None, None),
+        "JSON" => Json,
+        "JSONB" => JsonB,
+        "DATE" => Date,
+        "TIME" => Time,
+        "TIMESTAMP" => Timestamp,
+        "INTERVAL" => Interval,
+        "UUID" => UUID,
+        "BYTEA" => Bytea,
         _ => Text,
     }
 }

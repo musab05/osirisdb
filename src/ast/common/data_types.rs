@@ -48,9 +48,14 @@ pub enum DataType {
     Time,
     /// Date and time with or without time zone support.
     Timestamp,
+    /// Time interval (e.g. `INTERVAL '1 day'`).
+    Interval,
 
     /// Universally Unique Identifier (128-bit UUID).
     UUID,
+
+    /// PostgreSQL variable-length binary data (`BYTEA`).
+    Bytea,
 
     /// Multi-dimensional arrays of a specific base type (e.g., `INT[]`).
     Array(Box<DataType>),
