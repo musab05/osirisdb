@@ -195,11 +195,17 @@ fn encode_value(
 
         // ── Floating point ────────────────────────────────────────────
         (DataType::Float, Value::Float(f)) => {
-            // Store as f32 bits.
             buf.extend_from_slice(&(*f as f32).to_bits().to_le_bytes());
         }
         (DataType::Double, Value::Float(f)) => {
             buf.extend_from_slice(&f.to_bits().to_le_bytes());
+        }
+        // Integer literal widened to float column — binder permits this.
+        (DataType::Float, Value::Int(n)) => {
+            buf.extend_from_slice(&(*n as f32).to_bits().to_le_bytes());
+        }
+        (DataType::Double, Value::Int(n)) => {
+            buf.extend_from_slice(&(*n as f64).to_bits().to_le_bytes());
         }
 
         // ── Variable-length strings ───────────────────────────────────
@@ -241,30 +247,30 @@ fn decode_value(
     match data_type {
         // ── Integer types ─────────────────────────────────────────────
         DataType::SmallInt => {
-            need(data, 2)?;
+            need(data, 2, "SMALLINT")?;
             let n = i16::from_le_bytes(data[0..2].try_into().unwrap());
             Ok((Value::Int(n as i64), 2))
         }
         DataType::Int | DataType::BigInt => {
-            need(data, 8)?;
+            need(data, 8, "INT/BIGINT")?;
             let n = i64::from_le_bytes(data[0..8].try_into().unwrap());
             Ok((Value::Int(n), 8))
         }
 
         // ── Boolean ───────────────────────────────────────────────────
         DataType::Boolean => {
-            need(data, 1)?;
+            need(data, 1, "BOOLEAN")?;
             Ok((Value::Boolean(data[0] != 0), 1))
         }
 
         // ── Floating point ────────────────────────────────────────────
         DataType::Float => {
-            need(data, 4)?;
+            need(data, 4, "FLOAT")?;
             let bits = u32::from_le_bytes(data[0..4].try_into().unwrap());
             Ok((Value::Float(f32::from_bits(bits) as f64), 4))
         }
         DataType::Double => {
-            need(data, 8)?;
+            need(data, 8, "DOUBLE")?;
             let bits = u64::from_le_bytes(data[0..8].try_into().unwrap());
             Ok((Value::Float(f64::from_bits(bits)), 8))
         }
@@ -272,11 +278,11 @@ fn decode_value(
         // ── Variable-length strings ───────────────────────────────────
         DataType::VarChar(_) | DataType::Char(_) | DataType::Text => {
             // Read 4-byte length prefix first.
-            need(data, 4)?;
+            need(data, 4, "string length prefix")?;
             let len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
 
             // Then read `len` bytes of UTF-8 payload.
-            need(&data[4..], len)?;
+            need(&data[4..], len, "string payload")?;
             let s = str::from_utf8(&data[4..4 + len])
                 .map_err(|_| StorageError::TupleError("invalid UTF-8 in stored string".into()))?;
             let sym = interner.intern(s);
@@ -292,10 +298,11 @@ fn decode_value(
 }
 
 /// Returns an error if `data` has fewer than `n` bytes available.
-fn need(data: &[u8], n: usize) -> Result<(), StorageError> {
+fn need(data: &[u8], n: usize, ctx: &str) -> Result<(), StorageError> {
     if data.len() < n {
         Err(StorageError::TupleError(format!(
-            "unexpected end of tuple data: need {} bytes, have {}",
+            "unexpected end of tuple data reading {}: need {} bytes, have {}",
+            ctx,
             n,
             data.len()
         )))

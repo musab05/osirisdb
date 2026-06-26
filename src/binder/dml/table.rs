@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use crate::{
-    ast::{Expr, InsertSource, InsertStmt, Value},
+    ast::{DataType, Expr, InsertSource, InsertStmt, Value},
     binder::{BindError, Binder, bound::insert::BoundInsertStmt},
     common::symbol::Symbol,
 };
@@ -32,7 +34,7 @@ impl<'c> Binder<'c> {
     ///   in table-declared order.
     /// - Reorders every row's values from the order the user listed them
     ///   in into the table's declared column order, filling any
-    ///   unspecified (nullable) column with [`Value::Null`].
+    ///   unspecified (nullable) column with its DEFAULT or [`Value::Null`].
     ///
     /// # Errors
     ///
@@ -95,10 +97,39 @@ impl<'c> Binder<'c> {
             resolved
         };
 
-        // 5-7. Bind each row: validate width, convert expressions to
-        //      values, then remap into table-declared column order.
         let mut bound_rows = Vec::with_capacity(rows.len());
-        for row in rows {
+
+        // Build a name → table-position map once so the hot loop below
+        // gets O(1) column lookup instead of O(n) .position() each time.
+        let col_map: HashMap<Symbol, usize> = table_columns
+            .iter()
+            .enumerate()
+            .map(|(i, col)| (col.name, i))
+            .collect();
+
+        // Check NOT NULL / PK columns that are not targeted at all.
+        // The schema never changes between rows so this is done once,
+        // not once per row.
+        for col in &table_columns {
+            let was_targeted = target_columns.iter().any(|c| c.name == col.name);
+            if !was_targeted && (!col.nullable || col.is_primary_key) {
+                return Err(BindError::MissingNotNullColumn(col.name));
+            }
+        }
+
+        // Pre-evaluate literal DEFAULT expressions once per column.
+        // Non-literal defaults (nextval, function calls, etc.) need an
+        // evaluator that does not exist yet — they fall back to NULL.
+        let defaults: Vec<Option<Value>> = table_columns
+            .iter()
+            .map(|col| match &col.default {
+                Some(Expr::Literal(v)) => Some(v.clone()),
+                _ => None,
+            })
+            .collect();
+
+        // row_idx comes from enumerate — used in type-mismatch error messages.
+        for (row_idx, row) in rows.into_iter().enumerate() {
             if row.len() != target_columns.len() {
                 return Err(BindError::ColumnCountMismatch {
                     expected: target_columns.len(),
@@ -117,27 +148,23 @@ impl<'c> Binder<'c> {
                 }
             }
 
-            // Start with a full-width row of NULLs in table-declared
-            // order, then place each user-supplied value at its
-            // table-declared position.
-            let mut full_row: Vec<Value> = vec![Value::Null; table_columns.len()];
-
-            for (target_col, value) in target_columns.iter().zip(user_values.into_iter()) {
-                let pos = table_columns
-                    .iter()
-                    .position(|c| c.name == target_col.name)
-                    .expect("target_columns is built from table_columns, position must exist");
-                full_row[pos] = value;
+            // Type-check each value against its target column's declared
+            // type before touching full_row — fail early, nothing to undo.
+            for (target_col, value) in target_columns.iter().zip(user_values.iter()) {
+                check_type_compat(&target_col.data_type, value, target_col.name, row_idx)?;
             }
 
-            // Any column not covered by the (explicit or implicit) target
-            // list is still NULL at this point. That is only valid if the
-            // column allows NULLs.
-            for col in &table_columns {
-                let was_targeted = target_columns.iter().any(|c| c.name == col.name);
-                if !was_targeted && !col.nullable {
-                    return Err(BindError::MissingNotNullColumn(col.name));
-                }
+            // Initialize each column with its DEFAULT, or NULL if none.
+            let mut full_row: Vec<Value> = defaults
+                .iter()
+                .map(|d| d.clone().unwrap_or(Value::Null))
+                .collect();
+
+            // Place user-supplied values at their table-declared positions.
+            // col_map lookup is O(1) — no .position() scan.
+            for (target_col, value) in target_columns.iter().zip(user_values.into_iter()) {
+                let pos = col_map[&target_col.name];
+                full_row[pos] = value;
             }
 
             bound_rows.push(full_row);
@@ -149,5 +176,94 @@ impl<'c> Binder<'c> {
             table: table_name,
             rows: bound_rows,
         })
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Type compatibility check
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Checks that `value` is compatible with `data_type`.
+///
+/// Called at bind time — before any storage is touched — so the user
+/// gets a meaningful error at the right layer instead of a cryptic
+/// serialization failure deep in tuple.rs.
+///
+/// NULL always passes; nullability is enforced separately.
+/// Integer literals are accepted for Float/Double columns (implicit widening).
+fn check_type_compat(
+    data_type: &DataType,
+    value: &Value,
+    col: Symbol,
+    row_idx: usize,
+) -> Result<(), BindError> {
+    match (data_type, value) {
+        // NULL always passes — nullability enforced separately.
+        (_, Value::Null) => Ok(()),
+
+        // Integer literal into float column — valid implicit widening.
+        (DataType::Float | DataType::Double, Value::Int(_)) => Ok(()),
+
+        // ── Integer types ─────────────────────────────────────────────
+        // SmallInt needs a range check — Int(99999) must be rejected.
+        (DataType::SmallInt, Value::Int(n)) => {
+            if *n >= i16::MIN as i64 && *n <= i16::MAX as i64 {
+                Ok(())
+            } else {
+                Err(BindError::TypeMismatch {
+                    col,
+                    row: row_idx,
+                    expected: "SMALLINT (-32768..32767)",
+                    got: "integer out of range",
+                })
+            }
+        }
+        (DataType::Int, Value::Int(_)) => Ok(()),
+        (DataType::BigInt, Value::Int(_)) => Ok(()),
+
+        // ── Boolean ───────────────────────────────────────────────────
+        (DataType::Boolean, Value::Boolean(_)) => Ok(()),
+
+        // ── Floating point ────────────────────────────────────────────
+        (DataType::Float, Value::Float(_)) => Ok(()),
+        (DataType::Double, Value::Float(_)) => Ok(()),
+
+        // ── Variable-length strings ───────────────────────────────────
+        (DataType::VarChar(_) | DataType::Char(_) | DataType::Text, Value::String(_)) => Ok(()),
+
+        // ── Everything else is a type mismatch ────────────────────────
+        (expected, actual) => Err(BindError::TypeMismatch {
+            col,
+            row: row_idx,
+            expected: type_name(expected),
+            got: value_kind(actual),
+        }),
+    }
+}
+
+fn type_name(dt: &DataType) -> &'static str {
+    match dt {
+        DataType::SmallInt => "SMALLINT",
+        DataType::Int => "INT",
+        DataType::BigInt => "BIGINT",
+        DataType::Float => "FLOAT",
+        DataType::Double => "DOUBLE",
+        DataType::Boolean => "BOOLEAN",
+        DataType::VarChar(_) => "VARCHAR",
+        DataType::Char(_) => "CHAR",
+        DataType::Text => "TEXT",
+        _ => "unsupported type",
+    }
+}
+
+fn value_kind(v: &Value) -> &'static str {
+    match v {
+        Value::Int(_) => "integer",
+        Value::Float(_) => "float",
+        Value::String(_) => "string",
+        Value::Boolean(_) => "boolean",
+        Value::BitString(_) => "bit string",
+        Value::HexString(_) => "hex string",
+        Value::Null => "NULL",
     }
 }

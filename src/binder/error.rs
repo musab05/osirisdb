@@ -74,6 +74,15 @@ pub enum BindError {
     /// A `SELECT` statements feature which are not yet implemented
     /// Any feature which is not yet implemented will give error for now
     UnsupportedSelect,
+
+    /// which column failed
+    /// 0-based row index, for a useful error message
+    TypeMismatch {
+        col: Symbol,
+        row: usize,
+        expected: &'static str,
+        got: &'static str,
+    },
 }
 
 impl std::fmt::Display for BindError {
@@ -138,6 +147,16 @@ impl std::fmt::Display for BindError {
                 write!(f, "column {:?} is NOT NULL but was not given a value", s)
             }
             BindError::UnsupportedSelect => write!(f, "unsupported feature request for select"),
+            BindError::TypeMismatch {
+                col,
+                row,
+                expected,
+                got,
+            } => write!(
+                f,
+                "type mismatch at row {}: column {:?} expects {} but got {}",
+                row, col, expected, got
+            ),
         }
     }
 }
