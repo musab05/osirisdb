@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-27
+
+### Added
+
+- **Expression Binder & Evaluator**:
+  - Implemented a bind-time scalar expression evaluator (`eval_expr`) supporting literals, unary operators (`+`, `-`, `NOT`), binary operators (arithmetic, comparison, logical, string concatenation), `IS NULL`, `BETWEEN`, and `IN` list validation.
+  - Integrated support for standard functions: `now()`, `current_timestamp()`, `current_date()`, `upper()`, `lower()`, and `coalesce()`.
+  - Introduced `BindError::DivisionByZero` and improved diagnostic details on `BindError::TypeMismatch`.
+- **SQL INSERT Support (DML)**:
+  - Added query parsing for SQL `INSERT` statements with support for `VALUES`, `SELECT`, and `ON CONFLICT` clauses.
+  - Implemented insert binder logic, target column resolution, and constraint checking.
+  - Added strict bind-time type validation, range-checking (e.g., for `SMALLINT`), and implicit integer-to-float widening.
+  - Implemented insert execution with persistent table heap writing to store tuple pages on disk.
+- **Query Execution (SELECT)**:
+  - Implemented basic `SELECT * FROM table_name` binding and execution logic to retrieve records from table heap files.
+- **System Catalog Persistence & Recovery**:
+  - Added disk persistence and recovery for `SystemCatalog` metadata (database, schema, and table definitions).
+  - Integrated system catalog writing into DDL executors for database, schema, and table creation.
+  - Enabled automatic restoration of the in-memory catalog state from system tables on database startup.
+  - Enabled dynamic OID initialization on startup as `max(existing OIDs) + 1` to prevent ID collisions.
+- **On-Disk Storage Engine**:
+  - Structured storage directories under a root `data_dir` to organize databases, schemas, and tables.
+  - Configured the buffer pool manager to automatically flush all dirty frames to disk on database shutdown (`Drop` implementation).
+  - Added extensive integration tests for storage, tuple serialization, and dirty eviction behavior.
+- **New Types and Aliases**:
+  - Added keyword support for SQL/PostgreSQL type aliases including `INT2`, `INT4`, `INT8`, `BOOL`, `CHARACTER`, `FLOAT4`, `FLOAT8`, `VARBINARY`, `TIMESTAMPTZ`.
+  - Added AST representations for `Interval` and `Bytea` types.
+
+### Changed & Optimized
+
+- **Binder Performance**:
+  - Pre-built index lookup maps (`col_map`) to optimize column name checks from O(N) to O(1).
+  - Moved NOT NULL and primary key validation out of row iteration.
+  - Pre-evaluated literal `DEFAULT` expressions once per statement rather than per row.
+- **Parser Optimizations**:
+  - Streamlined parser expression evaluation by passing LHS by move and reading binding power by reference.
+  - Optimized parser `parse_data_type` to match on token variants directly, eliminating string allocations and case conversions.
+- **Refactoring**:
+  - Renamed query table AST module from `query/table.rs` to `query/table_ref.rs`.
+
 ## [0.5.0] - 2026-06-17
 
 ### Added

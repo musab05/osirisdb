@@ -71,18 +71,24 @@ pub enum BindError {
     /// the columns targeted by the statement.
     MissingNotNullColumn(Symbol),
 
-    /// A `SELECT` statements feature which are not yet implemented
-    /// Any feature which is not yet implemented will give error for now
+    /// A `SELECT` statement feature which is not yet implemented.
     UnsupportedSelect,
 
-    /// which column failed
-    /// 0-based row index, for a useful error message
+    /// A supplied value is incompatible with the column's declared data type.
+    ///
+    /// `col`      — the column's interned name symbol
+    /// `row`      — 0-based row index in the VALUES list (for diagnostics)
+    /// `expected` — human-readable name of the declared type
+    /// `got`      — human-readable description of the actual value kind
     TypeMismatch {
         col: Symbol,
         row: usize,
         expected: &'static str,
         got: &'static str,
     },
+
+    /// Division by zero attempted in an expression evaluation.
+    DivisionByZero,
 }
 
 impl std::fmt::Display for BindError {
@@ -146,17 +152,24 @@ impl std::fmt::Display for BindError {
             BindError::MissingNotNullColumn(s) => {
                 write!(f, "column {:?} is NOT NULL but was not given a value", s)
             }
-            BindError::UnsupportedSelect => write!(f, "unsupported feature request for select"),
+            BindError::UnsupportedSelect => {
+                write!(f, "unsupported feature request for select")
+            }
             BindError::TypeMismatch {
                 col,
                 row,
                 expected,
                 got,
-            } => write!(
-                f,
-                "type mismatch at row {}: column {:?} expects {} but got {}",
-                row, col, expected, got
-            ),
+            } => {
+                write!(
+                    f,
+                    "type mismatch at row {}: column {:?} expects {} but got {}",
+                    row, col, expected, got
+                )
+            }
+            BindError::DivisionByZero => {
+                write!(f, "division by zero")
+            }
         }
     }
 }

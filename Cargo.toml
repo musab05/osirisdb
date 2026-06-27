@@ -1,6 +1,6 @@
 [package]
 name = "osirisdb"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 authors = ["Musab Khan <musab05ahs@gmail.com>"]
 description = "A SQL database engine built from scratch in Rust featuring a custom parser, binder, query planner, optimizer, catalog, and storage engine."

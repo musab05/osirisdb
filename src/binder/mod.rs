@@ -36,6 +36,8 @@ pub mod error;
 /// ready to be handed directly to the executor.
 pub mod bound;
 
+pub mod expr;
+
 pub mod ddl;
 pub mod dml;
 pub mod query;
