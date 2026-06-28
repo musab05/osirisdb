@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{DataType, Expr, InsertSource, InsertStmt, Value},
-    binder::{BindError, Binder, bound::insert::BoundInsertStmt},
+    binder::{BindError, Binder, bound::insert::BoundInsertStmt, expr::eval_expr},
     catalog::objects::ColumnEntry,
     common::symbol::Symbol,
 };
@@ -142,14 +142,13 @@ impl<'c> Binder<'c> {
             // that does not exist yet.
             let mut user_values = Vec::with_capacity(row.len());
             for expr in row {
-                match expr {
-                    Expr::Literal(v) => user_values.push(v),
-                    _ => return Err(BindError::UnsupportedExpression),
-                }
+                // match expr {
+                //     Expr::Literal(v) => user_values.push(v),
+                //     _ => return Err(BindError::UnsupportedExpression),
+                // }
+                user_values.push(eval_expr(&expr, &self.catalog.interner)?);
             }
 
-            // Type-check each value against its target column's declared
-            // type before touching full_row — fail early, nothing to undo.
             for (target_col, value) in target_columns.iter().zip(user_values.iter()) {
                 check_type_compat(&target_col.data_type, value, target_col.name, row_idx)?;
             }

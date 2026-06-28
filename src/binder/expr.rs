@@ -1,3 +1,5 @@
+use std::time;
+
 use crate::{
     ast::{BinOpKind, DataType, Expr, UnaryOpKind, Value},
     binder::BindError,
@@ -8,7 +10,7 @@ use crate::{
 ///
 /// Does not handle column references, subqueries, or CASE — those need
 /// row context or a full query executor that does not exist yet.
-pub fn eval_expr(expr: &Expr, interner: &mut Interner) -> Result<Value, BindError> {
+pub fn eval_expr(expr: &Expr, interner: &Interner) -> Result<Value, BindError> {
     match expr {
         Expr::Literal(v) => Ok(v.clone()),
 
@@ -86,9 +88,7 @@ pub fn eval_expr(expr: &Expr, interner: &mut Interner) -> Result<Value, BindErro
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Unary operators
-// ─────────────────────────────────────────────────────────────────────────────
 
 fn eval_unary(op: &UnaryOpKind, val: Value) -> Result<Value, BindError> {
     match (op, val) {
@@ -103,15 +103,13 @@ fn eval_unary(op: &UnaryOpKind, val: Value) -> Result<Value, BindError> {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Binary operators
-// ─────────────────────────────────────────────────────────────────────────────
 
 fn eval_binop(
     op: &BinOpKind,
     lhs: Value,
     rhs: Value,
-    interner: &mut Interner,
+    interner: &Interner,
 ) -> Result<Value, BindError> {
     // NULL propagates through all binary operators per SQL standard.
     if matches!((&lhs, &rhs), (Value::Null, _) | (_, Value::Null)) {
@@ -212,11 +210,9 @@ fn eval_binop(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // CAST
-// ─────────────────────────────────────────────────────────────────────────────
 
-fn eval_cast(val: Value, ty: &DataType, interner: &mut Interner) -> Result<Value, BindError> {
+fn eval_cast(val: Value, ty: &DataType, interner: &Interner) -> Result<Value, BindError> {
     match (val, ty) {
         (Value::Null, _) => Ok(Value::Null),
 
@@ -262,21 +258,35 @@ fn eval_cast(val: Value, ty: &DataType, interner: &mut Interner) -> Result<Value
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Function calls
-// ─────────────────────────────────────────────────────────────────────────────
 
-fn eval_funcall(name: Symbol, args: &[Expr], interner: &mut Interner) -> Result<Value, BindError> {
+fn eval_funcall(name: Symbol, args: &[Expr], interner: &Interner) -> Result<Value, BindError> {
     let fn_name = interner.resolve(name).to_lowercase();
 
     match fn_name.as_str() {
         // ── Timestamp stubs — real impl needs system clock ────────────────
         "now" | "current_timestamp" => {
-            let sym = interner.intern("now()");
+            let duration = time::SystemTime::now()
+                .duration_since(time::SystemTime::UNIX_EPOCH)
+                .unwrap_or_default();
+            let secs = duration.as_secs();
+            let (y, m, d, hh, mm, ss) = seconds_to_datetime(secs);
+
+            let timestamp_str = format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, m, d, hh, mm, ss);
+
+            let sym = interner.intern(&timestamp_str);
             Ok(Value::String(sym))
         }
         "current_date" => {
-            let sym = interner.intern("current_date()");
+            let duration = time::SystemTime::now()
+                .duration_since(time::SystemTime::UNIX_EPOCH)
+                .unwrap_or_default();
+            let secs = duration.as_secs();
+            let (y, m, d, _, _, _) = seconds_to_datetime(secs);
+
+            // Format as YYYY-MM-DD
+            let date_str = format!("{:04}-{:02}-{:02}", y, m, d);
+            let sym = interner.intern(&date_str);
             Ok(Value::String(sym))
         }
 
@@ -323,4 +333,45 @@ fn eval_funcall(name: Symbol, args: &[Expr], interner: &mut Interner) -> Result<
 
         _ => Err(BindError::UnsupportedExpression),
     }
+}
+
+/// Helper to convert UNIX epoch seconds to (Year, Month, Day, Hour, Minute, Second) UTC.
+fn seconds_to_datetime(secs: u64) -> (u32, u32, u32, u32, u32, u32) {
+    let sec = (secs % 60) as u32;
+    let mins = secs / 60;
+    let min = (mins % 60) as u32;
+    let hours = mins / 60;
+    let hour = (hours % 24) as u32;
+    let days = hour / 24;
+
+    // UNIX epoch starts at 1970-01-01
+    let mut year = 1970;
+    let mut days_rem = days;
+    loop {
+        let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        let days_in_year = if is_leap { 366 } else { 365 };
+        if days_rem < days_in_year {
+            break;
+        }
+
+        days_rem -= days_in_year;
+        year += 1;
+    }
+
+    let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    let month_lengths = if is_leap {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    let mut month = 0;
+    while days_rem >= month_lengths[month] {
+        days_rem -= month_lengths[month];
+        month += 1;
+    }
+
+    let month = (month + 1) as u32;
+    let day = (days_rem + 1) as u32;
+    (year, month, day, hour, min, sec)
 }

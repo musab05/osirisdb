@@ -1,5 +1,5 @@
 use crate::common::symbol::Symbol;
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 /// A string interner that maps strings to compact numeric [`Symbol`]s.
 ///
@@ -69,13 +69,13 @@ pub struct Interner {
     /// The keys are `&'static str` obtained via [`Box::leak`] so they
     /// share the same pointer as the corresponding entry in `strings`.
     /// This avoids storing the string data twice.
-    map: HashMap<&'static str, Symbol>,
+    map: RefCell<HashMap<&'static str, Symbol>>,
 
     /// Stores all interned strings indexed by their [`Symbol`] id.
     ///
     /// `strings[sym.0]` gives the string for `sym`.
     /// This is the reverse direction of `map` and enables O(1) resolution.
-    strings: Vec<&'static str>,
+    strings: RefCell<Vec<&'static str>>,
 }
 
 impl Interner {
@@ -86,8 +86,8 @@ impl Interner {
 
     pub fn new() -> Self {
         Self {
-            map: HashMap::new(),
-            strings: Vec::new(),
+            map: RefCell::new(HashMap::new()),
+            strings: RefCell::new(Vec::new()),
         }
     }
 
@@ -111,15 +111,15 @@ impl Interner {
     /// Panics if more than `u32::MAX - 1` unique strings are interned.
     /// In practice this limit (≈4 billion) will never be reached.
 
-    pub fn intern(&mut self, s: &str) -> Symbol {
+    pub fn intern(&self, s: &str) -> Symbol {
         // Fast path — string already interned, return existing symbol.
         // This is the common case in a SQL engine where identifiers repeat.
-        if let Some(&sym) = self.map.get(s) {
+        if let Some(&sym) = self.map.borrow().get(s) {
             return sym;
         }
 
         // Slow path — new string, assign next available symbol id.
-        let id = Symbol(self.strings.len() as u32);
+        let id = Symbol(self.strings.borrow().len() as u32);
 
         // Leak the string to obtain a 'static lifetime.
         // This is intentional — interned strings live for the process lifetime.
@@ -128,8 +128,8 @@ impl Interner {
         let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
 
         // Store in both directions for O(1) lookup in either direction.
-        self.strings.push(leaked); // Symbol → &str  (resolve)
-        self.map.insert(leaked, id); // &str → Symbol  (intern)
+        self.strings.borrow_mut().push(leaked); // Symbol → &str  (resolve)
+        self.map.borrow_mut().insert(leaked, id); // &str → Symbol  (intern)
 
         id
     }
@@ -146,7 +146,8 @@ impl Interner {
     /// `sym` is [`Symbol::DUMMY`] (`Symbol(u32::MAX)`).
 
     pub fn resolve(&self, sym: Symbol) -> &str {
-        self.strings[sym.0 as usize]
+        let strings = self.strings.borrow();
+        strings[sym.0 as usize]
     }
 
     /// Looks up a string without interning it.
@@ -164,7 +165,7 @@ impl Interner {
     ///   returned, the name is undefined and should produce an error.
 
     pub fn get(&self, s: &str) -> Option<Symbol> {
-        self.map.get(s).copied()
+        self.map.borrow().get(s).copied()
     }
 
     /// Returns the number of unique strings currently interned.
@@ -172,13 +173,13 @@ impl Interner {
     /// Useful for diagnostics, testing, and capacity planning.
 
     pub fn len(&self) -> usize {
-        self.strings.len()
+        self.strings.borrow().len()
     }
 
     /// Returns `true` if no strings have been interned yet.
 
     pub fn is_empty(&self) -> bool {
-        self.strings.is_empty()
+        self.strings.borrow().is_empty()
     }
 }
 
@@ -195,8 +196,8 @@ impl Default for Interner {
 impl Clone for Interner {
     fn clone(&self) -> Self {
         Self {
-            map: self.map.clone(),
-            strings: self.strings.clone(),
+            map: RefCell::new(self.map.borrow().clone()),
+            strings: RefCell::new(self.strings.borrow().clone()),
         }
     }
 }
