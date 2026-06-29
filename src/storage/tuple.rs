@@ -101,7 +101,7 @@ pub fn serialize_tuple(
 pub fn deserialize_tuple(
     schema: &[ColumnEntry],
     data: &[u8],
-    interner: &mut Interner,
+    interner: &Interner,
 ) -> Result<Vec<Value>, StorageError> {
     let col_count = schema.len();
     let bitmap_bytes = bitmap_size(col_count);
@@ -242,7 +242,7 @@ fn encode_value(
 fn decode_value(
     data_type: &DataType,
     data: &[u8],
-    interner: &mut Interner,
+    interner: &Interner,
 ) -> Result<(Value, usize), StorageError> {
     match data_type {
         // ── Integer types ─────────────────────────────────────────────

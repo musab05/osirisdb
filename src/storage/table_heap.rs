@@ -114,7 +114,7 @@ impl TableHeap {
     pub fn scan(
         &mut self,
         schema: &[ColumnEntry],
-        interner: &mut Interner,
+        interner: &Interner,
     ) -> Result<Vec<Vec<Value>>, StorageError> {
         let mut all_rows = Vec::new();
 

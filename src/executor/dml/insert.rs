@@ -1,4 +1,5 @@
 use crate::{
+    ast::{TableConstraint, Value},
     binder::bound::BoundInsertStmt,
     executor::{ExecutionError, ExecutionResult, Executor},
 };
@@ -49,6 +50,7 @@ impl Executor {
         // mutably below.
         let table_entry = self.catalog.get_table(db, schema, table)?;
         let columns = table_entry.columns.clone();
+        let constraints = table_entry.constraints.clone();
 
         let row_count = rows.len();
 
@@ -57,19 +59,111 @@ impl Executor {
         if self.storage.is_some() {
             let key = (db, schema, table);
 
-            // Ensure the heap is open and cached. The returned &mut
-            // TableHeap is intentionally not kept — holding it across the
-            // loop below would conflict with the &self.catalog.interner
-            // borrow each insert_tuple call needs. Instead each iteration
-            // re-fetches it fresh from the map, which is a cheap HashMap
-            // lookup, not a disk reopen.
+            // Ensure the heap is open and cached.
             self.get_or_open_table_heap(db, schema, table)?;
+            let table_heap = self
+                .table_heaps
+                .get_mut(&key)
+                .expect("just inserted by get_or_open_table_heap above");
 
+            // Scan all existing rows to check for uniqueness violations
+            let existing_rows = table_heap
+                .scan(&columns, &self.catalog.interner)
+                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+
+            let mut pending_rows: Vec<Vec<Value>> = Vec::new();
+
+            for row in &rows {
+                // 1. Check single-column Primary Key and Unique constraints
+                for (col_idx, col) in columns.iter().enumerate() {
+                    if (col.is_primary_key || col.is_unique) && !matches!(row[col_idx], Value::Null)
+                    {
+                        let value_to_check = &row[col_idx];
+
+                        // Check against existing rows
+                        for existing_row in &existing_rows {
+                            if &existing_row[col_idx] == value_to_check {
+                                return Err(ExecutionError::Storage(format!(
+                                    "duplicate key value violates unique/primary key constraint for column '{}'",
+                                    self.catalog.interner.resolve(col.name)
+                                )));
+                            }
+                        }
+
+                        // Check against pending rows in the same batch
+                        for pending_row in &pending_rows {
+                            if &pending_row[col_idx] == value_to_check {
+                                return Err(ExecutionError::Storage(format!(
+                                    "duplicate key value violates unique/primary key constraint for column '{}' (batch duplicate)",
+                                    self.catalog.interner.resolve(col.name)
+                                )));
+                            }
+                        }
+                    }
+                }
+
+                // 2. Check composite/table-level unique/primary key constraints
+                for constraint in &constraints {
+                    match constraint {
+                        TableConstraint::PrimaryKey {
+                            columns: pk_cols, ..
+                        }
+                        | TableConstraint::Unique {
+                            columns: pk_cols, ..
+                        } => {
+                            let col_indices: Vec<usize> = pk_cols
+                                .iter()
+                                .map(|col_name| {
+                                    columns
+                                        .iter()
+                                        .position(|c| &c.name == col_name)
+                                        .expect("column validated at bind time")
+                                })
+                                .collect();
+
+                            let new_key: Vec<&Value> =
+                                col_indices.iter().map(|&idx| &row[idx]).collect();
+
+                            // Skip if any column in the unique key is NULL (standard SQL behavior)
+                            if new_key.iter().any(|v| matches!(v, Value::Null)) {
+                                continue;
+                            }
+
+                            // Check against existing rows
+                            for existing_row in &existing_rows {
+                                let existing_key: Vec<&Value> =
+                                    col_indices.iter().map(|&idx| &existing_row[idx]).collect();
+                                if new_key == existing_key {
+                                    return Err(ExecutionError::Storage(
+                                        "duplicate key value violates composite unique/primary key constraint".to_string()
+                                    ));
+                                }
+                            }
+
+                            // Check against pending rows in the same batch
+                            for pending_row in &pending_rows {
+                                let pending_key: Vec<&Value> =
+                                    col_indices.iter().map(|&idx| &pending_row[idx]).collect();
+                                if new_key == pending_key {
+                                    return Err(ExecutionError::Storage(
+                                        "duplicate key value violates composite unique/primary key constraint (batch duplicate)".to_string()
+                                    ));
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+
+                pending_rows.push(row.clone());
+            }
+
+            // 3. Perform the actual insertions since all constraints passed
             for row in &rows {
                 let table_heap = self
                     .table_heaps
                     .get_mut(&key)
-                    .expect("just inserted by get_or_open_table_heap above");
+                    .expect("table heap is cached");
 
                 table_heap
                     .insert_tuple(&columns, row, &self.catalog.interner)

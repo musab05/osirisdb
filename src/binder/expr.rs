@@ -78,12 +78,16 @@ pub fn eval_expr(expr: &Expr, interner: &Interner) -> Result<Value, BindError> {
         }
 
         Expr::FuncCall { name, args } => eval_funcall(*name, args, interner),
+        Expr::Case {
+            operand,
+            when_thens,
+            else_,
+        } => eval_case(operand, when_thens, else_, interner),
 
         Expr::Column { .. }
         | Expr::InSubquery { .. }
         | Expr::Exists { .. }
         | Expr::Subquery(_)
-        | Expr::Case { .. }
         | Expr::Wildcard => Err(BindError::UnsupportedExpression),
     }
 }
@@ -374,4 +378,50 @@ fn seconds_to_datetime(secs: u64) -> (u32, u32, u32, u32, u32, u32) {
     let month = (month + 1) as u32;
     let day = (days_rem + 1) as u32;
     (year, month, day, hour, min, sec)
+}
+
+fn eval_case(
+    operand: &Option<Box<Expr>>,
+    when_thens: &Vec<(Expr, Expr)>,
+    else_: &Option<Box<Expr>>,
+    interner: &Interner,
+) -> Result<Value, BindError> {
+    // If a search operand is provided, evaluate it first
+    let op_val = match operand {
+        Some(op_expr) => Some(eval_expr(op_expr, interner)?),
+        None => None,
+    };
+
+    let mut matched_then = None;
+
+    // Iterate through each WHEN-THEN branch
+    for (cond_expr, then_expr) in when_thens {
+        match &op_val {
+            Some(val) => {
+                // Simple CASE: Compare operand value directly with branch condition value
+                let cond_val = eval_expr(cond_expr, interner)?;
+                if val == &cond_val {
+                    matched_then = Some(then_expr);
+                    break;
+                }
+            }
+            None => {
+                // Searched CASE: Branch condition must evaluate to a boolean
+                let cond_val = eval_expr(cond_expr, interner)?;
+                if let Value::Boolean(true) = cond_val {
+                    matched_then = Some(then_expr);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Return the evaluated result of the matched branch, fallback to ELSE, or return NULL
+    match matched_then {
+        Some(then_expr) => eval_expr(then_expr, interner),
+        None => match else_ {
+            Some(else_expr) => eval_expr(else_expr, interner),
+            None => Ok(Value::Null), // Standard SQL returns NULL if no branch matches and there is no ELSE
+        },
+    }
 }
