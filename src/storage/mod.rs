@@ -26,6 +26,7 @@ pub mod buffer_pool;
 pub mod ddl;
 pub mod error;
 pub mod heap_file;
+pub mod index_page;
 pub mod page;
 pub mod storage;
 pub mod table_heap;
