@@ -57,11 +57,7 @@ impl IndexPage {
         let mut min_offset = PAGE_SIZE as u16;
         for i in 0..count {
             let slot_off = INDEX_HEADER_SIZE + i as usize * INDEX_SLOT_SIZE;
-            let p_off = u16::from_le_bytes(
-                self.data[slot_off..slot_off + 2]
-                    .try_into()
-                    .unwrap(),
-            );
+            let p_off = u16::from_le_bytes(self.data[slot_off..slot_off + 2].try_into().unwrap());
             if p_off < min_offset {
                 min_offset = p_off;
             }
@@ -328,11 +324,10 @@ impl IndexPage {
         Err(low)
     }
 
-
     /// Reinterprets a shared raw Page as an IndexPage reference without copying.
     pub fn from_page_ref(page: &Page) -> &Self {
         // Safe because IndexPage has the exact same layout and size as Page ([u8; 8192])
-        unsafe { &*(page as *const Page as *const IndexPage)}
+        unsafe { &*(page as *const Page as *const IndexPage) }
     }
 
     /// Reinterprets a mutable raw Page as a mutable IndexPage reference without copying.

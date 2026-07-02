@@ -22,17 +22,17 @@
 //! - [`error`]   — [`StorageError`] variants
 //! - [`ddl`]     — DDL storage operations, one file per object type
 
+pub mod b_plus_tree_index;
 pub mod buffer_pool;
 pub mod ddl;
 pub mod error;
 pub mod heap_file;
 pub mod index_page;
 pub mod page;
+pub mod record_id;
 pub mod storage;
 pub mod table_heap;
 pub mod tuple;
-pub mod b_plus_tree_index;
-pub mod record_id;
 
 pub use buffer_pool::BufferPool;
 pub use error::StorageError;

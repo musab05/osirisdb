@@ -1,4 +1,6 @@
-use crate::storage::{BufferPool, HeapFile, Storage, StorageError, index_page::IndexPage, record_id::RecordId};
+use crate::storage::{
+    BufferPool, HeapFile, Storage, StorageError, index_page::IndexPage, record_id::RecordId,
+};
 
 pub struct BPlusTreeIndex {
     pub buffer_pool: BufferPool,
@@ -42,7 +44,6 @@ impl BPlusTreeIndex {
             // Cast the regular page into our optimized IndexPage reference
             let raw_page = self.buffer_pool.get_page(frame_id);
             let index_page = IndexPage::from_page_ref(raw_page);
-
 
             // Execute binary search directly over raw page bytes
             match index_page.binary_search_key(key, |raw_key_slice| raw_key_slice) {
@@ -107,7 +108,9 @@ impl BPlusTreeIndex {
         // ── Case 2: Standard B+Tree Traversal & Insertion ──
         let root_id = self.root_page_id.unwrap();
 
-        if let Some((promoted_key, right_child_page_id)) = self.insert_recursive(root_id, key, &val_bytes)? {
+        if let Some((promoted_key, right_child_page_id)) =
+            self.insert_recursive(root_id, key, &val_bytes)?
+        {
             // Root split occurred, must construct a brand-new internal Root node
             let (new_root_id, frame_id) = self.buffer_pool.new_page()?;
             let raw_page = self.buffer_pool.get_page_mut(frame_id);
@@ -128,7 +131,12 @@ impl BPlusTreeIndex {
 
     /// Recursively descends the B+Tree nodes to perform inserts and propagates splits upwards.
     /// Returns `Some((promoted_key, right_child_page_id))` if a child split takes place.
-    fn insert_recursive(&mut self, current_page_id: u32, key: &[u8], value: &[u8]) -> Result<Option<(Vec<u8>, u32)>, StorageError> {
+    fn insert_recursive(
+        &mut self,
+        current_page_id: u32,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<Option<(Vec<u8>, u32)>, StorageError> {
         let frame_id = self.buffer_pool.pin_page(current_page_id)?;
 
         // Check if the current node page layout is a leaf or internal router
@@ -155,7 +163,7 @@ impl BPlusTreeIndex {
             // Node is full! Allocate a sibling IndexPage to shift half our elements into[cite: 1, 4]
             let (right_page_id, right_frame_id) = self.buffer_pool.new_page()?;
             let (raw_left, raw_right) = unsafe {
-                // Perform quick unsafe double-pointer extraction to safely split 
+                // Perform quick unsafe double-pointer extraction to safely split
                 // between two concurrently pinned buffer frames
                 let left_ptr = self.buffer_pool.get_page_mut(frame_id) as *mut _;
                 let right_ptr = self.buffer_pool.get_page_mut(right_frame_id) as *mut _;
@@ -189,12 +197,16 @@ impl BPlusTreeIndex {
             let child_page_id = {
                 let index_page = IndexPage::from_page_ref(self.buffer_pool.get_page(frame_id));
                 match index_page.binary_search_key(key, |b| b) {
-                    Ok(idx) => u32::from_le_bytes(index_page.get_value(idx).unwrap().try_into().unwrap()),
+                    Ok(idx) => {
+                        u32::from_le_bytes(index_page.get_value(idx).unwrap().try_into().unwrap())
+                    }
                     Err(idx) => {
                         if idx == 0 {
                             index_page.next_page_id()
                         } else {
-                            u32::from_le_bytes(index_page.get_value(idx - 1).unwrap().try_into().unwrap())
+                            u32::from_le_bytes(
+                                index_page.get_value(idx - 1).unwrap().try_into().unwrap(),
+                            )
                         }
                     }
                 }
@@ -204,7 +216,9 @@ impl BPlusTreeIndex {
             self.buffer_pool.unpin_page(frame_id, false);
 
             // Recurse downwards to locate leaf level destination paths
-            if let Some((promoted_key, right_child_id)) = self.insert_recursive(child_page_id, key, value)? {
+            if let Some((promoted_key, right_child_id)) =
+                self.insert_recursive(child_page_id, key, value)?
+            {
                 // A lower child split propagated up! Re-pin our current routing block to update map guides[cite: 1]
                 let frame_id = self.buffer_pool.pin_page(current_page_id)?;
                 let raw_page = self.buffer_pool.get_page_mut(frame_id);
