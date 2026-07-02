@@ -61,7 +61,7 @@ impl TableHeap {
         schema: &[ColumnEntry],
         values: &[Value],
         interner: &Interner,
-    ) -> Result<(), StorageError> {
+    ) -> Result<(u32, u16), StorageError> {
         // Turn the row into bytes up front — if this fails (type
         // mismatch, NOT NULL violation, etc.) we haven't touched any
         // page yet, so there's nothing to undo.
@@ -69,7 +69,7 @@ impl TableHeap {
 
         // Decide which page to try first: the last one if any exist,
         // otherwise allocate the table's very first page.
-        let (_page_id, frame_id) = if self.buffer_pool.num_pages() == 0 {
+        let (page_id, frame_id) = if self.buffer_pool.num_pages() == 0 {
             self.buffer_pool.new_page()?
         } else {
             let last_page_id = self.buffer_pool.num_pages() - 1;
@@ -80,17 +80,16 @@ impl TableHeap {
         // Try inserting into that page.
         let inserted = self.buffer_pool.get_page_mut(frame_id).insert_tuple(&bytes);
 
-        if inserted.is_some() {
-            // Fit on the existing/last page — done.
+        if let Some(slot_id) = inserted {
             self.buffer_pool.unpin_page(frame_id, true);
-            return Ok(());
+            return Ok((page_id, slot_id));
         }
 
         // Didn't fit — release this frame without marking it dirty (we
         // didn't actually change its contents) and allocate a fresh page.
         self.buffer_pool.unpin_page(frame_id, false);
 
-        let (_new_page_id, new_frame_id) = self.buffer_pool.new_page()?;
+        let (new_page_id, new_frame_id) = self.buffer_pool.new_page()?;
         let inserted = self
             .buffer_pool
             .get_page_mut(new_frame_id)
@@ -104,7 +103,7 @@ impl TableHeap {
         // None for tuples over u16::MAX bytes), so surface it as an error
         // rather than silently dropping the row.
         match inserted {
-            Some(_) => Ok(()),
+            Some(slot_id) => Ok((new_frame_id as u32, slot_id)),
             None => Err(StorageError::TupleError(
                 "tuple too large to fit in an empty page".to_string(),
             )),

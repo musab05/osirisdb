@@ -31,6 +31,8 @@ pub mod page;
 pub mod storage;
 pub mod table_heap;
 pub mod tuple;
+pub mod b_plus_tree_index;
+pub mod record_id;
 
 pub use buffer_pool::BufferPool;
 pub use error::StorageError;

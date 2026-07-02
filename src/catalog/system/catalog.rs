@@ -71,7 +71,7 @@ impl SystemCatalog {
         &self,
         entry: &DatabaseEntry,
         interner: &mut Interner,
-    ) -> Result<(), StorageError> {
+    ) -> Result<(u32, u16), StorageError> {
         let schema = osiris_database_schema(interner);
 
         let row = vec![
@@ -106,7 +106,7 @@ impl SystemCatalog {
         &self,
         entry: &SchemaEntry,
         interner: &mut Interner,
-    ) -> Result<(), StorageError> {
+    ) -> Result<(u32, u16), StorageError> {
         let schema = osiris_namespace_schema(interner);
         let row = vec![
             Value::Int(entry.oid as i64),

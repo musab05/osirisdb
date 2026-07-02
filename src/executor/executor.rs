@@ -7,7 +7,7 @@ use crate::{
     catalog::{CatalogManager, system::catalog::SystemCatalog},
     common::symbol::Symbol,
     executor::ExecutionError,
-    storage::{Storage, TableHeap},
+    storage::{Storage, TableHeap, b_plus_tree_index::BPlusTreeIndex},
 };
 
 /// The execution engine — receives bound statements and applies them
@@ -50,6 +50,9 @@ pub struct Executor {
 
     /// Table Heap so that we dont have to repone Heap every Insert
     pub table_heaps: HashMap<(Symbol, Symbol, Symbol), TableHeap>,
+
+    /// Table Index
+    pub table_indexes: HashMap<(Symbol, Symbol, Symbol), BPlusTreeIndex>,
 
     /// System catalog
     pub system_catalog: Option<SystemCatalog>,
@@ -97,6 +100,7 @@ impl Executor {
             session_user,
             storage: Some(storage),
             table_heaps: HashMap::new(),
+            table_indexes: HashMap::new(),
             system_catalog: Some(system_catalog),
         }
     }
@@ -111,6 +115,7 @@ impl Executor {
             session_user,
             storage: None,
             table_heaps: HashMap::new(),
+            table_indexes: HashMap::new(),
             system_catalog: None,
         }
     }
@@ -136,6 +141,34 @@ impl Executor {
                     .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 
                 Ok(entry.insert(heap))
+            }
+        }
+    }
+
+    pub fn get_or_open_index(
+        &mut self,
+        db: Symbol,
+        schema: Symbol,
+        index_name: Symbol,
+        is_unique: bool,
+    ) -> Result<&mut BPlusTreeIndex, ExecutionError> {
+        match self.table_indexes.entry((db, schema, index_name)) {
+            Entry::Occupied(entry) => Ok(entry.into_mut()),
+            Entry::Vacant(entry) => {
+                let db_name = self.catalog.interner.resolve(db);
+                let schema_name = self.catalog.interner.resolve(schema);
+                let index_name = self.catalog.interner.resolve(index_name);
+
+                let storage = self.storage.as_ref().ok_or_else(|| {
+                    ExecutionError::Storage("storage engine not initialized".to_string())
+                })?;
+
+                // Open the specific .idx file
+                let index =
+                    BPlusTreeIndex::open(storage, db_name, schema_name, index_name, is_unique)
+                        .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+
+                Ok(entry.insert(index))
             }
         }
     }

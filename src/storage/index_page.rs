@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use crate::storage::page::Page;
+
 pub const PAGE_SIZE: usize = 8192;
 const INDEX_HEADER_SIZE: usize = 7; // 1 (is_leaf) + 2 (key_count) + 4 (next_page_id)
 const INDEX_SLOT_SIZE: usize = 4; // 2 (payload_offset) + 2 (key_len)
@@ -51,13 +53,20 @@ impl IndexPage {
             return PAGE_SIZE as u16;
         }
 
-        // Otherwise, locate the lowest offset among written elements
-        let last_slot_off = INDEX_HEADER_SIZE + (count as usize - 1) * INDEX_SLOT_SIZE;
-        u16::from_le_bytes(
-            self.data[last_slot_off..last_slot_off + 2]
-                .try_into()
-                .unwrap(),
-        )
+        // Locate the lowest offset among all active slots
+        let mut min_offset = PAGE_SIZE as u16;
+        for i in 0..count {
+            let slot_off = INDEX_HEADER_SIZE + i as usize * INDEX_SLOT_SIZE;
+            let p_off = u16::from_le_bytes(
+                self.data[slot_off..slot_off + 2]
+                    .try_into()
+                    .unwrap(),
+            );
+            if p_off < min_offset {
+                min_offset = p_off;
+            }
+        }
+        min_offset
     }
 
     pub fn free_space(&self) -> usize {
@@ -184,7 +193,13 @@ impl IndexPage {
 
         // If it's an internal node, the split key moves up completely (leaving a gap).
         // If it's a leaf node, the split key stays on the right side as a valid data point.
-        let start_idx = if self.is_leaf() { mid } else { mid + 1 };
+        let start_idx = if self.is_leaf() {
+            mid
+        } else {
+            let split_val = self.get_value(mid).unwrap();
+            right_page.set_next_page_id(u32::from_le_bytes(split_val.try_into().unwrap()));
+            mid + 1
+        };
 
         let mut r_idx = 0;
         for i in start_idx..total_count {
@@ -311,5 +326,18 @@ impl IndexPage {
             }
         }
         Err(low)
+    }
+
+
+    /// Reinterprets a shared raw Page as an IndexPage reference without copying.
+    pub fn from_page_ref(page: &Page) -> &Self {
+        // Safe because IndexPage has the exact same layout and size as Page ([u8; 8192])
+        unsafe { &*(page as *const Page as *const IndexPage)}
+    }
+
+    /// Reinterprets a mutable raw Page as a mutable IndexPage reference without copying.
+    pub fn from_page_mut(page: &mut Page) -> &mut Self {
+        // Safe because IndexPage has the exact same layout and size as Page ([u8; 8192])
+        unsafe { &mut *(page as *mut Page as *mut IndexPage) }
     }
 }
