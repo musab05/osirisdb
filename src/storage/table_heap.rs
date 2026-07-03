@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use crate::{
     ast::Value,
     catalog::objects::ColumnEntry,
@@ -8,22 +10,13 @@ use crate::{
     },
 };
 
-/// Default number of frames each table's buffer pool gets.
 const DEFAULT_POOL_CAPACITY: usize = 16;
 
-/// Table-level access to a heap file: serializes rows and places them into
-/// pages, backed by a [`BufferPool`] so repeated access doesn't always hit
-/// disk.
-///
-/// This is the layer the executor talks to for `INSERT`/scan operations —
-/// it never touches `Page`, `BufferPool`, or `HeapFile` directly.
 pub struct TableHeap {
-    buffer_pool: BufferPool,
+    buffer_pool: Arc<Mutex<BufferPool>>,
 }
 
 impl TableHeap {
-    /// Opens the heap file for `(db_name, schema_name, table_name)` and
-    /// wraps it in a buffer pool, ready for inserts and scans.
     pub fn open(
         storage: &Storage,
         db_name: &str,
@@ -32,78 +25,53 @@ impl TableHeap {
     ) -> Result<Self, StorageError> {
         let path = storage.table_path(db_name, schema_name, table_name);
         let heap_file = HeapFile::open(path)?;
-        let buffer_pool = BufferPool::new(heap_file, DEFAULT_POOL_CAPACITY);
+        let buffer_pool = Arc::new(Mutex::new(BufferPool::new(
+            heap_file,
+            DEFAULT_POOL_CAPACITY,
+        )));
         Ok(Self { buffer_pool })
     }
 
-    /// Serializes `values` against `schema` and inserts the resulting
-    /// tuple into this table's heap file.
-    ///
-    /// # Page selection
-    ///
-    /// Always tries the last existing page first. If the file has no
-    /// pages yet, or the last page doesn't have enough free space, a new
-    /// page is allocated and the tuple is inserted there instead.
-    ///
-    /// This is a simple "always append" strategy — it does not search
-    /// earlier pages for reclaimed space from deleted tuples. A free-space
-    /// map (tracking the most free page per table) would be needed to do
-    /// better, and is not implemented yet.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StorageError::TupleError`] if `values` does not match
-    /// `schema` (wrong count, wrong type, NULL in a NOT NULL column).
-    /// Returns other [`StorageError`] variants if the underlying page or
-    /// disk operations fail.
+    /// Returns a clone of this table's shared buffer pool handle, so its
+    /// indexes can be opened against the same pool.
+    pub fn buffer_pool_handle(&self) -> Arc<Mutex<BufferPool>> {
+        Arc::clone(&self.buffer_pool)
+    }
+
     pub fn insert_tuple(
         &mut self,
         schema: &[ColumnEntry],
         values: &[Value],
         interner: &Interner,
     ) -> Result<(u32, u16), StorageError> {
-        // Turn the row into bytes up front — if this fails (type
-        // mismatch, NOT NULL violation, etc.) we haven't touched any
-        // page yet, so there's nothing to undo.
         let bytes = serialize_tuple(schema, values, interner)?;
 
-        // Decide which page to try first: the last one if any exist,
-        // otherwise allocate the table's very first page.
-        let (page_id, frame_id) = if self.buffer_pool.num_pages() == 0 {
-            self.buffer_pool.new_page()?
+        let mut bp = self.buffer_pool.lock().unwrap();
+
+        let (page_id, frame_id) = if bp.num_pages() == 0 {
+            bp.new_page()?
         } else {
-            let last_page_id = self.buffer_pool.num_pages() - 1;
-            let frame_id = self.buffer_pool.pin_page(last_page_id)?;
+            let last_page_id = bp.num_pages() - 1;
+            let frame_id = bp.pin_page(last_page_id)?;
             (last_page_id, frame_id)
         };
 
-        // Try inserting into that page.
-        let inserted = self.buffer_pool.get_page_mut(frame_id).insert_tuple(&bytes);
+        let inserted = bp.get_page_mut(frame_id).insert_tuple(&bytes);
 
         if let Some(slot_id) = inserted {
-            self.buffer_pool.unpin_page(frame_id, true);
+            bp.unpin_page(frame_id, true);
             return Ok((page_id, slot_id));
         }
 
-        // Didn't fit — release this frame without marking it dirty (we
-        // didn't actually change its contents) and allocate a fresh page.
-        self.buffer_pool.unpin_page(frame_id, false);
+        bp.unpin_page(frame_id, false);
 
-        let (new_page_id, new_frame_id) = self.buffer_pool.new_page()?;
-        let inserted = self
-            .buffer_pool
-            .get_page_mut(new_frame_id)
-            .insert_tuple(&bytes);
+        let (new_page_id, new_frame_id) = bp.new_page()?;
+        let inserted = bp.get_page_mut(new_frame_id).insert_tuple(&bytes);
 
-        self.buffer_pool.unpin_page(new_frame_id, true);
+        bp.unpin_page(new_frame_id, true);
 
-        // A brand-new empty page should always have room for one tuple
-        // unless the tuple itself is larger than a page can ever hold —
-        // that case is already caught inside Page::insert_tuple (returns
-        // None for tuples over u16::MAX bytes), so surface it as an error
-        // rather than silently dropping the row.
         match inserted {
-            Some(slot_id) => Ok((new_frame_id as u32, slot_id)),
+            Some(slot_id) => Ok((new_page_id, slot_id)),
             None => Err(StorageError::TupleError(
                 "tuple too large to fit in an empty page".to_string(),
             )),
@@ -116,11 +84,12 @@ impl TableHeap {
         interner: &Interner,
     ) -> Result<Vec<Vec<Value>>, StorageError> {
         let mut all_rows = Vec::new();
+        let mut bp = self.buffer_pool.lock().unwrap();
 
-        for page_id in 0..self.buffer_pool.num_pages() {
-            let frame_id = self.buffer_pool.pin_page(page_id)?;
+        for page_id in 0..bp.num_pages() {
+            let frame_id = bp.pin_page(page_id)?;
 
-            let page = self.buffer_pool.get_page(frame_id);
+            let page = bp.get_page(frame_id);
 
             for slot_id in 0..page.slot_count() {
                 if let Some(bytes) = page.get_tuple(slot_id) {
@@ -129,13 +98,13 @@ impl TableHeap {
                 }
             }
 
-            self.buffer_pool.unpin_page(frame_id, false);
+            bp.unpin_page(frame_id, false);
         }
 
         Ok(all_rows)
     }
 
-    pub fn from_buffer_pool(bp: BufferPool) -> Self {
+    pub fn from_buffer_pool(bp: Arc<Mutex<BufferPool>>) -> Self {
         Self { buffer_pool: bp }
     }
 }

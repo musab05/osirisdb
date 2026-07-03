@@ -1,12 +1,16 @@
+use std::sync::{Arc, Mutex};
+
 use crate::storage::{
     BufferPool, HeapFile, Storage, StorageError, index_page::IndexPage, record_id::RecordId,
 };
 
 pub struct BPlusTreeIndex {
-    pub buffer_pool: BufferPool,
+    buffer_pool: Arc<Mutex<BufferPool>>,
     root_page_id: Option<u32>,
     is_unique_constraint: bool,
 }
+
+const META_PAGE_ID: u32 = 0;
 
 impl BPlusTreeIndex {
     pub fn open(
@@ -15,57 +19,92 @@ impl BPlusTreeIndex {
         schema: &str,
         index_name: &str,
         is_unique: bool,
+        buffer_pool: Arc<Mutex<BufferPool>>,
     ) -> Result<Self, StorageError> {
-        // Generate index file path under the schema directory (e.g., public/users_pkey.idx)
-        let path = storage
-            .schema_path(db, schema)
-            .join(format!("{}.idx", index_name));
-        let heap_file = HeapFile::open(path)?;
-        let buffer_pool = BufferPool::new(heap_file, 16); // capacity matches to DEFAULT_POOL_CAPACITY
+        let _ = (storage, db, schema, index_name); // path resolution now happens where pool is opened
+
+        let root_page_id = {
+            let mut bp = buffer_pool.lock().unwrap();
+            if bp.num_pages() == 0 {
+                let (_, frame_id) = bp.new_page()?; // page 0
+                let raw = bp.get_page_mut(frame_id);
+                raw.as_bytes_mut()[0..4].copy_from_slice(&u32::MAX.to_le_bytes());
+                bp.unpin_page(frame_id, true);
+                None
+            } else {
+                let frame_id = bp.pin_page(META_PAGE_ID)?;
+                let raw = bp.get_page(frame_id);
+                let val = u32::from_le_bytes(raw.as_bytes()[0..4].try_into().unwrap());
+                bp.unpin_page(frame_id, false);
+                if val == u32::MAX { None } else { Some(val) }
+            }
+        };
 
         Ok(Self {
             buffer_pool,
-            root_page_id: None,
+            root_page_id,
             is_unique_constraint: is_unique,
         })
     }
 
-    /// Primary Key, Unique Key, and Secondary Index Retrieval Pass
+    /// Opens a standalone index (owns its own buffer pool). Use `open` when
+    /// sharing a pool with a table's other indexes.
+    pub fn open_standalone(
+        storage: &Storage,
+        db: &str,
+        schema: &str,
+        index_name: &str,
+        is_unique: bool,
+    ) -> Result<Self, StorageError> {
+        let path = storage
+            .schema_path(db, schema)
+            .join(format!("{}.idx", index_name));
+        let heap_file = HeapFile::open(path)?;
+        let buffer_pool = Arc::new(Mutex::new(BufferPool::new(heap_file, 16)));
+        Self::open(storage, db, schema, index_name, is_unique, buffer_pool)
+    }
+
+    fn persist_root(&mut self) -> Result<(), StorageError> {
+        let mut bp = self.buffer_pool.lock().unwrap();
+        let frame_id = bp.pin_page(META_PAGE_ID)?;
+        let raw = bp.get_page_mut(frame_id);
+        let val = self.root_page_id.unwrap_or(u32::MAX);
+        raw.as_bytes_mut()[0..4].copy_from_slice(&val.to_le_bytes());
+        bp.unpin_page(frame_id, true);
+        Ok(())
+    }
+
     pub fn lookup(&mut self, key: &[u8]) -> Result<Option<RecordId>, StorageError> {
         let mut current_page_id = match self.root_page_id {
             Some(id) => id,
-            None => return Ok(None), // Index is completely empty
+            None => return Ok(None),
         };
 
         loop {
-            // Pin the page into the buffer pool frame
-            let frame_id = self.buffer_pool.pin_page(current_page_id)?;
+            let mut bp = self.buffer_pool.lock().unwrap();
+            let frame_id = bp.pin_page(current_page_id)?;
 
-            // Cast the regular page into our optimized IndexPage reference
-            let raw_page = self.buffer_pool.get_page(frame_id);
+            let raw_page = bp.get_page(frame_id);
             let index_page = IndexPage::from_page_ref(raw_page);
 
-            // Execute binary search directly over raw page bytes
             match index_page.binary_search_key(key, |raw_key_slice| raw_key_slice) {
                 Ok(slot) => {
                     if index_page.is_leaf() {
                         let val_bytes = index_page.get_value(slot).unwrap();
                         let record_id = RecordId::from_bytes(val_bytes);
-                        self.buffer_pool.unpin_page(frame_id, false);
+                        bp.unpin_page(frame_id, false);
                         return Ok(Some(record_id));
                     } else {
-                        // Internal routing match
                         let val_bytes = index_page.get_value(slot).unwrap();
                         current_page_id = u32::from_le_bytes(val_bytes.try_into().unwrap());
-                        self.buffer_pool.unpin_page(frame_id, false);
+                        bp.unpin_page(frame_id, false);
                     }
                 }
                 Err(slot) => {
                     if index_page.is_leaf() {
-                        self.buffer_pool.unpin_page(frame_id, false);
-                        return Ok(None); // Key doesn't exist
+                        bp.unpin_page(frame_id, false);
+                        return Ok(None);
                     } else {
-                        // Follow appropriate branch down internal tree node
                         if slot == 0 {
                             current_page_id = index_page.next_page_id();
                         } else {
@@ -73,100 +112,128 @@ impl BPlusTreeIndex {
                             current_page_id = u32::from_le_bytes(val_bytes.try_into().unwrap())
                         }
                     }
-                    self.buffer_pool.unpin_page(frame_id, false);
+                    bp.unpin_page(frame_id, false);
                 }
             }
         }
     }
 
-    /// Inserts a new Key -> RecordId mapping into the disk-backed B+Tree.
     pub fn insert(&mut self, key: &[u8], record_id: RecordId) -> Result<(), StorageError> {
+        if self.is_unique_constraint {
+            if self.lookup(key)?.is_some() {
+                return Err(StorageError::DuplicateKey);
+            }
+        }
         let val_bytes = record_id.to_bytes();
 
-        // ── Case 1: The Index is Completely Empty ──
         if self.root_page_id.is_none() {
-            // Allocate a brand-new page from the buffer pool
-            let (new_page_id, frame_id) = self.buffer_pool.new_page()?;
+            let (new_page_id, frame_id) = {
+                let mut bp = self.buffer_pool.lock().unwrap();
+                let (new_page_id, frame_id) = bp.new_page()?;
+                let raw_page = bp.get_page_mut(frame_id);
+                let index_page = IndexPage::from_page_mut(raw_page);
+                index_page.set_is_leaf(true);
+                index_page.set_next_page_id(0);
+                index_page.insert_at(0, key, &val_bytes);
+                (new_page_id, frame_id)
+            };
 
-            // Get mutable access to initialized raw page bytes
-            let raw_page = self.buffer_pool.get_page_mut(frame_id);
-            let index_page = IndexPage::from_page_mut(raw_page);
-
-            // Reconfigure this fresh root as a leaf node with 0 as the next link
-            index_page.set_is_leaf(true);
-            index_page.set_next_page_id(0);
-
-            // Insert our very first element
-            index_page.insert_at(0, key, &val_bytes);
-
-            // Save state, mark the buffer dirty, and unpin
             self.root_page_id = Some(new_page_id);
-            self.buffer_pool.unpin_page(frame_id, true);
+            self.persist_root()?;
+            self.buffer_pool.lock().unwrap().unpin_page(frame_id, true);
             return Ok(());
         }
 
-        // ── Case 2: Standard B+Tree Traversal & Insertion ──
         let root_id = self.root_page_id.unwrap();
 
         if let Some((promoted_key, right_child_page_id)) =
             self.insert_recursive(root_id, key, &val_bytes)?
         {
-            // Root split occurred, must construct a brand-new internal Root node
-            let (new_root_id, frame_id) = self.buffer_pool.new_page()?;
-            let raw_page = self.buffer_pool.get_page_mut(frame_id);
-            let new_root = IndexPage::from_page_mut(raw_page);
-
-            new_root.set_is_leaf(false);
-            // Rule: The leftmost child pointer (child 0) goes into next_page_id
-            new_root.set_next_page_id(root_id);
-
-            // Insert the split/promoted boundary key pointing to our newly allocated right subtree
-            new_root.insert_at(0, &promoted_key, &right_child_page_id.to_le_bytes());
+            let (new_root_id, frame_id) = {
+                let mut bp = self.buffer_pool.lock().unwrap();
+                let (new_root_id, frame_id) = bp.new_page()?;
+                let raw_page = bp.get_page_mut(frame_id);
+                let new_root = IndexPage::from_page_mut(raw_page);
+                new_root.set_is_leaf(false);
+                new_root.set_next_page_id(root_id);
+                new_root.insert_at(0, &promoted_key, &right_child_page_id.to_le_bytes());
+                (new_root_id, frame_id)
+            };
 
             self.root_page_id = Some(new_root_id);
-            self.buffer_pool.unpin_page(frame_id, true);
+            self.persist_root()?;
+            self.buffer_pool.lock().unwrap().unpin_page(frame_id, true);
         }
         Ok(())
     }
 
-    /// Recursively descends the B+Tree nodes to perform inserts and propagates splits upwards.
-    /// Returns `Some((promoted_key, right_child_page_id))` if a child split takes place.
+    pub fn delete(&mut self, key: &[u8]) -> Result<bool, StorageError> {
+        let mut current = match self.root_page_id {
+            Some(id) => id,
+            None => return Ok(false),
+        };
+        loop {
+            let mut bp = self.buffer_pool.lock().unwrap();
+            let frame_id = bp.pin_page(current)?;
+            let is_leaf = IndexPage::from_page_ref(bp.get_page(frame_id)).is_leaf();
+            if is_leaf {
+                let page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
+                let found = match page.binary_search_key(key, |b| b) {
+                    Ok(slot) => {
+                        page.remove_at(slot);
+                        true
+                    }
+                    Err(_) => false,
+                };
+                bp.unpin_page(frame_id, found);
+                return Ok(found);
+            } else {
+                let page = IndexPage::from_page_ref(bp.get_page(frame_id));
+                let next = match page.binary_search_key(key, |b| b) {
+                    Ok(idx) => u32::from_le_bytes(page.get_value(idx).unwrap().try_into().unwrap()),
+                    Err(idx) if idx == 0 => page.next_page_id(),
+                    Err(idx) => {
+                        u32::from_le_bytes(page.get_value(idx - 1).unwrap().try_into().unwrap())
+                    }
+                };
+                bp.unpin_page(frame_id, false);
+                current = next;
+            }
+        }
+    }
+
     fn insert_recursive(
         &mut self,
         current_page_id: u32,
         key: &[u8],
         value: &[u8],
     ) -> Result<Option<(Vec<u8>, u32)>, StorageError> {
-        let frame_id = self.buffer_pool.pin_page(current_page_id)?;
+        let mut bp = self.buffer_pool.lock().unwrap();
+        let frame_id = bp.pin_page(current_page_id)?;
 
-        // Check if the current node page layout is a leaf or internal router
         let is_leaf = {
-            let index_page = IndexPage::from_page_ref(self.buffer_pool.get_page(frame_id));
+            let index_page = IndexPage::from_page_ref(bp.get_page(frame_id));
             index_page.is_leaf()
         };
 
         if is_leaf {
-            let raw_page = self.buffer_pool.get_page_mut(frame_id);
+            let raw_page = bp.get_page_mut(frame_id);
             let index_page = IndexPage::from_page_mut(raw_page);
 
             let slot_idx = match index_page.binary_search_key(key, |b| b) {
-                Ok(idx) => idx, // Duplicate handling choice
+                Ok(idx) => idx,
                 Err(idx) => idx,
             };
 
-            // Attempt to pack our payload directly onto the page
             if index_page.insert_at(slot_idx, key, value) {
-                self.buffer_pool.unpin_page(frame_id, true); // true = dirty[cite: 1]
+                bp.unpin_page(frame_id, true);
                 return Ok(None);
             }
 
-            // Node is full! Allocate a sibling IndexPage to shift half our elements into[cite: 1, 4]
-            let (right_page_id, right_frame_id) = self.buffer_pool.new_page()?;
+            let (right_page_id, right_frame_id) = bp.new_page()?;
             let (raw_left, raw_right) = unsafe {
-                // Perform quick unsafe double-pointer extraction to safely split
-                // between two concurrently pinned buffer frames
-                let left_ptr = self.buffer_pool.get_page_mut(frame_id) as *mut _;
-                let right_ptr = self.buffer_pool.get_page_mut(right_frame_id) as *mut _;
+                let left_ptr = bp.get_page_mut(frame_id) as *mut _;
+                let right_ptr = bp.get_page_mut(right_frame_id) as *mut _;
                 (&mut *left_ptr, &mut *right_ptr)
             };
 
@@ -176,11 +243,9 @@ impl BPlusTreeIndex {
             right_page.set_is_leaf(true);
             right_page.set_next_page_id(left_page.next_page_id());
 
-            // Move the right half of elements out and isolate the promoted median key boundary[cite: 4]
             let promoted_key = left_page.split_into(right_page);
             left_page.set_next_page_id(right_page_id);
 
-            // Re-evaluate which side of our new page split the incoming payload should drop into
             if slot_idx < left_page.key_count() {
                 left_page.insert_at(slot_idx, key, value);
             } else {
@@ -188,14 +253,13 @@ impl BPlusTreeIndex {
                 right_page.insert_at(r_slot, key, value);
             }
 
-            self.buffer_pool.unpin_page(frame_id, true); //[cite: 1]
-            self.buffer_pool.unpin_page(right_frame_id, true); //[cite: 1]
+            bp.unpin_page(frame_id, true);
+            bp.unpin_page(right_frame_id, true);
 
             return Ok(Some((promoted_key, right_page_id)));
         } else {
-            // ── Internal Node Routing Path ──
             let child_page_id = {
-                let index_page = IndexPage::from_page_ref(self.buffer_pool.get_page(frame_id));
+                let index_page = IndexPage::from_page_ref(bp.get_page(frame_id));
                 match index_page.binary_search_key(key, |b| b) {
                     Ok(idx) => {
                         u32::from_le_bytes(index_page.get_value(idx).unwrap().try_into().unwrap())
@@ -212,16 +276,15 @@ impl BPlusTreeIndex {
                 }
             };
 
-            // Release our lookahead frame pin so deeper recursion levels don't exhaust pool capacity
-            self.buffer_pool.unpin_page(frame_id, false);
+            bp.unpin_page(frame_id, false);
+            drop(bp); // release lock before recursing
 
-            // Recurse downwards to locate leaf level destination paths
             if let Some((promoted_key, right_child_id)) =
                 self.insert_recursive(child_page_id, key, value)?
             {
-                // A lower child split propagated up! Re-pin our current routing block to update map guides[cite: 1]
-                let frame_id = self.buffer_pool.pin_page(current_page_id)?;
-                let raw_page = self.buffer_pool.get_page_mut(frame_id);
+                let mut bp = self.buffer_pool.lock().unwrap();
+                let frame_id = bp.pin_page(current_page_id)?;
+                let raw_page = bp.get_page_mut(frame_id);
                 let index_page = IndexPage::from_page_mut(raw_page);
 
                 let target_slot = match index_page.binary_search_key(&promoted_key[..], |b| b) {
@@ -231,15 +294,14 @@ impl BPlusTreeIndex {
 
                 let right_bytes = right_child_id.to_le_bytes();
                 if index_page.insert_at(target_slot, &promoted_key, &right_bytes) {
-                    self.buffer_pool.unpin_page(frame_id, true); //[cite: 1]
+                    bp.unpin_page(frame_id, true);
                     return Ok(None);
                 }
 
-                // Internal Node itself is full! Execute internal page splitting protocol[cite: 1, 4]
-                let (right_internal_id, right_frame_id) = self.buffer_pool.new_page()?;
+                let (right_internal_id, right_frame_id) = bp.new_page()?;
                 let (raw_left, raw_right) = unsafe {
-                    let left_ptr = self.buffer_pool.get_page_mut(frame_id) as *mut _;
-                    let right_ptr = self.buffer_pool.get_page_mut(right_frame_id) as *mut _;
+                    let left_ptr = bp.get_page_mut(frame_id) as *mut _;
+                    let right_ptr = bp.get_page_mut(right_frame_id) as *mut _;
                     (&mut *left_ptr, &mut *right_ptr)
                 };
 
@@ -248,19 +310,19 @@ impl BPlusTreeIndex {
 
                 right_internal.set_is_leaf(false);
 
-                // Split internal node entries[cite: 4]
                 let parent_promoted_key = left_internal.split_into(right_internal);
 
-                // Insert the new split-key that came up from below into whichever half fits it
                 if target_slot < left_internal.key_count() {
+                    left_internal.insert_at(target_slot, &promoted_key, &right_bytes);
+                } else if target_slot == left_internal.key_count() {
                     left_internal.insert_at(target_slot, &promoted_key, &right_bytes);
                 } else {
                     let r_slot = target_slot - left_internal.key_count() - 1;
                     right_internal.insert_at(r_slot, &promoted_key, &right_bytes);
                 }
 
-                self.buffer_pool.unpin_page(frame_id, true); //[cite: 1]
-                self.buffer_pool.unpin_page(right_frame_id, true); //[cite: 1]
+                bp.unpin_page(frame_id, true);
+                bp.unpin_page(right_frame_id, true);
 
                 return Ok(Some((parent_promoted_key, right_internal_id)));
             }

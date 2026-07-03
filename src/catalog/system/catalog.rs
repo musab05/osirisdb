@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     ast::{DataType, Value},
@@ -59,10 +60,9 @@ impl SystemCatalog {
             .join(SYSTEM_DIR)
             .join(format!("{}.dat", table));
         let hf = HeapFile::open(path)?;
-        Ok(TableHeap::from_buffer_pool(BufferPool::new(
-            hf,
-            POOL_CAPACITY,
-        )))
+        Ok(TableHeap::from_buffer_pool(Arc::new(Mutex::new(
+            BufferPool::new(hf, POOL_CAPACITY),
+        ))))
     }
 
     // ── Writers ──────────────────────────────────────────────────────────────

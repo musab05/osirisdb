@@ -164,13 +164,22 @@ impl BufferPool {
     /// - [`StorageError::BufferPoolFull`] if all frames are pinned.
     /// - [`StorageError::Io`] if the page cannot be written to disk.
     pub fn new_page(&mut self) -> Result<(u32, usize), StorageError> {
+        // Find frame first
+        let frame_id = self.find_or_evict()?;
+
         // Allocate the page on disk first so `num_pages` is up to date
         // before `pin_page` checks bounds.
         let page_id = self.heap_file.allocate_page()?;
 
-        // Pin it — this will be a cache miss since it was just created,
-        // so `pin_page` will load the freshly-written zeroed page from disk.
-        let frame_id = self.pin_page(page_id)?;
+        // Get page from heap file using page id
+        let page = self.heap_file.read_page(page_id)?;
+
+        self.frames[frame_id] = Some(page);
+        self.page_table.insert(page_id, frame_id);
+        self.clock += 1;
+        self.last_used[frame_id] = self.clock;
+        self.pin_count[frame_id] = 1;
+        self.dirty_flag[frame_id] = false;
 
         Ok((page_id, frame_id))
     }

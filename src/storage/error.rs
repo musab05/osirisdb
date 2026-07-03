@@ -34,6 +34,9 @@ pub enum StorageError {
     /// A value's type did not match the column's declared type,
     /// or the column count did not match the schema.
     TupleError(String),
+
+    /// Duplicate key check
+    DuplicateKey,
 }
 
 impl StorageError {
@@ -70,6 +73,9 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::TupleError(msg) => {
                 write!(f, "tuple error: {}", msg)
+            }
+            StorageError::DuplicateKey => {
+                write!(f, "duplicate key violates unique constraint")
             }
         }
     }

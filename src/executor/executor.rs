@@ -164,9 +164,14 @@ impl Executor {
                 })?;
 
                 // Open the specific .idx file
-                let index =
-                    BPlusTreeIndex::open(storage, db_name, schema_name, index_name, is_unique)
-                        .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+                let index = BPlusTreeIndex::open_standalone(
+                    storage,
+                    db_name,
+                    schema_name,
+                    index_name,
+                    is_unique,
+                )
+                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 
                 Ok(entry.insert(index))
             }

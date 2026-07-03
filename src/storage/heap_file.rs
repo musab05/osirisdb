@@ -119,12 +119,6 @@ impl HeapFile {
             .write_all(page.as_bytes())
             .map_err(|e| StorageError::io(&self.path, e))?;
 
-        // Flush to OS page cache.
-        // Full fsync/fdatasync is the WAL's responsibility (Stage 5+).
-        self.file
-            .flush()
-            .map_err(|e| StorageError::io(&self.path, e))?;
-
         self.num_pages += 1;
         Ok(page_id)
     }
@@ -181,10 +175,6 @@ impl HeapFile {
         self.seek_to(page_id)?;
         self.file
             .write_all(page.as_bytes())
-            .map_err(|e| StorageError::io(&self.path, e))?;
-
-        self.file
-            .flush()
             .map_err(|e| StorageError::io(&self.path, e))?;
 
         Ok(())

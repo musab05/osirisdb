@@ -312,4 +312,9 @@ impl Page {
     pub fn as_bytes(&self) -> &[u8; PAGE_SIZE] {
         &self.data
     }
+
+    /// Returns the mutable pages's raw byte
+    pub fn as_bytes_mut(&mut self) -> &mut [u8; PAGE_SIZE] {
+        &mut self.data
+    }
 }
