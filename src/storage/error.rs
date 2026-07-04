@@ -37,6 +37,9 @@ pub enum StorageError {
 
     /// Duplicate key check
     DuplicateKey,
+
+    /// index check
+    IndexNotInitialized,
 }
 
 impl StorageError {
@@ -76,6 +79,9 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::DuplicateKey => {
                 write!(f, "duplicate key violates unique constraint")
+            }
+            StorageError::IndexNotInitialized => {
+                write!(f, "index has no pages yet")
             }
         }
     }

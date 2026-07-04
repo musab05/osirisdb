@@ -31,7 +31,7 @@ impl Storage {
             return Err(StorageError::DirectoryNotFound(schema_path));
         }
 
-        let table_path = self.table_path(db, schema, table);
+        let table_path = self.table_path(db, schema, table)?;
         if table_path.exists() {
             return Err(StorageError::Io {
                 path: table_path.clone(),

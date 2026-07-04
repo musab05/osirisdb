@@ -12,6 +12,8 @@ pub struct BPlusTreeIndex {
 
 const META_PAGE_ID: u32 = 0;
 
+const MIN_KEYS: u16 = 2;
+
 impl BPlusTreeIndex {
     pub fn open(
         storage: &Storage,
@@ -56,6 +58,11 @@ impl BPlusTreeIndex {
         index_name: &str,
         is_unique: bool,
     ) -> Result<Self, StorageError> {
+        if !storage.schema_dir_exists(db, schema) {
+            return Err(StorageError::DirectoryNotFound(
+                storage.schema_path(db, schema),
+            ));
+        }
         let path = storage
             .schema_path(db, schema)
             .join(format!("{}.idx", index_name));
@@ -165,41 +172,6 @@ impl BPlusTreeIndex {
             self.buffer_pool.lock().unwrap().unpin_page(frame_id, true);
         }
         Ok(())
-    }
-
-    pub fn delete(&mut self, key: &[u8]) -> Result<bool, StorageError> {
-        let mut current = match self.root_page_id {
-            Some(id) => id,
-            None => return Ok(false),
-        };
-        loop {
-            let mut bp = self.buffer_pool.lock().unwrap();
-            let frame_id = bp.pin_page(current)?;
-            let is_leaf = IndexPage::from_page_ref(bp.get_page(frame_id)).is_leaf();
-            if is_leaf {
-                let page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
-                let found = match page.binary_search_key(key, |b| b) {
-                    Ok(slot) => {
-                        page.remove_at(slot);
-                        true
-                    }
-                    Err(_) => false,
-                };
-                bp.unpin_page(frame_id, found);
-                return Ok(found);
-            } else {
-                let page = IndexPage::from_page_ref(bp.get_page(frame_id));
-                let next = match page.binary_search_key(key, |b| b) {
-                    Ok(idx) => u32::from_le_bytes(page.get_value(idx).unwrap().try_into().unwrap()),
-                    Err(idx) if idx == 0 => page.next_page_id(),
-                    Err(idx) => {
-                        u32::from_le_bytes(page.get_value(idx - 1).unwrap().try_into().unwrap())
-                    }
-                };
-                bp.unpin_page(frame_id, false);
-                current = next;
-            }
-        }
     }
 
     fn insert_recursive(
@@ -329,5 +301,239 @@ impl BPlusTreeIndex {
         }
 
         Ok(None)
+    }
+
+    pub fn delete_public(&mut self, key: &[u8]) -> Result<bool, StorageError> {
+        let result = self.delete(key)?;
+        if let Some(root) = self.root_page_id {
+            let mut bp = self.buffer_pool.lock().unwrap();
+            let frame_id = bp.pin_page(root)?;
+            let page = IndexPage::from_page_ref(bp.get_page(frame_id));
+            let collapse = !page.is_leaf() && page.key_count() == 0;
+            let new_root = if collapse {
+                Some(page.next_page_id())
+            } else {
+                None
+            };
+            bp.unpin_page(frame_id, false);
+            if let Some(nr) = new_root {
+                drop(bp);
+                self.root_page_id = Some(nr);
+                self.persist_root()?;
+            }
+        }
+        Ok(result)
+    }
+
+    fn delete(&mut self, key: &[u8]) -> Result<bool, StorageError> {
+        let root = match self.root_page_id {
+            Some(id) => id,
+            None => return Ok(false),
+        };
+        let (found, _) = self.delete_recursive(root, key, None)?;
+        Ok(found)
+    }
+
+    fn delete_recursive(
+        &mut self,
+        page_id: u32,
+        key: &[u8],
+        parent_next: Option<u32>,
+    ) -> Result<(bool, bool), StorageError> {
+        let mut bp = self.buffer_pool.lock().unwrap();
+        let frame_id = bp.pin_page(page_id)?;
+        let is_leaf = IndexPage::from_page_ref(bp.get_page(frame_id)).is_leaf();
+
+        if is_leaf {
+            let page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
+            let found = match page.binary_search_key(key, |b| b) {
+                Ok(slot) => {
+                    page.remove_at(slot);
+                    true
+                }
+                Err(_) => false,
+            };
+            let underflow = page.key_count() < MIN_KEYS;
+            bp.unpin_page(frame_id, found);
+            let _ = parent_next;
+            return Ok((found, underflow));
+        }
+
+        let child_id = {
+            let page = IndexPage::from_page_ref(bp.get_page(frame_id));
+            match page.binary_search_key(key, |b| b) {
+                Ok(idx) => u32::from_le_bytes(page.get_value(idx).unwrap().try_into().unwrap()),
+                Err(idx) if idx == 0 => page.next_page_id(),
+                Err(idx) => {
+                    u32::from_le_bytes(page.get_value(idx - 1).unwrap().try_into().unwrap())
+                }
+            }
+        };
+        bp.unpin_page(frame_id, false);
+        drop(bp);
+
+        let (found, child_underflow) = self.delete_recursive(child_id, key, None)?;
+
+        if child_underflow {
+            self.fix_underflow(page_id, child_id)?;
+        }
+
+        let mut bp = self.buffer_pool.lock().unwrap();
+        let frame_id = bp.pin_page(page_id)?;
+        let underflow = IndexPage::from_page_ref(bp.get_page(frame_id)).key_count() < MIN_KEYS;
+        bp.unpin_page(frame_id, false);
+
+        Ok((found, underflow))
+    }
+
+    fn fix_underflow(&mut self, parent_id: u32, child_id: u32) -> Result<(), StorageError> {
+        let mut bp = self.buffer_pool.lock().unwrap();
+        let parent_frame = bp.pin_page(parent_id)?;
+
+        let (left_sib, right_sib, child_slot) = {
+            let parent = IndexPage::from_page_ref(bp.get_page(parent_frame));
+            let mut left = None;
+            let mut right = None;
+            let mut slot_of_child = None;
+
+            if parent.next_page_id() == child_id {
+                slot_of_child = Some(0u16);
+                if parent.key_count() > 0 {
+                    right = Some(u32::from_le_bytes(
+                        parent.get_value(0).unwrap().try_into().unwrap(),
+                    ));
+                }
+            } else {
+                for i in 0..parent.key_count() {
+                    let cid = u32::from_le_bytes(parent.get_value(i).unwrap().try_into().unwrap());
+                    if cid == child_id {
+                        slot_of_child = Some(i + 1);
+                        left = Some(if i == 0 {
+                            parent.next_page_id()
+                        } else {
+                            u32::from_le_bytes(parent.get_value(i - 1).unwrap().try_into().unwrap())
+                        });
+                        if i + 1 < parent.key_count() {
+                            right = Some(u32::from_le_bytes(
+                                parent.get_value(i + 1).unwrap().try_into().unwrap(),
+                            ));
+                        }
+                        break;
+                    }
+                }
+            }
+            (left, right, slot_of_child)
+        };
+        bp.unpin_page(parent_frame, false);
+
+        // Try borrow from right sibling first, else left, else merge.
+        if let Some(right_id) = right_sib {
+            let child_frame = bp.pin_page(child_id)?;
+            let right_frame = bp.pin_page(right_id)?;
+            let right_has_extra =
+                IndexPage::from_page_ref(bp.get_page(right_frame)).key_count() > MIN_KEYS;
+
+            if right_has_extra {
+                let (raw_c, raw_r) = unsafe {
+                    let c = bp.get_page_mut(child_frame) as *mut _;
+                    let r = bp.get_page_mut(right_frame) as *mut _;
+                    (&mut *c, &mut *r)
+                };
+                let child = IndexPage::from_page_mut(raw_c);
+                let rsib = IndexPage::from_page_mut(raw_r);
+
+                let k = rsib.get_key(0).unwrap().to_vec();
+                let v = rsib.get_value(0).unwrap().to_vec();
+                child.insert_at(child.key_count(), &k, &v);
+                rsib.remove_at(0);
+
+                bp.unpin_page(child_frame, true);
+                bp.unpin_page(right_frame, true);
+                return Ok(());
+            }
+
+            // Merge child + right into child, drop right, remove separator from parent.
+            let (raw_c, raw_r) = unsafe {
+                let c = bp.get_page_mut(child_frame) as *mut _;
+                let r = bp.get_page_mut(right_frame) as *mut _;
+                (&mut *c, &mut *r)
+            };
+            let child = IndexPage::from_page_mut(raw_c);
+            let rsib = IndexPage::from_page_mut(raw_r);
+            for i in 0..rsib.key_count() {
+                let k = rsib.get_key(i).unwrap().to_vec();
+                let v = rsib.get_value(i).unwrap().to_vec();
+                child.insert_at(child.key_count(), &k, &v);
+            }
+            if child.is_leaf() {
+                child.set_next_page_id(rsib.next_page_id());
+            }
+            bp.unpin_page(child_frame, true);
+            bp.unpin_page(right_frame, false);
+
+            let parent_frame = bp.pin_page(parent_id)?;
+            let parent = IndexPage::from_page_mut(bp.get_page_mut(parent_frame));
+            if let Some(slot) = child_slot {
+                parent.remove_at(slot);
+            }
+            bp.unpin_page(parent_frame, true);
+            return Ok(());
+        }
+
+        if let Some(left_id) = left_sib {
+            let child_frame = bp.pin_page(child_id)?;
+            let left_frame = bp.pin_page(left_id)?;
+            let left_has_extra =
+                IndexPage::from_page_ref(bp.get_page(left_frame)).key_count() > MIN_KEYS;
+
+            if left_has_extra {
+                let (raw_c, raw_l) = unsafe {
+                    let c = bp.get_page_mut(child_frame) as *mut _;
+                    let l = bp.get_page_mut(left_frame) as *mut _;
+                    (&mut *c, &mut *l)
+                };
+                let child = IndexPage::from_page_mut(raw_c);
+                let lsib = IndexPage::from_page_mut(raw_l);
+
+                let last = lsib.key_count() - 1;
+                let k = lsib.get_key(last).unwrap().to_vec();
+                let v = lsib.get_value(last).unwrap().to_vec();
+                lsib.remove_at(last);
+                child.insert_at(0, &k, &v);
+
+                bp.unpin_page(child_frame, true);
+                bp.unpin_page(left_frame, true);
+                return Ok(());
+            }
+
+            // Merge left + child into left, drop child.
+            let (raw_l, raw_c) = unsafe {
+                let l = bp.get_page_mut(left_frame) as *mut _;
+                let c = bp.get_page_mut(child_frame) as *mut _;
+                (&mut *l, &mut *c)
+            };
+            let lsib = IndexPage::from_page_mut(raw_l);
+            let child = IndexPage::from_page_mut(raw_c);
+            for i in 0..child.key_count() {
+                let k = child.get_key(i).unwrap().to_vec();
+                let v = child.get_value(i).unwrap().to_vec();
+                lsib.insert_at(lsib.key_count(), &k, &v);
+            }
+            if lsib.is_leaf() {
+                lsib.set_next_page_id(child.next_page_id());
+            }
+            bp.unpin_page(left_frame, true);
+            bp.unpin_page(child_frame, false);
+
+            let parent_frame = bp.pin_page(parent_id)?;
+            let parent = IndexPage::from_page_mut(bp.get_page_mut(parent_frame));
+            if let Some(slot) = child_slot {
+                let remove_slot = if slot == 0 { 0 } else { slot - 1 };
+                parent.remove_at(remove_slot);
+            }
+            bp.unpin_page(parent_frame, true);
+        }
+
+        Ok(())
     }
 }

@@ -90,7 +90,15 @@ impl Storage {
     }
 
     // storage.rs additions
-    pub fn table_path(&self, db: &str, schema: &str, table: &str) -> PathBuf {
-        self.schema_path(db, schema).join(format!("{}.dat", table))
+    pub fn table_path(&self, db: &str, schema: &str, table: &str) -> Result<PathBuf, StorageError> {
+        if !self.database_dir_exists(db) {
+            return Err(StorageError::DirectoryNotFound(self.database_path(db)));
+        }
+        if !self.schema_dir_exists(db, schema) {
+            return Err(StorageError::DirectoryNotFound(
+                self.schema_path(db, schema),
+            ));
+        }
+        Ok(self.schema_path(db, schema).join(format!("{}.dat", table)))
     }
 }

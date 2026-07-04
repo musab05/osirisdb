@@ -23,7 +23,7 @@ impl TableHeap {
         schema_name: &str,
         table_name: &str,
     ) -> Result<Self, StorageError> {
-        let path = storage.table_path(db_name, schema_name, table_name);
+        let path = storage.table_path(db_name, schema_name, table_name)?;
         let heap_file = HeapFile::open(path)?;
         let buffer_pool = Arc::new(Mutex::new(BufferPool::new(
             heap_file,

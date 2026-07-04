@@ -227,7 +227,9 @@ impl Page {
             tuple_len + SLOT_SIZE
         };
 
-        if needed > self.free_space() {
+        let slot_array_end = HEADER_SIZE + self.slot_count() as usize * SLOT_SIZE;
+        let fsp = self.free_space_pointer() as usize;
+        if fsp < slot_array_end || needed > fsp - slot_array_end {
             return None;
         }
 
