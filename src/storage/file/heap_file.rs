@@ -6,7 +6,7 @@ use std::{
 
 use crate::storage::{
     error::StorageError,
-    page::{PAGE_SIZE, Page},
+    page::{TablePage, table_page::PAGE_SIZE},
 };
 
 /// A disk-backed sequence of fixed-size pages for one table.
@@ -110,7 +110,7 @@ impl HeapFile {
     /// Returns [`StorageError::Io`] if the seek or write fails.
     pub fn allocate_page(&mut self) -> Result<u32, StorageError> {
         let page_id = self.num_pages;
-        let page = Page::new(page_id);
+        let page = TablePage::new(page_id);
 
         // Seek to exact position rather than SeekFrom::End to be safe
         // against any partial-page scenario detected at open time.
@@ -129,7 +129,7 @@ impl HeapFile {
     ///
     /// Returns [`StorageError::PageOutOfBounds`] if `page_id >= num_pages`.
     /// Returns [`StorageError::Io`] if the seek or read fails.
-    pub fn read_page(&mut self, page_id: u32) -> Result<Page, StorageError> {
+    pub fn read_page(&mut self, page_id: u32) -> Result<TablePage, StorageError> {
         if page_id >= self.num_pages {
             return Err(StorageError::PageOutOfBounds {
                 page_id,
@@ -148,23 +148,17 @@ impl HeapFile {
             .read_exact(&mut buf)
             .map_err(|e| StorageError::io(&self.path, e))?;
 
-        Ok(Page::from_bytes(buf))
+        Ok(TablePage::from_bytes(buf))
     }
 
     /// Writes `page` to its position in the file.
     ///
-    /// The write position is `page.page_id() * PAGE_SIZE` — the page
-    /// carries its own location. Callers must not alter a page's `page_id`
-    /// between reading and writing it.
-    ///
     /// # Errors
     ///
-    /// Returns [`StorageError::PageOutOfBounds`] if the page's id is
+    /// Returns [`StorageError::PageOutOfBounds`] if the `page_id` is
     /// `>= num_pages`.
     /// Returns [`StorageError::Io`] if the seek or write fails.
-    pub fn write_page(&mut self, page: &Page) -> Result<(), StorageError> {
-        let page_id = page.page_id();
-
+    pub fn write_page(&mut self, page_id: u32, page: &TablePage) -> Result<(), StorageError> {
         if page_id >= self.num_pages {
             return Err(StorageError::PageOutOfBounds {
                 page_id,

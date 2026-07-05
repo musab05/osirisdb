@@ -4,7 +4,7 @@ mod tests {
     use osirisdb::catalog::objects::ColumnEntry;
     use osirisdb::common::Interner;
     use osirisdb::storage::tuple::{deserialize_tuple, serialize_tuple};
-    use osirisdb::storage::{BufferPool, Storage, StorageError, TableHeap, heap_file::HeapFile};
+    use osirisdb::storage::{BufferPool, Storage, StorageError, TableHeap, file::HeapFile};
     use std::env;
     use std::path::{Path, PathBuf};
 
@@ -50,7 +50,7 @@ mod tests {
 
         let mut page = hf.read_page(page_id).unwrap();
         let slot = page.insert_tuple(b"hello from disk").unwrap();
-        hf.write_page(&page).unwrap();
+        hf.write_page(page_id, &page).unwrap();
 
         let page2 = hf.read_page(page_id).unwrap();
         assert_eq!(page2.get_tuple(slot), Some(&b"hello from disk"[..]));
@@ -68,7 +68,7 @@ mod tests {
             let page_id = hf.allocate_page().unwrap();
             let mut page = hf.read_page(page_id).unwrap();
             slot = page.insert_tuple(b"persisted tuple").unwrap();
-            hf.write_page(&page).unwrap();
+            hf.write_page(page_id, &page).unwrap();
         } // file handle dropped / closed here
 
         {
@@ -105,8 +105,8 @@ mod tests {
         let mut page1 = hf.read_page(p1).unwrap();
         let s0 = page0.insert_tuple(b"page zero").unwrap();
         let s1 = page1.insert_tuple(b"page one").unwrap();
-        hf.write_page(&page0).unwrap();
-        hf.write_page(&page1).unwrap();
+        hf.write_page(p0, &page0).unwrap();
+        hf.write_page(p1, &page1).unwrap();
 
         assert_eq!(
             hf.read_page(p0).unwrap().get_tuple(s0),

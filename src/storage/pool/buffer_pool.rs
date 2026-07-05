@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::storage::{error::StorageError, heap_file::HeapFile, page::Page};
+use crate::storage::{error::StorageError, file::HeapFile, page::TablePage};
 
 /// A fixed-capacity in-memory cache of [`Page`]s backed by a [`HeapFile`].
 ///
@@ -47,7 +47,7 @@ pub struct BufferPool {
     heap_file: HeapFile,
 
     /// The frame array — each slot holds one cached page or is empty.
-    frames: Vec<Option<Page>>,
+    frames: Vec<Option<TablePage>>,
 
     /// Maps `page_id → frame_index` for O(1) cache-hit detection.
     page_table: HashMap<u32, usize>,
@@ -190,7 +190,7 @@ impl BufferPool {
     ///
     /// Panics if `frame_id` is out of range or the frame is empty (i.e.
     /// the caller forgot to pin the page first).
-    pub fn get_page(&self, frame_id: usize) -> &Page {
+    pub fn get_page(&self, frame_id: usize) -> &TablePage {
         self.frames[frame_id]
             .as_ref()
             .expect("frame is empty — did you forget to pin the page?")
@@ -206,7 +206,7 @@ impl BufferPool {
     /// # Panics
     ///
     /// Panics if `frame_id` is out of range or the frame is empty.
-    pub fn get_page_mut(&mut self, frame_id: usize) -> &mut Page {
+    pub fn get_page_mut(&mut self, frame_id: usize) -> &mut TablePage {
         // Mark dirty immediately — the caller is about to modify the page.
         self.dirty_flag[frame_id] = true;
         self.frames[frame_id]
@@ -253,7 +253,13 @@ impl BufferPool {
         for frame_id in 0..self.capacity {
             if self.dirty_flag[frame_id] {
                 if let Some(page) = &self.frames[frame_id] {
-                    match self.heap_file.write_page(page) {
+                    let page_id = *self
+                        .page_table
+                        .iter()
+                        .find(|&(_, &fid)| fid == frame_id)
+                        .map(|(pid, _)| pid)
+                        .expect("frame not found in page table");
+                    match self.heap_file.write_page(page_id, page) {
                         Ok(_) => self.dirty_flag[frame_id] = false,
                         Err(e) => last_err = Some(e),
                     }
@@ -312,20 +318,22 @@ impl BufferPool {
     /// `pin_count[frame_id]` must be 0. This is enforced by
     /// [`Self::find_or_evict`] before calling here.
     fn evict(&mut self, frame_id: usize) -> Result<(), StorageError> {
+        let page_id = *self
+            .page_table
+            .iter()
+            .find(|&(_, &fid)| fid == frame_id)
+            .map(|(pid, _)| pid)
+            .expect("frame not found in page table");
+
         if self.dirty_flag[frame_id] {
             // Write the dirty page back to disk before discarding it.
             if let Some(page) = &self.frames[frame_id] {
-                self.heap_file.write_page(page)?;
+                self.heap_file.write_page(page_id, page)?;
             }
         }
 
-        // Find and remove this frame's page_id from the page table.
-        // We read page_id from the page itself so we don't need a
-        // reverse map (frame → page_id).
-        if let Some(page) = &self.frames[frame_id] {
-            let page_id = page.page_id();
-            self.page_table.remove(&page_id);
-        }
+        // Remove this frame's page_id from the page table.
+        self.page_table.remove(&page_id);
 
         // Clear the frame.
         self.frames[frame_id] = None;

@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 
-use crate::storage::page::Page;
+use crate::storage::page::TablePage;
 
 pub const PAGE_SIZE: usize = 8192;
-const INDEX_HEADER_SIZE: usize = 7; // 1 (is_leaf) + 2 (key_count) + 4 (next_page_id)
+const INDEX_HEADER_SIZE: usize = 9; // 1 (is_leaf) + 2 (key_count) + 4 (next_page_id) + 2 (fsp)
 const INDEX_SLOT_SIZE: usize = 6; // 2 (payload_offset) + 2 (key_len) + 2 (value_len)
 
 pub struct IndexPage {
@@ -18,10 +18,18 @@ impl IndexPage {
         page.set_is_leaf(is_leaf);
         page.set_key_count(0);
         page.set_next_page_id(next_page_id);
+        page.set_free_space_pointer(PAGE_SIZE as u16);
         page
     }
 
-    // Header Accessors
+    pub fn init(&mut self, is_leaf: bool, next_page_id: u32) {
+        self.data.fill(0);
+        self.set_is_leaf(is_leaf);
+        self.set_key_count(0);
+        self.set_next_page_id(next_page_id);
+        self.set_free_space_pointer(PAGE_SIZE as u16);
+    }
+
     pub fn is_leaf(&self) -> bool {
         self.data[0] != 0
     }
@@ -47,20 +55,11 @@ impl IndexPage {
     }
 
     fn free_space_pointer(&self) -> u16 {
-        let count = self.key_count();
-        if count == 0 {
-            return PAGE_SIZE as u16;
-        }
+        u16::from_le_bytes(self.data[7..9].try_into().unwrap())
+    }
 
-        let mut min_offset = PAGE_SIZE as u16;
-        for i in 0..count {
-            let slot_off = INDEX_HEADER_SIZE + i as usize * INDEX_SLOT_SIZE;
-            let p_off = u16::from_le_bytes(self.data[slot_off..slot_off + 2].try_into().unwrap());
-            if p_off < min_offset {
-                min_offset = p_off;
-            }
-        }
-        min_offset
+    fn set_free_space_pointer(&mut self, ptr: u16) {
+        self.data[7..9].copy_from_slice(&ptr.to_le_bytes());
     }
 
     pub fn free_space(&self) -> usize {
@@ -103,6 +102,7 @@ impl IndexPage {
             .copy_from_slice(&(value.len() as u16).to_le_bytes());
 
         self.set_key_count(count + 1);
+        self.set_free_space_pointer(new_fsp as u16);
         true
     }
 
@@ -175,11 +175,11 @@ impl IndexPage {
         self.compact();
     }
 
-    /// Reclaims fragmented space by tightly re-packing the payloads of active slots.
     pub fn compact(&mut self) {
         let count = self.key_count() as usize;
         if count == 0 {
             self.set_key_count(0);
+            self.set_free_space_pointer(PAGE_SIZE as u16);
             return;
         }
 
@@ -215,6 +215,8 @@ impl IndexPage {
             let slot_off = INDEX_HEADER_SIZE + i * INDEX_SLOT_SIZE;
             self.data[slot_off..slot_off + 2].copy_from_slice(&new_offsets[i].to_le_bytes());
         }
+
+        self.set_free_space_pointer(temp_fsp as u16);
     }
 
     pub fn binary_search_key<K: Ord + ?Sized>(
@@ -238,11 +240,11 @@ impl IndexPage {
         Err(low)
     }
 
-    pub fn from_page_ref(page: &Page) -> &Self {
-        unsafe { &*(page as *const Page as *const IndexPage) }
+    pub fn from_page_ref(page: &TablePage) -> &Self {
+        unsafe { &*(page as *const TablePage as *const IndexPage) }
     }
 
-    pub fn from_page_mut(page: &mut Page) -> &mut Self {
-        unsafe { &mut *(page as *mut Page as *mut IndexPage) }
+    pub fn from_page_mut(page: &mut TablePage) -> &mut Self {
+        unsafe { &mut *(page as *mut TablePage as *mut IndexPage) }
     }
 }

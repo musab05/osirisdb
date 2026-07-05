@@ -22,20 +22,18 @@
 //! - [`error`]   — [`StorageError`] variants
 //! - [`ddl`]     — DDL storage operations, one file per object type
 
-pub mod b_plus_tree_index;
-pub mod buffer_pool;
+pub mod btree;
 pub mod ddl;
 pub mod error;
-pub mod heap_file;
-pub mod index_page;
+pub mod file;
+pub mod heap;
 pub mod page;
+pub mod pool;
 pub mod record_id;
-pub mod storage;
-pub mod table_heap;
 pub mod tuple;
 
-pub use buffer_pool::BufferPool;
+pub use btree::BPlusTreeIndex;
 pub use error::StorageError;
-pub use heap_file::HeapFile;
-pub use storage::Storage;
-pub use table_heap::TableHeap;
+pub use file::{HeapFile, Storage};
+pub use heap::TableHeap;
+pub use pool::BufferPool;

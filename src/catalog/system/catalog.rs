@@ -11,7 +11,7 @@ use crate::{
         },
     },
     common::interner::Interner,
-    storage::{StorageError, TableHeap, buffer_pool::BufferPool, heap_file::HeapFile},
+    storage::{StorageError, TableHeap, file::HeapFile, pool::BufferPool},
 };
 
 const SYSTEM_DIR: &str = "_system";

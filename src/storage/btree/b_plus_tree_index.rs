@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::storage::{
-    BufferPool, HeapFile, Storage, StorageError, index_page::IndexPage, record_id::RecordId,
+    BufferPool, HeapFile, Storage, StorageError, page::IndexPage, record_id::RecordId,
 };
 
 pub struct BPlusTreeIndex {
@@ -139,8 +139,7 @@ impl BPlusTreeIndex {
                 let (new_page_id, frame_id) = bp.new_page()?;
                 let raw_page = bp.get_page_mut(frame_id);
                 let index_page = IndexPage::from_page_mut(raw_page);
-                index_page.set_is_leaf(true);
-                index_page.set_next_page_id(0);
+                index_page.init(true, 0);
                 index_page.insert_at(0, key, &val_bytes);
                 (new_page_id, frame_id)
             };
@@ -161,8 +160,7 @@ impl BPlusTreeIndex {
                 let (new_root_id, frame_id) = bp.new_page()?;
                 let raw_page = bp.get_page_mut(frame_id);
                 let new_root = IndexPage::from_page_mut(raw_page);
-                new_root.set_is_leaf(false);
-                new_root.set_next_page_id(root_id);
+                new_root.init(false, root_id);
                 new_root.insert_at(0, &promoted_key, &right_child_page_id.to_le_bytes());
                 (new_root_id, frame_id)
             };
@@ -212,8 +210,7 @@ impl BPlusTreeIndex {
             let left_page = IndexPage::from_page_mut(raw_left);
             let right_page = IndexPage::from_page_mut(raw_right);
 
-            right_page.set_is_leaf(true);
-            right_page.set_next_page_id(left_page.next_page_id());
+            right_page.init(true, left_page.next_page_id());
 
             let promoted_key = left_page.split_into(right_page);
             left_page.set_next_page_id(right_page_id);
@@ -280,7 +277,7 @@ impl BPlusTreeIndex {
                 let left_internal = IndexPage::from_page_mut(raw_left);
                 let right_internal = IndexPage::from_page_mut(raw_right);
 
-                right_internal.set_is_leaf(false);
+                right_internal.init(false, 0);
 
                 let parent_promoted_key = left_internal.split_into(right_internal);
 

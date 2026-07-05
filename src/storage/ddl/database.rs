@@ -1,4 +1,4 @@
-use crate::storage::{error::StorageError, storage::Storage};
+use crate::storage::{Storage, StorageError};
 
 impl Storage {
     /// Creates the on-disk directory structure for a new database.

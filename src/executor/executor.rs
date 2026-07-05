@@ -7,7 +7,7 @@ use crate::{
     catalog::{CatalogManager, system::catalog::SystemCatalog},
     common::symbol::Symbol,
     executor::ExecutionError,
-    storage::{Storage, TableHeap, b_plus_tree_index::BPlusTreeIndex},
+    storage::{Storage, TableHeap, btree::BPlusTreeIndex},
 };
 
 /// The execution engine — receives bound statements and applies them

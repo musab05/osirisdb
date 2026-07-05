@@ -64,11 +64,11 @@ const SLOT_SIZE: usize = 4;
 /// identifier (`slot_id`) that other parts of the engine (indexes, the
 /// buffer pool, MVCC version chains) can reference even if the tuple's
 /// bytes later move during compaction.
-pub struct Page {
+pub struct TablePage {
     data: [u8; PAGE_SIZE],
 }
 
-impl Page {
+impl TablePage {
     /// Creates a new, empty page with the given `page_id`.
     ///
     /// Initializes the header so that:
