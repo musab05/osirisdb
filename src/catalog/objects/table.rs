@@ -1,4 +1,14 @@
-use crate::{ast::TableConstraint, catalog::objects::column::ColumnEntry, common::symbol::Symbol};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+use crate::{
+    ast::TableConstraint,
+    catalog::objects::column::ColumnEntry,
+    common::symbol::Symbol,
+    storage::{BPlusTreeIndex, TableHeap},
+};
 
 /// The catalog's runtime representation of a table.
 ///
@@ -7,7 +17,7 @@ use crate::{ast::TableConstraint, catalog::objects::column::ColumnEntry, common:
 /// its column definitions (with resolved constraint flags), and
 /// any table-level constraints that could not be folded into a
 /// single column (composite `PRIMARY KEY`/`UNIQUE`, `CHECK`, `FOREIGN KEY`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct TableEntry {
     /// Internal unique identifier — never changes after creation.
     pub oid: u32,
@@ -28,6 +38,10 @@ pub struct TableEntry {
     /// validation (e.g. that a referenced foreign table/columns exist)
     /// is deferred until the catalog supports that lookup.
     pub constraints: Vec<TableConstraint>,
+
+    pub heap: Option<Arc<Mutex<TableHeap>>>,
+
+    pub indexes: HashMap<Symbol, Arc<Mutex<BPlusTreeIndex>>>,
 }
 
 impl TableEntry {
@@ -45,6 +59,19 @@ impl TableEntry {
             name,
             columns,
             constraints,
+            heap: None,
+            indexes: HashMap::new(),
         }
+    }
+}
+
+impl std::fmt::Debug for TableEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TableEntry")
+            .field("oid", &self.oid)
+            .field("name", &self.name)
+            .field("columns", &self.columns)
+            .field("constraints", &self.constraints)
+            .finish()
     }
 }

@@ -16,15 +16,9 @@ const MIN_KEYS: u16 = 2;
 
 impl BPlusTreeIndex {
     pub fn open(
-        storage: &Storage,
-        db: &str,
-        schema: &str,
-        index_name: &str,
         is_unique: bool,
         buffer_pool: Arc<Mutex<BufferPool>>,
     ) -> Result<Self, StorageError> {
-        let _ = (storage, db, schema, index_name); // path resolution now happens where pool is opened
-
         let root_page_id = {
             let mut bp = buffer_pool.lock().unwrap();
             if bp.num_pages() == 0 {
@@ -68,7 +62,7 @@ impl BPlusTreeIndex {
             .join(format!("{}.idx", index_name));
         let heap_file = HeapFile::open(path)?;
         let buffer_pool = Arc::new(Mutex::new(BufferPool::new(heap_file, 16)));
-        Self::open(storage, db, schema, index_name, is_unique, buffer_pool)
+        Self::open(is_unique, buffer_pool)
     }
 
     fn persist_root(&mut self) -> Result<(), StorageError> {

@@ -34,9 +34,22 @@ impl Executor {
         let schema_name = self.catalog.interner.resolve(schema_sym).to_string();
         let table_name = self.catalog.interner.resolve(name).to_string();
 
-        // 1. Insert table entry into the catalog.
+        let storage = self
+            .storage
+            .as_ref()
+            .ok_or_else(|| ExecutionError::Storage("storage engine not initialized".to_string()))?;
+
+        // 1. Create on-disk table file.
+        if !self.catalog.table_exists(db_sym, schema_sym, stmt.name) {
+            storage
+                .create_table_file(&db_name, &schema_name, &table_name)
+                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+        }
+
+        // 2. Insert table entry into the catalog.
         self.catalog
             .create_table(
+                storage,
                 db_sym,
                 schema_sym,
                 stmt.name,
@@ -45,13 +58,6 @@ impl Executor {
                 stmt.if_not_exists,
             )
             .map_err(ExecutionError::from)?;
-
-        // 2. Create on-disk table file if storage is enabled.
-        if let Some(storage) = &self.storage {
-            storage
-                .create_table_file(&db_name, &schema_name, &table_name)
-                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
-        }
 
         // 3. Persist to system catalog.
         if let Some(sys) = &self.system_catalog {

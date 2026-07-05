@@ -27,6 +27,8 @@ pub enum CatalogError {
 
     /// An operation referenced a table that does not exist.
     TableNotFound(Symbol),
+
+    StorageError(String),
 }
 
 impl std::fmt::Display for CatalogError {
@@ -49,6 +51,9 @@ impl std::fmt::Display for CatalogError {
             }
             CatalogError::TableNotFound(sym) => {
                 write!(f, "table {:?} does not exist", sym)
+            }
+            CatalogError::StorageError(msg) => {
+                write!(f, "storage error: {}", msg)
             }
         }
     }

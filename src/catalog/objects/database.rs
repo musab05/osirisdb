@@ -13,7 +13,7 @@ use crate::{catalog::objects::SchemaEntry, common::symbol::Symbol};
 /// - No `if_not_exists` — that flag is consumed during execution, irrelevant after
 /// - `owner` is required — resolved to a default (session user) if not specified
 /// - Adds `oid` — internal unique identifier used by all catalog lookups
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct DatabaseEntry {
     /// Internal unique identifier for this database.
     ///
@@ -99,5 +99,22 @@ impl DatabaseEntry {
             is_template: false,      // always false for user-created databases
             schemas: HashMap::new(),
         }
+    }
+}
+
+impl std::fmt::Debug for DatabaseEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DatabaseEntry")
+            .field("oid", &self.oid)
+            .field("name", &self.name)
+            .field("owner", &self.owner)
+            .field("encoding", &self.encoding)
+            .field("locale", &self.locale)
+            .field("tablespace", &self.tablespace)
+            .field("connection_limit", &self.connection_limit)
+            .field("allow_connections", &self.allow_connections)
+            .field("is_template", &self.is_template)
+            .field("schemas", &self.schemas)
+            .finish()
     }
 }

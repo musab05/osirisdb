@@ -12,7 +12,7 @@ use crate::{catalog::objects::TableEntry, common::symbol::Symbol};
 /// - No `if_not_exists` — consumed during execution
 /// - `owner` is required — resolved from authorization or session user
 /// - Adds `oid` — stable internal identifier
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct SchemaEntry {
     /// Internal unique identifier — never changes after creation.
     pub oid: u32,
@@ -43,5 +43,17 @@ impl SchemaEntry {
             database,
             tables: HashMap::new(),
         }
+    }
+}
+
+impl std::fmt::Debug for SchemaEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SchemaEntry")
+            .field("oid", &self.oid)
+            .field("name", &self.name)
+            .field("owner", &self.owner)
+            .field("database", &self.database)
+            .field("tables", &self.tables)
+            .finish()
     }
 }

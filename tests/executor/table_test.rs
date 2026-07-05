@@ -6,13 +6,25 @@ use osirisdb::catalog::CatalogManager;
 use osirisdb::common::interner::Interner;
 use osirisdb::common::symbol::Symbol;
 use osirisdb::executor::{ExecutionResult, Executor};
+use osirisdb::storage::Storage;
+use std::path::PathBuf;
 
-fn setup(names: &[&str]) -> (Executor, Vec<Symbol>) {
+static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn setup(names: &[&str]) -> (Executor, Vec<Symbol>, PathBuf) {
     let mut interner = Interner::new();
     let symbols: Vec<Symbol> = names.iter().map(|n| interner.intern(n)).collect();
     let catalog = CatalogManager::new(interner);
     let session = symbols[symbols.len() - 1];
-    (Executor::new_in_memory(catalog, session), symbols)
+
+    let count = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_path = std::env::temp_dir().join(format!("osirisdb_exec_table_test_{}", count));
+    let _ = std::fs::remove_dir_all(&tmp_path);
+    std::fs::create_dir_all(&tmp_path).unwrap();
+
+    let storage = Storage::new_or_create(&tmp_path).unwrap();
+    let executor = Executor::new(catalog, session, storage);
+    (executor, symbols, tmp_path)
 }
 
 fn create_db_stmt(name: Symbol) -> CreateDatabaseStmt {
@@ -79,7 +91,7 @@ fn bind_and_execute_table_ok(
 
 #[test]
 fn test_execute_table_minimal_success() {
-    let (mut ex, s) = setup(&["mydb", "myschema", "mytable", "col1", "postgres"]);
+    let (mut ex, s, tmp) = setup(&["mydb", "myschema", "mytable", "col1", "postgres"]);
     // Create database and schema first
     let db_bound = Binder::new(&ex.catalog, ex.session_user)
         .bind_create_database(create_db_stmt(s[0]))
@@ -98,11 +110,13 @@ fn test_execute_table_minimal_success() {
 
     assert_eq!(result, ExecutionResult::TableCreated { name: s[2] });
     assert!(ex.catalog.table_exists(s[0], s[1], s[2]));
+
+    let _ = std::fs::remove_dir_all(&tmp);
 }
 
 #[test]
 fn test_execute_table_command_tag() {
-    let (mut ex, s) = setup(&["mydb", "myschema", "mytable", "col1", "postgres"]);
+    let (mut ex, s, tmp) = setup(&["mydb", "myschema", "mytable", "col1", "postgres"]);
     let db_bound = Binder::new(&ex.catalog, ex.session_user)
         .bind_create_database(create_db_stmt(s[0]))
         .unwrap();
@@ -117,11 +131,13 @@ fn test_execute_table_command_tag() {
     let result =
         bind_and_execute_table_ok(&mut ex, s[0], s[1], table_stmt(obj_name, columns, false));
     assert_eq!(result.command_tag(), "CREATE TABLE");
+
+    let _ = std::fs::remove_dir_all(&tmp);
 }
 
 #[test]
 fn test_execute_table_if_not_exists() {
-    let (mut ex, s) = setup(&["mydb", "myschema", "mytable", "col1", "postgres"]);
+    let (mut ex, s, tmp) = setup(&["mydb", "myschema", "mytable", "col1", "postgres"]);
     let db_bound = Binder::new(&ex.catalog, ex.session_user)
         .bind_create_database(create_db_stmt(s[0]))
         .unwrap();
@@ -147,6 +163,8 @@ fn test_execute_table_if_not_exists() {
         .unwrap();
     let result = ex.execute_create_table(bound).unwrap();
     assert_eq!(result, ExecutionResult::TableCreated { name: s[2] });
+
+    let _ = std::fs::remove_dir_all(&tmp);
 }
 
 #[test]

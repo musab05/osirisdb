@@ -6,6 +6,31 @@ use osirisdb::binder::{BindError, Binder};
 use osirisdb::catalog::CatalogManager;
 use osirisdb::common::interner::Interner;
 use osirisdb::common::symbol::Symbol;
+use osirisdb::storage::Storage;
+use std::env;
+use std::path::PathBuf;
+
+struct TestStorage {
+    path: PathBuf,
+    storage: Storage,
+}
+
+impl TestStorage {
+    fn new(name: &str) -> Self {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = env::temp_dir().join(format!("osirisdb_binder_table_test_{}_{}", name, count));
+        let _ = std::fs::remove_dir_all(&path);
+        let storage = Storage::new_or_create(&path).unwrap();
+        Self { path, storage }
+    }
+}
+
+impl Drop for TestStorage {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
 
 fn setup(names: &[&str]) -> (CatalogManager, Vec<Symbol>) {
     let mut interner = Interner::new();
@@ -108,7 +133,10 @@ fn test_bind_table_already_exists() {
         .unwrap();
 
     // Create the table in catalog first
-    m.create_table(s[0], s[1], s[2], vec![], vec![], false)
+    let ts = TestStorage::new("bind_table_already_exists");
+    ts.storage.create_database_dir("mydb").unwrap();
+    ts.storage.create_schema_dir("mydb", "myschema").unwrap();
+    m.create_table(&ts.storage, s[0], s[1], s[2], vec![], vec![], false)
         .unwrap();
 
     let binder = Binder::new(&m, s[3]);
