@@ -247,4 +247,12 @@ impl IndexPage {
     pub fn from_page_mut(page: &mut TablePage) -> &mut Self {
         unsafe { &mut *(page as *mut TablePage as *mut IndexPage) }
     }
+
+    pub fn write_next_free(&mut self, next: u32) {
+        self.data[0..4].copy_from_slice(&next.to_le_bytes());
+    }
+
+    pub fn read_next_free(&self) -> u32 {
+        u32::from_be_bytes(self.data[0..4].try_into().unwrap())
+    }
 }

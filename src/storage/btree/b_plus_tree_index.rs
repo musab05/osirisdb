@@ -4,41 +4,55 @@ use crate::storage::{
     BufferPool, HeapFile, Storage, StorageError, page::IndexPage, record_id::RecordId,
 };
 
+/// Page 0 of every index file — never used as a tree node.
+/// Layout: [0..4] root_page_id, [4..8] free_list_head. NIL (u32::MAX) means empty.
+const META_PAGE_ID: u32 = 0;
+
+/// Minimum keys a non-root node must hold before triggering merge/redistribute.
+const MIN_KEYS: u16 = 2;
+
+const NIL: u32 = u32::MAX;
+
 pub struct BPlusTreeIndex {
     buffer_pool: Arc<Mutex<BufferPool>>,
     root_page_id: Option<u32>,
+    /// Head of the on-disk free page list. Freed pages are linked via
+    /// `IndexPage::write_next_free` and reused by `alloc_page` before
+    /// ever extending the file.
+    free_head: u32,
     is_unique_constraint: bool,
 }
 
-const META_PAGE_ID: u32 = 0;
-
-const MIN_KEYS: u16 = 2;
-
 impl BPlusTreeIndex {
+    /// Opens an index against a shared buffer pool. Reads root + free-list
+    /// head from the meta page (page 0), creating it if the file is new.
     pub fn open(
         is_unique: bool,
         buffer_pool: Arc<Mutex<BufferPool>>,
     ) -> Result<Self, StorageError> {
-        let root_page_id = {
+        let (root_page_id, free_head) = {
             let mut bp = buffer_pool.lock().unwrap();
             if bp.num_pages() == 0 {
                 let (_, frame_id) = bp.new_page()?; // page 0
                 let raw = bp.get_page_mut(frame_id);
-                raw.as_bytes_mut()[0..4].copy_from_slice(&u32::MAX.to_le_bytes());
+                raw.as_bytes_mut()[0..4].copy_from_slice(&NIL.to_le_bytes());
+                raw.as_bytes_mut()[4..8].copy_from_slice(&NIL.to_le_bytes());
                 bp.unpin_page(frame_id, true);
-                None
+                (None, NIL)
             } else {
                 let frame_id = bp.pin_page(META_PAGE_ID)?;
                 let raw = bp.get_page(frame_id);
-                let val = u32::from_le_bytes(raw.as_bytes()[0..4].try_into().unwrap());
+                let root = u32::from_le_bytes(raw.as_bytes()[0..4].try_into().unwrap());
+                let free = u32::from_le_bytes(raw.as_bytes()[4..8].try_into().unwrap());
                 bp.unpin_page(frame_id, false);
-                if val == u32::MAX { None } else { Some(val) }
+                (if root == NIL { None } else { Some(root) }, free)
             }
         };
 
         Ok(Self {
             buffer_pool,
             root_page_id,
+            free_head,
             is_unique_constraint: is_unique,
         })
     }
@@ -65,12 +79,16 @@ impl BPlusTreeIndex {
         Self::open(is_unique, buffer_pool)
     }
 
-    fn persist_root(&mut self) -> Result<(), StorageError> {
+    /// Writes root + free-list head to the meta page. Call after either
+    /// changes. Locks the pool itself — never call while already holding
+    /// a lock (use inline writes instead, as `alloc_page_locked` does).
+    fn persist_meta(&mut self) -> Result<(), StorageError> {
         let mut bp = self.buffer_pool.lock().unwrap();
         let frame_id = bp.pin_page(META_PAGE_ID)?;
         let raw = bp.get_page_mut(frame_id);
-        let val = self.root_page_id.unwrap_or(u32::MAX);
-        raw.as_bytes_mut()[0..4].copy_from_slice(&val.to_le_bytes());
+        let root = self.root_page_id.unwrap_or(NIL);
+        raw.as_bytes_mut()[0..4].copy_from_slice(&root.to_le_bytes());
+        raw.as_bytes_mut()[4..8].copy_from_slice(&self.free_head.to_le_bytes());
         bp.unpin_page(frame_id, true);
         Ok(())
     }
@@ -120,52 +138,50 @@ impl BPlusTreeIndex {
     }
 
     pub fn insert(&mut self, key: &[u8], record_id: RecordId) -> Result<(), StorageError> {
-        if self.is_unique_constraint {
-            if self.lookup(key)?.is_some() {
-                return Err(StorageError::DuplicateKey);
-            }
+        if self.is_unique_constraint && self.lookup(key)?.is_some() {
+            return Err(StorageError::DuplicateKey);
         }
         let val_bytes = record_id.to_bytes();
 
+        // ── Case 1: empty index — allocate first leaf as root ──
         if self.root_page_id.is_none() {
-            let (new_page_id, frame_id) = {
+            let (new_page_id, frame_id) = self.alloc_page()?;
+            {
                 let mut bp = self.buffer_pool.lock().unwrap();
-                let (new_page_id, frame_id) = bp.new_page()?;
                 let raw_page = bp.get_page_mut(frame_id);
                 let index_page = IndexPage::from_page_mut(raw_page);
                 index_page.init(true, 0);
                 index_page.insert_at(0, key, &val_bytes);
-                (new_page_id, frame_id)
-            };
-
+                bp.unpin_page(frame_id, true);
+            }
             self.root_page_id = Some(new_page_id);
-            self.persist_root()?;
-            self.buffer_pool.lock().unwrap().unpin_page(frame_id, true);
+            self.persist_meta()?;
             return Ok(());
         }
 
+        // ── Case 2: normal traversal, root split propagates up here ──
         let root_id = self.root_page_id.unwrap();
 
         if let Some((promoted_key, right_child_page_id)) =
             self.insert_recursive(root_id, key, &val_bytes)?
         {
-            let (new_root_id, frame_id) = {
+            let (new_root_id, frame_id) = self.alloc_page()?;
+            {
                 let mut bp = self.buffer_pool.lock().unwrap();
-                let (new_root_id, frame_id) = bp.new_page()?;
                 let raw_page = bp.get_page_mut(frame_id);
                 let new_root = IndexPage::from_page_mut(raw_page);
                 new_root.init(false, root_id);
                 new_root.insert_at(0, &promoted_key, &right_child_page_id.to_le_bytes());
-                (new_root_id, frame_id)
-            };
-
+                bp.unpin_page(frame_id, true);
+            }
             self.root_page_id = Some(new_root_id);
-            self.persist_root()?;
-            self.buffer_pool.lock().unwrap().unpin_page(frame_id, true);
+            self.persist_meta()?;
         }
         Ok(())
     }
 
+    /// Descends to the target leaf, inserting and propagating splits upward.
+    /// Returns `Some((promoted_key, right_child_page_id))` on a child split.
     fn insert_recursive(
         &mut self,
         current_page_id: u32,
@@ -175,18 +191,13 @@ impl BPlusTreeIndex {
         let mut bp = self.buffer_pool.lock().unwrap();
         let frame_id = bp.pin_page(current_page_id)?;
 
-        let is_leaf = {
-            let index_page = IndexPage::from_page_ref(bp.get_page(frame_id));
-            index_page.is_leaf()
-        };
+        let is_leaf = IndexPage::from_page_ref(bp.get_page(frame_id)).is_leaf();
 
         if is_leaf {
-            let raw_page = bp.get_page_mut(frame_id);
-            let index_page = IndexPage::from_page_mut(raw_page);
+            let index_page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
 
             let slot_idx = match index_page.binary_search_key(key, |b| b) {
-                Ok(idx) => idx,
-                Err(idx) => idx,
+                Ok(idx) | Err(idx) => idx,
             };
 
             if index_page.insert_at(slot_idx, key, value) {
@@ -194,7 +205,10 @@ impl BPlusTreeIndex {
                 return Ok(None);
             }
 
-            let (right_page_id, right_frame_id) = bp.new_page()?;
+            // Full — split. `bp` is already locked here, so grab the new
+            // page via the locked helper (self.alloc_page() would deadlock).
+            let (right_page_id, right_frame_id) =
+                Self::alloc_page_locked(&mut self.free_head, &mut bp)?;
             let (raw_left, raw_right) = unsafe {
                 let left_ptr = bp.get_page_mut(frame_id) as *mut _;
                 let right_ptr = bp.get_page_mut(right_frame_id) as *mut _;
@@ -218,99 +232,103 @@ impl BPlusTreeIndex {
 
             bp.unpin_page(frame_id, true);
             bp.unpin_page(right_frame_id, true);
+            drop(bp);
+            self.persist_meta()?; // free_head may have moved
 
             return Ok(Some((promoted_key, right_page_id)));
-        } else {
-            let child_page_id = {
-                let index_page = IndexPage::from_page_ref(bp.get_page(frame_id));
-                match index_page.binary_search_key(key, |b| b) {
-                    Ok(idx) => {
-                        u32::from_le_bytes(index_page.get_value(idx).unwrap().try_into().unwrap())
-                    }
-                    Err(idx) => {
-                        if idx == 0 {
-                            index_page.next_page_id()
-                        } else {
-                            u32::from_le_bytes(
-                                index_page.get_value(idx - 1).unwrap().try_into().unwrap(),
-                            )
-                        }
-                    }
+        }
+
+        // ── Internal routing ──
+        let child_page_id = {
+            let index_page = IndexPage::from_page_ref(bp.get_page(frame_id));
+            match index_page.binary_search_key(key, |b| b) {
+                Ok(idx) => {
+                    u32::from_le_bytes(index_page.get_value(idx).unwrap().try_into().unwrap())
                 }
+                Err(idx) if idx == 0 => index_page.next_page_id(),
+                Err(idx) => {
+                    u32::from_le_bytes(index_page.get_value(idx - 1).unwrap().try_into().unwrap())
+                }
+            }
+        };
+
+        bp.unpin_page(frame_id, false);
+        drop(bp); // release lock before recursing
+
+        if let Some((promoted_key, right_child_id)) =
+            self.insert_recursive(child_page_id, key, value)?
+        {
+            let mut bp = self.buffer_pool.lock().unwrap();
+            let frame_id = bp.pin_page(current_page_id)?;
+            let index_page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
+
+            let target_slot = match index_page.binary_search_key(&promoted_key[..], |b| b) {
+                Ok(idx) | Err(idx) => idx,
             };
 
-            bp.unpin_page(frame_id, false);
-            drop(bp); // release lock before recursing
-
-            if let Some((promoted_key, right_child_id)) =
-                self.insert_recursive(child_page_id, key, value)?
-            {
-                let mut bp = self.buffer_pool.lock().unwrap();
-                let frame_id = bp.pin_page(current_page_id)?;
-                let raw_page = bp.get_page_mut(frame_id);
-                let index_page = IndexPage::from_page_mut(raw_page);
-
-                let target_slot = match index_page.binary_search_key(&promoted_key[..], |b| b) {
-                    Ok(idx) => idx,
-                    Err(idx) => idx,
-                };
-
-                let right_bytes = right_child_id.to_le_bytes();
-                if index_page.insert_at(target_slot, &promoted_key, &right_bytes) {
-                    bp.unpin_page(frame_id, true);
-                    return Ok(None);
-                }
-
-                let (right_internal_id, right_frame_id) = bp.new_page()?;
-                let (raw_left, raw_right) = unsafe {
-                    let left_ptr = bp.get_page_mut(frame_id) as *mut _;
-                    let right_ptr = bp.get_page_mut(right_frame_id) as *mut _;
-                    (&mut *left_ptr, &mut *right_ptr)
-                };
-
-                let left_internal = IndexPage::from_page_mut(raw_left);
-                let right_internal = IndexPage::from_page_mut(raw_right);
-
-                right_internal.init(false, 0);
-
-                let parent_promoted_key = left_internal.split_into(right_internal);
-
-                if target_slot < left_internal.key_count() {
-                    left_internal.insert_at(target_slot, &promoted_key, &right_bytes);
-                } else if target_slot == left_internal.key_count() {
-                    left_internal.insert_at(target_slot, &promoted_key, &right_bytes);
-                } else {
-                    let r_slot = target_slot - left_internal.key_count() - 1;
-                    right_internal.insert_at(r_slot, &promoted_key, &right_bytes);
-                }
-
+            let right_bytes = right_child_id.to_le_bytes();
+            if index_page.insert_at(target_slot, &promoted_key, &right_bytes) {
                 bp.unpin_page(frame_id, true);
-                bp.unpin_page(right_frame_id, true);
-
-                return Ok(Some((parent_promoted_key, right_internal_id)));
+                return Ok(None);
             }
+
+            // Internal node full — split it too.
+            let (right_internal_id, right_frame_id) =
+                Self::alloc_page_locked(&mut self.free_head, &mut bp)?;
+            let (raw_left, raw_right) = unsafe {
+                let left_ptr = bp.get_page_mut(frame_id) as *mut _;
+                let right_ptr = bp.get_page_mut(right_frame_id) as *mut _;
+                (&mut *left_ptr, &mut *right_ptr)
+            };
+
+            let left_internal = IndexPage::from_page_mut(raw_left);
+            let right_internal = IndexPage::from_page_mut(raw_right);
+
+            right_internal.init(false, 0);
+
+            let parent_promoted_key = left_internal.split_into(right_internal);
+
+            if target_slot <= left_internal.key_count() {
+                left_internal.insert_at(target_slot, &promoted_key, &right_bytes);
+            } else {
+                let r_slot = target_slot - left_internal.key_count() - 1;
+                right_internal.insert_at(r_slot, &promoted_key, &right_bytes);
+            }
+
+            bp.unpin_page(frame_id, true);
+            bp.unpin_page(right_frame_id, true);
+            drop(bp);
+            self.persist_meta()?;
+
+            return Ok(Some((parent_promoted_key, right_internal_id)));
         }
 
         Ok(None)
     }
 
+    /// Public delete entry point. Handles root collapse after the
+    /// recursive delete leaves the root as an empty internal node.
     pub fn delete_public(&mut self, key: &[u8]) -> Result<bool, StorageError> {
         let result = self.delete(key)?;
         if let Some(root) = self.root_page_id {
-            let mut bp = self.buffer_pool.lock().unwrap();
-            let frame_id = bp.pin_page(root)?;
-            let page = IndexPage::from_page_ref(bp.get_page(frame_id));
-            let collapse = !page.is_leaf() && page.key_count() == 0;
-            let new_root = if collapse {
-                Some(page.next_page_id())
-            } else {
-                None
+            let (collapse, new_root) = {
+                let mut bp = self.buffer_pool.lock().unwrap();
+                let frame_id = bp.pin_page(root)?;
+                let page = IndexPage::from_page_ref(bp.get_page(frame_id));
+                let collapse = !page.is_leaf() && page.key_count() == 0;
+                let new_root = if collapse {
+                    Some(page.next_page_id())
+                } else {
+                    None
+                };
+                bp.unpin_page(frame_id, false);
+                (collapse, new_root)
             };
-            bp.unpin_page(frame_id, false);
-            if let Some(nr) = new_root {
-                drop(bp);
-                self.root_page_id = Some(nr);
-                self.persist_root()?;
+            if collapse {
+                let old_root = root;
+                self.root_page_id = new_root;
+                self.persist_meta()?;
+                self.free_page(old_root)?;
             }
         }
         Ok(result)
@@ -321,16 +339,13 @@ impl BPlusTreeIndex {
             Some(id) => id,
             None => return Ok(false),
         };
-        let (found, _) = self.delete_recursive(root, key, None)?;
+        let (found, _) = self.delete_recursive(root, key)?;
         Ok(found)
     }
 
-    fn delete_recursive(
-        &mut self,
-        page_id: u32,
-        key: &[u8],
-        parent_next: Option<u32>,
-    ) -> Result<(bool, bool), StorageError> {
+    /// Returns `(found, underflow)` — `underflow` tells the caller whether
+    /// this node dropped below `MIN_KEYS` and needs merge/redistribute.
+    fn delete_recursive(&mut self, page_id: u32, key: &[u8]) -> Result<(bool, bool), StorageError> {
         let mut bp = self.buffer_pool.lock().unwrap();
         let frame_id = bp.pin_page(page_id)?;
         let is_leaf = IndexPage::from_page_ref(bp.get_page(frame_id)).is_leaf();
@@ -346,7 +361,6 @@ impl BPlusTreeIndex {
             };
             let underflow = page.key_count() < MIN_KEYS;
             bp.unpin_page(frame_id, found);
-            let _ = parent_next;
             return Ok((found, underflow));
         }
 
@@ -363,7 +377,7 @@ impl BPlusTreeIndex {
         bp.unpin_page(frame_id, false);
         drop(bp);
 
-        let (found, child_underflow) = self.delete_recursive(child_id, key, None)?;
+        let (found, child_underflow) = self.delete_recursive(child_id, key)?;
 
         if child_underflow {
             self.fix_underflow(page_id, child_id)?;
@@ -377,6 +391,8 @@ impl BPlusTreeIndex {
         Ok((found, underflow))
     }
 
+    /// Rebalances `child_id` under `parent_id`: borrow from a sibling with
+    /// spare keys, else merge with one and free the emptied page.
     fn fix_underflow(&mut self, parent_id: u32, child_id: u32) -> Result<(), StorageError> {
         let mut bp = self.buffer_pool.lock().unwrap();
         let parent_frame = bp.pin_page(parent_id)?;
@@ -417,7 +433,7 @@ impl BPlusTreeIndex {
         };
         bp.unpin_page(parent_frame, false);
 
-        // Try borrow from right sibling first, else left, else merge.
+        // Try borrowing from the right sibling first.
         if let Some(right_id) = right_sib {
             let child_frame = bp.pin_page(child_id)?;
             let right_frame = bp.pin_page(right_id)?;
@@ -443,7 +459,7 @@ impl BPlusTreeIndex {
                 return Ok(());
             }
 
-            // Merge child + right into child, drop right, remove separator from parent.
+            // No spare keys — merge child + right into child, free right.
             let (raw_c, raw_r) = unsafe {
                 let c = bp.get_page_mut(child_frame) as *mut _;
                 let r = bp.get_page_mut(right_frame) as *mut _;
@@ -468,9 +484,14 @@ impl BPlusTreeIndex {
                 parent.remove_at(slot);
             }
             bp.unpin_page(parent_frame, true);
+
+            Self::free_page_locked(&mut self.free_head, &mut bp, right_id);
+            drop(bp);
+            self.persist_meta()?;
             return Ok(());
         }
 
+        // No right sibling — try the left one.
         if let Some(left_id) = left_sib {
             let child_frame = bp.pin_page(child_id)?;
             let left_frame = bp.pin_page(left_id)?;
@@ -497,7 +518,7 @@ impl BPlusTreeIndex {
                 return Ok(());
             }
 
-            // Merge left + child into left, drop child.
+            // No spare keys — merge left + child into left, free child.
             let (raw_l, raw_c) = unsafe {
                 let l = bp.get_page_mut(left_frame) as *mut _;
                 let c = bp.get_page_mut(child_frame) as *mut _;
@@ -523,8 +544,57 @@ impl BPlusTreeIndex {
                 parent.remove_at(remove_slot);
             }
             bp.unpin_page(parent_frame, true);
+
+            Self::free_page_locked(&mut self.free_head, &mut bp, child_id);
+            drop(bp);
+            self.persist_meta()?;
         }
 
         Ok(())
+    }
+
+    // ── Free-list — unlocked (self-locking) variants for standalone use ──
+
+    /// Grabs a page — reuses a freed one if available, else allocates fresh.
+    /// Locks the pool itself; do not call while already holding a lock.
+    fn alloc_page(&mut self) -> Result<(u32, usize), StorageError> {
+        let mut bp = self.buffer_pool.lock().unwrap();
+        Self::alloc_page_locked(&mut self.free_head, &mut bp)
+    }
+
+    /// Returns `page_id` to the free list. Locks the pool itself; do not
+    /// call while already holding a lock.
+    fn free_page(&mut self, page_id: u32) -> Result<(), StorageError> {
+        let mut bp = self.buffer_pool.lock().unwrap();
+        Self::free_page_locked(&mut self.free_head, &mut bp, page_id);
+        drop(bp);
+        self.persist_meta()
+    }
+
+    // ── Free-list — locked variants, take an already-held guard ──
+    // Use these anywhere the caller is already inside a `bp.lock()`
+    // section, to avoid re-locking the (non-reentrant) mutex.
+
+    fn alloc_page_locked(
+        free_head: &mut u32,
+        bp: &mut BufferPool,
+    ) -> Result<(u32, usize), StorageError> {
+        if *free_head != NIL {
+            let page_id = *free_head;
+            let frame_id = bp.pin_page(page_id)?;
+            let next_free = IndexPage::from_page_ref(bp.get_page(frame_id)).read_next_free();
+            *free_head = next_free;
+            return Ok((page_id, frame_id));
+        }
+        bp.new_page()
+    }
+
+    fn free_page_locked(free_head: &mut u32, bp: &mut BufferPool, page_id: u32) {
+        if let Ok(frame_id) = bp.pin_page(page_id) {
+            let page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
+            page.write_next_free(*free_head);
+            bp.unpin_page(frame_id, true);
+            *free_head = page_id;
+        }
     }
 }
