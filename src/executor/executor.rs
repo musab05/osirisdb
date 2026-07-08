@@ -152,29 +152,29 @@ impl Executor {
         index_name: Symbol,
         is_unique: bool,
     ) -> Result<&mut BPlusTreeIndex, ExecutionError> {
-        match self.table_indexes.entry((db, schema, index_name)) {
-            Entry::Occupied(entry) => Ok(entry.into_mut()),
-            Entry::Vacant(entry) => {
-                let db_name = self.catalog.interner.resolve(db);
-                let schema_name = self.catalog.interner.resolve(schema);
-                let index_name = self.catalog.interner.resolve(index_name);
+        let key = (db, schema, index_name);
 
-                let storage = self.storage.as_ref().ok_or_else(|| {
-                    ExecutionError::Storage("storage engine not initialized".to_string())
-                })?;
+        if !self.table_indexes.contains_key(&key) {
+            let db_name = self.catalog.interner.resolve(db);
+            let schema_name = self.catalog.interner.resolve(schema);
+            let idx_name_str = self.catalog.interner.resolve(index_name);
 
-                // Open the specific .idx file
-                let index = BPlusTreeIndex::open_standalone(
-                    storage,
-                    db_name,
-                    schema_name,
-                    index_name,
-                    is_unique,
-                )
-                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+            let storage = self.storage.as_ref().ok_or_else(|| {
+                ExecutionError::Storage("storage engine not initialized".to_string())
+            })?;
 
-                Ok(entry.insert(index))
-            }
+            let index = BPlusTreeIndex::open_standalone(
+                storage,
+                db_name,
+                schema_name,
+                idx_name_str,
+                is_unique,
+            )
+            .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+
+            self.table_indexes.insert(key, index);
         }
+
+        Ok(self.table_indexes.get_mut(&key).unwrap())
     }
 }

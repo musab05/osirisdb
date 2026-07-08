@@ -28,7 +28,7 @@ fn main() {
            VALUES (2, 'Bob', 'bob@example.com'); \
            INSERT INTO myschema.users (id, name, email)
            VALUES (3, 'Charlie', 'charlie@example.com');";
-    let sql = "SELECT * FROM myschema.users;";
+    // let sql = "SELECT * FROM myschema.users;";
 
     // ── 1. Parse ──────────────────────────────────────────────────────────────
     let mut parser = Parser::new(sql);

@@ -2,9 +2,22 @@ use crate::{
     ast::{TableConstraint, Value},
     binder::bound::BoundInsertStmt,
     catalog::objects::ColumnEntry,
+    common::symbol::Symbol,
     executor::{ExecutionError, ExecutionResult, Executor},
     storage::{record_id::RecordId, tuple::serialize_tuple},
 };
+
+/// Encoded index keys computed once during validation, reused during
+/// the write pass so we don't re-serialize the same values twice.
+struct PendingInsert {
+    row: Vec<Value>,
+
+    // (col_idx, col_name, key_bytes)
+    single_col_keys: Vec<(usize, Symbol, Vec<u8>)>,
+
+    // (constraint_name, key_bytes)
+    composite_keys: Vec<(Symbol, Vec<u8>)>,
+}
 
 impl Executor {
     /// Executes an `INSERT INTO` statement.
@@ -46,47 +59,34 @@ impl Executor {
         let table = stmt.table;
         let rows = stmt.rows;
 
-        // Look up the table's schema — needed by serialize_tuple inside
-        // TableHeap::insert_tuple. Clone the columns so this doesn't hold
-        // a borrow on self.catalog while self.table_heaps is borrowed
-        // mutably below.
         let table_entry = self.catalog.get_table(db, schema, table)?;
         let columns = table_entry.columns.clone();
         let constraints = table_entry.constraints.clone();
 
         let row_count = rows.len();
 
-        // Memory-only mode (no Storage configured) skips persistence
-        // entirely, matching the DDL executors' convention.
         if self.storage.is_some() {
             let key = (db, schema, table);
-
-            // 1. Ensure the main table heap is open and cached
             self.get_or_open_table_heap(db, schema, table)?;
 
-            // Cache for tracking duplicate entries contained within this exact input batch.
-            let mut pending_rows: Vec<Vec<Value>> = Vec::new();
+            // ── Pass A: validate + build encoded keys once ──
+            let mut prepared: Vec<PendingInsert> = Vec::with_capacity(rows.len());
 
             for row in &rows {
-                // ── A. Check Single-Column Primary Key and Unique Constraints ──
+                let mut single_col_keys = Vec::new();
+
                 for (col_idx, col) in columns.iter().enumerate() {
                     if (col.is_primary_key || col.is_unique) && !matches!(row[col_idx], Value::Null)
                     {
-                        let value_to_check = &row[col_idx];
-
-                        // Build a single-column mini-schema to properly serialize the key bytes
                         let col_schema = vec![col.clone()];
                         let encoded_key = serialize_tuple(
                             &col_schema,
-                            &[value_to_check.clone()],
+                            &[row[col_idx].clone()],
                             &self.catalog.interner,
                         )
                         .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 
-                        // Dynamically look up or open the index associated with this column name
                         let index = self.get_or_open_index(db, schema, col.name, true)?;
-
-                        // Execute O(log N) binary search on disk frame memory instead of scanning table heap
                         if index
                             .lookup(&encoded_key)
                             .map_err(|e| ExecutionError::Storage(e.to_string()))?
@@ -98,175 +98,122 @@ impl Executor {
                             )));
                         }
 
-                        // Still validate against rows currently sitting in our uncommitted statement batch
-                        for pending_row in &pending_rows {
-                            if &pending_row[col_idx] == value_to_check {
+                        for prev in &prepared {
+                            if prev
+                                .single_col_keys
+                                .iter()
+                                .any(|(idx, _, k)| *idx == col_idx && k == &encoded_key)
+                            {
                                 return Err(ExecutionError::Storage(format!(
                                     "duplicate key value violates unique/primary key constraint for column '{}' (batch duplicate)",
                                     self.catalog.interner.resolve(col.name)
                                 )));
                             }
                         }
+
+                        single_col_keys.push((col_idx, col.name, encoded_key));
                     }
                 }
 
-                // ── B. Check Composite/Table-Level Unique/Primary Key Constraints ──
+                let mut composite_keys = Vec::new();
+
                 for constraint in &constraints {
-                    match constraint {
-                        TableConstraint::PrimaryKey {
-                            name,
-                            columns: pk_cols,
+                    if let TableConstraint::PrimaryKey {
+                        name,
+                        columns: pk_cols,
+                    }
+                    | TableConstraint::Unique {
+                        name,
+                        columns: pk_cols,
+                    } = constraint
+                    {
+                        let col_indices: Vec<usize> = pk_cols
+                            .iter()
+                            .map(|col_name| {
+                                columns
+                                    .iter()
+                                    .position(|c| &c.name == col_name)
+                                    .expect("column validated at bind time")
+                            })
+                            .collect();
+
+                        let new_key: Vec<Value> =
+                            col_indices.iter().map(|&idx| row[idx].clone()).collect();
+
+                        if new_key.iter().any(|v| matches!(v, Value::Null)) {
+                            continue;
                         }
-                        | TableConstraint::Unique {
-                            name,
-                            columns: pk_cols,
-                        } => {
-                            let col_indices: Vec<usize> = pk_cols
+
+                        let composite_schema: Vec<ColumnEntry> = col_indices
+                            .iter()
+                            .map(|&idx| columns[idx].clone())
+                            .collect();
+
+                        let encoded_composite_key =
+                            serialize_tuple(&composite_schema, &new_key, &self.catalog.interner)
+                                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+
+                        let idx_name = name.expect("composite constraint must be named");
+                        let index = self.get_or_open_index(db, schema, idx_name, true)?;
+
+                        if index
+                            .lookup(&encoded_composite_key)
+                            .map_err(|e| ExecutionError::Storage(e.to_string()))?
+                            .is_some()
+                        {
+                            return Err(ExecutionError::Storage(
+                            "duplicate key value violates composite unique/primary key constraint".to_string(),
+                        ));
+                        }
+
+                        for prev in &prepared {
+                            if prev
+                                .composite_keys
                                 .iter()
-                                .map(|col_name| {
-                                    columns
-                                        .iter()
-                                        .position(|c| &c.name == col_name)
-                                        .expect("column validated at bind time")
-                                })
-                                .collect();
-
-                            let new_key: Vec<Value> =
-                                col_indices.iter().map(|&idx| row[idx].clone()).collect();
-
-                            // Skip if any column in the unique key is NULL (standard SQL behavior)
-                            if new_key.iter().any(|v| matches!(v, Value::Null)) {
-                                continue;
-                            }
-
-                            // Building the composite key constraint structural schema matching column types
-                            let composite_schema: Vec<ColumnEntry> = col_indices
-                                .iter()
-                                .map(|&idx| columns[idx].clone())
-                                .collect();
-
-                            let encoded_composite_key = serialize_tuple(
-                                &composite_schema,
-                                &new_key,
-                                &self.catalog.interner,
-                            )
-                            .map_err(|e| ExecutionError::Storage(e.to_string()))?;
-
-                            // Fetch the index using the constraint's internal Symbol name tracking key
-                            let index = self.get_or_open_index(
-                                db,
-                                schema,
-                                name.expect("composite constraint must be named"),
-                                true,
-                            )?;
-                            if index
-                                .lookup(&encoded_composite_key)
-                                .map_err(|e| ExecutionError::Storage(e.to_string()))?
-                                .is_some()
+                                .any(|(n, k)| *n == idx_name && k == &encoded_composite_key)
                             {
                                 return Err(ExecutionError::Storage(
-                                    "duplicate key value violates composite unique/primary key constraint".to_string()
-                                ));
-                            }
-
-                            // Check against pending rows in the same transaction batch
-                            for pending_row in &pending_rows {
-                                let pending_key: Vec<&Value> =
-                                    col_indices.iter().map(|&idx| &pending_row[idx]).collect();
-                                let current_refs: Vec<&Value> = new_key.iter().collect();
-                                if current_refs == pending_key {
-                                    return Err(ExecutionError::Storage(
-                                        "duplicate key value violates composite unique/primary key constraint (batch duplicate)".to_string()
-                                    ));
-                                }
+                                "duplicate key value violates composite unique/primary key constraint (batch duplicate)".to_string(),
+                            ));
                             }
                         }
-                        _ => {}
+
+                        composite_keys.push((idx_name, encoded_composite_key));
                     }
                 }
-                pending_rows.push(row.clone());
+
+                prepared.push(PendingInsert {
+                    row: row.clone(),
+                    single_col_keys,
+                    composite_keys,
+                });
             }
 
-            // ── C. All Constraints Passed: Perform Persistent Writes & Index Synchronization ──
-            for row in &rows {
+            // ── Pass B: write heap + indexes, reusing keys computed above ──
+            for pending in &prepared {
                 let table_heap = self
                     .table_heaps
                     .get_mut(&key)
                     .expect("table heap is cached");
 
-                // Write the tuple to disk and retrieve its updated location parameters
                 let (page_id, slot_id) = table_heap
-                    .insert_tuple(&columns, row, &self.catalog.interner)
+                    .insert_tuple(&columns, &pending.row, &self.catalog.interner)
                     .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 
                 let new_record_id = RecordId { page_id, slot_id };
 
-                // Update single-column indexes with the new record location coordinates
-                for (col_idx, col) in columns.iter().enumerate() {
-                    if col.is_primary_key || col.is_unique {
-                        let col_schema = vec![col.clone()];
-                        let encoded_key = serialize_tuple(
-                            &col_schema,
-                            &[row[col_idx].clone()],
-                            &self.catalog.interner,
-                        )
+                for (_col_idx, col_name, encoded_key) in &pending.single_col_keys {
+                    let index = self.get_or_open_index(db, schema, *col_name, true)?;
+                    index
+                        .insert(encoded_key, new_record_id)
                         .map_err(|e| ExecutionError::Storage(e.to_string()))?;
-
-                        let index = self.get_or_open_index(db, schema, col.name, true)?;
-                        index
-                            .insert(&encoded_key, new_record_id)
-                            .map_err(|e| ExecutionError::Storage(e.to_string()))?;
-                    }
                 }
 
-                // Update composite table-level constraints with the new record location coordinates
-                for constraint in &constraints {
-                    match constraint {
-                        TableConstraint::PrimaryKey {
-                            columns: pk_cols,
-                            name,
-                        }
-                        | TableConstraint::Unique {
-                            columns: pk_cols,
-                            name,
-                        } => {
-                            let col_indices: Vec<usize> = pk_cols
-                                .iter()
-                                .map(|col_name| {
-                                    columns.iter().position(|c| &c.name == col_name).unwrap()
-                                })
-                                .collect();
-
-                            let composite_schema: Vec<ColumnEntry> = col_indices
-                                .iter()
-                                .map(|&idx| columns[idx].clone())
-                                .collect();
-
-                            let key_vals: Vec<Value> =
-                                col_indices.iter().map(|&idx| row[idx].clone()).collect();
-                            if key_vals.iter().any(|v| matches!(v, Value::Null)) {
-                                continue;
-                            }
-
-                            let encoded_composite_key = serialize_tuple(
-                                &composite_schema,
-                                &key_vals,
-                                &self.catalog.interner,
-                            )
-                            .map_err(|e| ExecutionError::Storage(e.to_string()))?;
-
-                            let index = self.get_or_open_index(
-                                db,
-                                schema,
-                                name.expect("composite constraint must be named"),
-                                true,
-                            )?;
-                            index
-                                .insert(&encoded_composite_key, new_record_id)
-                                .map_err(|e| ExecutionError::Storage(e.to_string()))?;
-                        }
-                        _ => {}
-                    }
+                for (idx_name, encoded_key) in &pending.composite_keys {
+                    let index = self.get_or_open_index(db, schema, *idx_name, true)?;
+                    index
+                        .insert(encoded_key, new_record_id)
+                        .map_err(|e| ExecutionError::Storage(e.to_string()))?;
                 }
             }
         }
