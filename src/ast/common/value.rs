@@ -1,7 +1,7 @@
 use crate::common::symbol::Symbol;
 
 /// Represents a primitive literal value in an SQL statement.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Value {
     /// An integer literal (e.g., `42`, `-7`).
     Int(i64),

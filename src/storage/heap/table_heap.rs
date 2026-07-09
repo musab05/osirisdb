@@ -6,6 +6,7 @@ use crate::{
     common::interner::Interner,
     storage::{
         BufferPool, HeapFile, Storage, StorageError,
+        record_id::RecordId,
         tuple::{deserialize_tuple, serialize_tuple},
     },
 };
@@ -106,5 +107,22 @@ impl TableHeap {
 
     pub fn from_buffer_pool(bp: Arc<Mutex<BufferPool>>) -> Self {
         Self { buffer_pool: bp }
+    }
+
+    pub fn get_tuple(
+        &mut self,
+        rid: RecordId,
+        schema: &[ColumnEntry],
+        interner: &Interner,
+    ) -> Result<Option<Vec<Value>>, StorageError> {
+        let mut bp = self.buffer_pool.lock().unwrap();
+        let frame_id = bp.pin_page(rid.page_id)?;
+        let page = bp.get_page(frame_id);
+        let result = match page.get_tuple(rid.slot_id) {
+            Some(bytes) => Some(deserialize_tuple(schema, bytes, interner)?),
+            None => None,
+        };
+        bp.unpin_page(frame_id, false);
+        Ok(result)
     }
 }

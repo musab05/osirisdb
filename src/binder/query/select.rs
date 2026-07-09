@@ -1,6 +1,10 @@
 use crate::{
-    ast::{SelectItem, SelectStmt, TableRef},
-    binder::{BindError, Binder, bound::BoundSelectStmt},
+    ast::{BinOpKind, Expr, SelectItem, SelectStmt, TableRef},
+    binder::{
+        BindError, Binder,
+        bound::{BoundSelectStmt, select::BoundPredicate},
+    },
+    catalog::objects::ColumnEntry,
     common::symbol::Symbol,
 };
 
@@ -27,7 +31,6 @@ impl<'c> Binder<'c> {
         // Reject anything outside SELECT * FROM single_table scope.
         if stmt.modifier.is_some()
             || !stmt.joins.is_empty()
-            || stmt.where_.is_some()
             || !stmt.group_by.is_empty()
             || stmt.having.is_some()
             || !stmt.order_by.is_empty()
@@ -69,11 +72,52 @@ impl<'c> Binder<'c> {
 
         let columns = table_entry.columns.clone();
 
+        // ── WHERE: only `column = literal` is supported ──
+        let predicate = match stmt.where_ {
+            None => None,
+            Some(expr) => Some(Self::bind_equality_predicate(expr, &columns)?),
+        };
+
         Ok(BoundSelectStmt {
             db,
             schema,
             table,
             columns,
+            predicate,
+        })
+    }
+
+    /// Binds `WHERE col = literal` (or `literal = col`) into a `BoundPredicate`.
+    /// Any other shape — range comparisons, AND/OR, function calls, a
+    /// column on both sides, etc. — is rejected. This is deliberately
+    /// narrow: it exists to enable index point-lookups, not general
+    /// predicate evaluation (there's no post-filter step yet).
+    fn bind_equality_predicate(
+        expr: Expr,
+        columns: &[ColumnEntry],
+    ) -> Result<BoundPredicate, BindError> {
+        let (col_expr, val_expr) = match expr {
+            Expr::BinOp {
+                op: BinOpKind::Eq,
+                lhs,
+                rhs,
+            } => match (*lhs, *rhs) {
+                (Expr::Column { name, .. }, Expr::Literal(v)) => (name, v),
+                (Expr::Literal(v), Expr::Column { name, .. }) => (name, v),
+                _ => return Err(BindError::UnsupportedSelect),
+            },
+            _ => return Err(BindError::UnsupportedSelect),
+        };
+
+        let (column_idx, column_entry) = columns
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.name == col_expr)
+            .ok_or(BindError::UnsupportedSelect)?; // TODO: proper ColumnNotFound variant
+        Ok(BoundPredicate {
+            column_idx,
+            column_name: column_entry.name,
+            value: val_expr,
         })
     }
 }
