@@ -66,8 +66,7 @@ impl Executor {
         let row_count = rows.len();
 
         if self.storage.is_some() {
-            let key = (db, schema, table);
-            self.get_or_open_table_heap(db, schema, table)?;
+            self.get_table_heap(db, schema, table)?;
 
             // ── Pass A: validate + build encoded keys once ──
             let mut prepared: Vec<PendingInsert> = Vec::with_capacity(rows.len());
@@ -86,8 +85,10 @@ impl Executor {
                         )
                         .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 
-                        let index = self.get_or_open_index(db, schema, col.name, true)?;
-                        if index
+                        let index_handle = self.get_index(db, schema, table, col.name)?;
+                        if index_handle
+                            .lock()
+                            .unwrap()
                             .lookup(&encoded_key)
                             .map_err(|e| ExecutionError::Storage(e.to_string()))?
                             .is_some()
@@ -154,9 +155,11 @@ impl Executor {
                                 .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 
                         let idx_name = name.expect("composite constraint must be named");
-                        let index = self.get_or_open_index(db, schema, idx_name, true)?;
+                        let index_handle = self.get_index(db, schema, table, idx_name)?;
 
-                        if index
+                        if index_handle
+                            .lock()
+                            .unwrap()
                             .lookup(&encoded_composite_key)
                             .map_err(|e| ExecutionError::Storage(e.to_string()))?
                             .is_some()
@@ -189,29 +192,32 @@ impl Executor {
                 });
             }
 
+            let heap_handle = self.get_table_heap(db, schema, table)?;
+
             // ── Pass B: write heap + indexes, reusing keys computed above ──
             for pending in &prepared {
-                let table_heap = self
-                    .table_heaps
-                    .get_mut(&key)
-                    .expect("table heap is cached");
-
-                let (page_id, slot_id) = table_heap
-                    .insert_tuple(&columns, &pending.row, &self.catalog.interner)
-                    .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+                let (page_id, slot_id) = {
+                    let mut heap = heap_handle.lock().unwrap();
+                    heap.insert_tuple(&columns, &pending.row, &self.catalog.interner)
+                        .map_err(|e| ExecutionError::Storage(e.to_string()))?
+                };
 
                 let new_record_id = RecordId { page_id, slot_id };
 
                 for (_col_idx, col_name, encoded_key) in &pending.single_col_keys {
-                    let index = self.get_or_open_index(db, schema, *col_name, true)?;
-                    index
+                    let index_handle = self.get_index(db, schema, table, *col_name)?;
+                    index_handle
+                        .lock()
+                        .unwrap()
                         .insert(encoded_key, new_record_id)
                         .map_err(|e| ExecutionError::Storage(e.to_string()))?;
                 }
 
                 for (idx_name, encoded_key) in &pending.composite_keys {
-                    let index = self.get_or_open_index(db, schema, *idx_name, true)?;
-                    index
+                    let index_handle = self.get_index(db, schema, table, *idx_name)?;
+                    index_handle
+                        .lock()
+                        .unwrap()
                         .insert(encoded_key, new_record_id)
                         .map_err(|e| ExecutionError::Storage(e.to_string()))?;
                 }

@@ -130,11 +130,13 @@ impl<'c> Binder<'c> {
 
         // 4. Process table-level constraints
         let mut table_constraints = Vec::new();
-        for constraint in stmt.constraints {
-            match &constraint {
-                TableConstraint::PrimaryKey { columns: cols, .. } => {
-                    // Every referenced column must exist on this table
-                    for col_name in cols {
+        for mut constraint in stmt.constraints {
+            match &mut constraint {
+                TableConstraint::PrimaryKey {
+                    name: cname,
+                    columns: cols,
+                } => {
+                    for col_name in cols.iter() {
                         if !columns.iter().any(|c| c.name == *col_name) {
                             return Err(BindError::ColumnNotFound(*col_name));
                         }
@@ -146,9 +148,6 @@ impl<'c> Binder<'c> {
                     has_primary_key = true;
 
                     if cols.len() == 1 {
-                        // Single-column PRIMARY KEY (col) — fold into the
-                        // matching ColumnEntry rather than keeping it as a
-                        // separate table-level constraint.
                         let col_name = cols[0];
                         let entry = columns
                             .iter_mut()
@@ -157,10 +156,7 @@ impl<'c> Binder<'c> {
                         entry.is_primary_key = true;
                         entry.nullable = false;
                     } else {
-                        // Composite PRIMARY KEY — mark each participating
-                        // column and keep the constraint for the full
-                        // composite definition.
-                        for col_name in cols {
+                        for col_name in cols.iter() {
                             let entry = columns
                                 .iter_mut()
                                 .find(|c| c.name == *col_name)
@@ -168,20 +164,26 @@ impl<'c> Binder<'c> {
                             entry.is_primary_key = true;
                             entry.nullable = false;
                         }
+
+                        if cname.is_none() {
+                            let generated = format!("{}_pkey", self.catalog.interner.resolve(name));
+                            *cname = Some(self.catalog.interner.intern(&generated));
+                        }
+
                         table_constraints.push(constraint);
                     }
                 }
-
-                TableConstraint::Unique { columns: cols, .. } => {
-                    for col_name in cols {
+                TableConstraint::Unique {
+                    name: cname,
+                    columns: cols,
+                } => {
+                    for col_name in cols.iter() {
                         if !columns.iter().any(|c| c.name == *col_name) {
                             return Err(BindError::ColumnNotFound(*col_name));
                         }
                     }
 
                     if cols.len() == 1 {
-                        // Single-column UNIQUE (col) — fold into the
-                        // matching ColumnEntry.
                         let col_name = cols[0];
                         let entry = columns
                             .iter_mut()
@@ -189,35 +191,31 @@ impl<'c> Binder<'c> {
                             .expect("column existence checked above");
                         entry.is_unique = true;
                     } else {
-                        // Composite UNIQUE spans multiple columns — cannot
-                        // be represented by a single-column flag, keep as
-                        // a table-level constraint.
+                        if cname.is_none() {
+                            let col_part = cols
+                                .iter()
+                                .map(|c| self.catalog.interner.resolve(*c))
+                                .collect::<Vec<_>>()
+                                .join("_");
+                            let generated =
+                                format!("{}_{}_key", self.catalog.interner.resolve(name), col_part);
+                            *cname = Some(self.catalog.interner.intern(&generated));
+                        }
+
                         table_constraints.push(constraint);
                     }
                 }
 
-                // TODO: CHECK requires an expression evaluator to enforce —
-                // referenced columns aren't validated yet since Expr column
-                // references aren't resolved at this layer. Carried through
-                // unchanged for now.
                 TableConstraint::Check { .. } => {
                     table_constraints.push(constraint);
                 }
 
-                TableConstraint::ForeignKey {
-                    columns: cols,
-                    referred_columns: _,
-                    ..
-                } => {
-                    // Local columns must exist on this table.
-                    for col_name in cols {
+                TableConstraint::ForeignKey { columns: cols, .. } => {
+                    for col_name in cols.iter() {
                         if !columns.iter().any(|c| c.name == *col_name) {
                             return Err(BindError::ColumnNotFound(*col_name));
                         }
                     }
-                    // TODO: validating `foreign_table` exists and
-                    // `referred_columns` exist on it requires cross-table
-                    // catalog lookups — deferred. Carried through unchanged.
                     table_constraints.push(constraint);
                 }
             }

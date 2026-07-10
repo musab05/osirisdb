@@ -307,10 +307,11 @@ fn test_bind_table_constraint_composite_pk() {
 
     // The table constraint should NOT be folded since it is composite
     assert_eq!(bound.constraints.len(), 1);
+    let expected_name = binder.catalog.interner.intern("mytable_pkey");
     assert_eq!(
         bound.constraints[0],
         TableConstraint::PrimaryKey {
-            name: None,
+            name: Some(expected_name),
             columns: vec![s[3], s[4]],
         }
     );

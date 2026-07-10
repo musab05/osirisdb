@@ -1,6 +1,6 @@
 use std::{
-    collections::{HashMap, hash_map::Entry},
     iter,
+    sync::{Arc, Mutex},
 };
 
 use crate::{
@@ -48,12 +48,6 @@ pub struct Executor {
     /// don't need disk I/O). `Some` in production.
     pub storage: Option<Storage>,
 
-    /// Table Heap so that we dont have to repone Heap every Insert
-    pub table_heaps: HashMap<(Symbol, Symbol, Symbol), TableHeap>,
-
-    /// Table Index
-    pub table_indexes: HashMap<(Symbol, Symbol, Symbol), BPlusTreeIndex>,
-
     /// System catalog
     pub system_catalog: Option<SystemCatalog>,
 }
@@ -99,8 +93,6 @@ impl Executor {
             catalog,
             session_user,
             storage: Some(storage),
-            table_heaps: HashMap::new(),
-            table_indexes: HashMap::new(),
             system_catalog: Some(system_catalog),
         }
     }
@@ -114,67 +106,44 @@ impl Executor {
             catalog,
             session_user,
             storage: None,
-            table_heaps: HashMap::new(),
-            table_indexes: HashMap::new(),
             system_catalog: None,
         }
     }
 
-    pub fn get_or_open_table_heap(
+    /// Returns the table's shared heap handle. Table must already exist
+    /// (created via `CREATE TABLE`, which is the only place a `TableHeap`
+    /// is ever opened) — this never opens a file itself.
+    pub fn get_table_heap(
         &mut self,
         db: Symbol,
         schema: Symbol,
         table: Symbol,
-    ) -> Result<&mut TableHeap, ExecutionError> {
-        match self.table_heaps.entry((db, schema, table)) {
-            Entry::Occupied(entry) => Ok(entry.into_mut()),
-            Entry::Vacant(entry) => {
-                let db_name = self.catalog.interner.resolve(db);
-                let schema_name = self.catalog.interner.resolve(schema);
-                let table_name = self.catalog.interner.resolve(table);
-
-                let storage = self.storage.as_ref().ok_or_else(|| {
-                    ExecutionError::Storage("storage engine not initialized".to_string())
-                })?;
-
-                let heap = TableHeap::open(storage, db_name, schema_name, table_name)
-                    .map_err(|e| ExecutionError::Storage(e.to_string()))?;
-
-                Ok(entry.insert(heap))
-            }
-        }
+    ) -> Result<Arc<Mutex<TableHeap>>, ExecutionError> {
+        let entry = self.catalog.get_table(db, schema, table)?;
+        entry
+            .heap
+            .clone()
+            .ok_or_else(|| ExecutionError::Storage("table heap not initialized".to_string()))
     }
 
-    pub fn get_or_open_index(
+    /// Returns the shared index handle for `index_key` (a column name for
+    /// single-column PK/UNIQUE, or a constraint name for composite ones —
+    /// same key the catalog used when building `TableEntry.indexes` at
+    /// `CREATE TABLE` time). Returns an error if no such index exists —
+    /// callers should only call this for columns/constraints already
+    /// confirmed indexed.
+    pub fn get_index(
         &mut self,
         db: Symbol,
         schema: Symbol,
-        index_name: Symbol,
-        is_unique: bool,
-    ) -> Result<&mut BPlusTreeIndex, ExecutionError> {
-        let key = (db, schema, index_name);
-
-        if !self.table_indexes.contains_key(&key) {
-            let db_name = self.catalog.interner.resolve(db);
-            let schema_name = self.catalog.interner.resolve(schema);
-            let idx_name_str = self.catalog.interner.resolve(index_name);
-
-            let storage = self.storage.as_ref().ok_or_else(|| {
-                ExecutionError::Storage("storage engine not initialized".to_string())
-            })?;
-
-            let index = BPlusTreeIndex::open_standalone(
-                storage,
-                db_name,
-                schema_name,
-                idx_name_str,
-                is_unique,
-            )
-            .map_err(|e| ExecutionError::Storage(e.to_string()))?;
-
-            self.table_indexes.insert(key, index);
-        }
-
-        Ok(self.table_indexes.get_mut(&key).unwrap())
+        table: Symbol,
+        index_key: Symbol,
+    ) -> Result<Arc<Mutex<BPlusTreeIndex>>, ExecutionError> {
+        let entry = self.catalog.get_table(db, schema, table)?;
+        entry
+            .indexes
+            .get(&index_key)
+            .cloned()
+            .ok_or_else(|| ExecutionError::Storage("index not found for column".to_string()))
     }
 }

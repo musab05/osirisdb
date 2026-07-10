@@ -42,7 +42,7 @@ fn main() {
     let interner = parser.interner;
 
     // ── 2. Setup catalog + storage + executor ─────────────────────────────────
-    let mut catalog = CatalogManager::new(interner);
+    let catalog = CatalogManager::new(interner);
     let session_user = catalog.interner.intern("postgres");
 
     // NOTE: there is no connection/session layer yet, so "current database"

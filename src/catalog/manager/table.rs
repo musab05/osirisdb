@@ -54,23 +54,57 @@ impl CatalogManager {
         let schema_name = self.interner.resolve(schema);
         let table_name = self.interner.resolve(name);
 
-        let heap = TableHeap::open(storage, db_name, schema_name, table_name)
+        // Table heap — one BufferPool over table.dat. This is the ONLY
+        // place a TableHeap for this table is ever opened; the executor
+        // must borrow this handle, never open its own.
+        let heap = TableHeap::open(storage, &db_name, &schema_name, &table_name)
             .map_err(|e| CatalogError::StorageError(e.to_string()))?;
-        let pool_handle = heap.buffer_pool_handle();
+
         let heap = Arc::new(Mutex::new(heap));
 
-        let mut indexes = HashMap::new();
+        let mut indexes: HashMap<Symbol, Arc<Mutex<BPlusTreeIndex>>> = HashMap::new();
+
+        // Single-column PK/UNIQUE — each gets its OWN file + OWN pool.
+        // Never shares the heap's pool (different physical files).
+        // Keyed by column name symbol — matches how the executor already
+        // looks these up (col.name), no separate naming scheme needed.
         for col in &columns {
             if col.is_primary_key || col.is_unique {
-                let idx_symbol_name =
-                    format!("{}_{}_idx", table_name, self.interner.resolve(col.name));
-                let index = BPlusTreeIndex::open(
-                    col.is_primary_key || col.is_unique,
-                    Arc::clone(&pool_handle),
+                let col_name_str = self.interner.resolve(col.name);
+                let file_stem = format!("{}_{}", table_name, col_name_str);
+                let index = BPlusTreeIndex::open_standalone(
+                    storage,
+                    &db_name,
+                    &schema_name,
+                    &file_stem,
+                    true,
                 )
                 .map_err(|e| CatalogError::StorageError(e.to_string()))?;
-                let idx_name = self.interner.intern(&idx_symbol_name);
-                indexes.insert(idx_name, Arc::new(Mutex::new(index)));
+                indexes.insert(col.name, Arc::new(Mutex::new(index)));
+            }
+        }
+
+        // Composite PK/UNIQUE — keyed by constraint name symbol (binder
+        // guarantees this is always Some by the time it gets here).
+        for constraint in &constraints {
+            if let TableConstraint::PrimaryKey {
+                name: Some(cname), ..
+            }
+            | TableConstraint::Unique {
+                name: Some(cname), ..
+            } = constraint
+            {
+                let cname_str = self.interner.resolve(*cname);
+                let file_stem = format!("{}_{}", table_name, cname_str);
+                let index = BPlusTreeIndex::open_standalone(
+                    storage,
+                    &db_name,
+                    &schema_name,
+                    &file_stem,
+                    true,
+                )
+                .map_err(|e| CatalogError::StorageError(e.to_string()))?;
+                indexes.insert(*cname, Arc::new(Mutex::new(index)));
             }
         }
 

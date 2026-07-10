@@ -12,40 +12,39 @@ impl Executor {
         let db = stmt.db;
         let schema = stmt.schema;
         let table = stmt.table;
-
         let columns = stmt.columns;
+        let predicate = stmt.predicate;
 
         if self.storage.is_none() {
             return Ok(ExecutionResult::Selected { rows: vec![] });
         }
 
         // ── Index path: WHERE col = literal on a PK/UNIQUE column ──
-        if let Some(pred) = &stmt.predicate {
+        if let Some(pred) = &predicate {
             let col = &columns[pred.column_idx];
             if col.is_primary_key || col.is_unique {
                 let col_schema = vec![col.clone()];
                 let encoded_key =
-                    serialize_tuple(&col_schema, &[pred.value], &self.catalog.interner)
+                    serialize_tuple(&col_schema, &[pred.value.clone()], &self.catalog.interner)
                         .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 
-                let index = self.get_or_open_index(db, schema, pred.column_name, true)?;
-                let record_id = index
+                let index_handle = self.get_index(db, schema, table, pred.column_name)?;
+                let record_id = index_handle
+                    .lock()
+                    .unwrap()
                     .lookup(&encoded_key)
                     .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 
                 let rows = match record_id {
                     None => vec![],
                     Some(rid) => {
-                        self.get_or_open_table_heap(db, schema, table)?;
-                        let table_heap = self
-                            .table_heaps
-                            .get_mut(&(db, schema, table))
-                            .expect("just opened");
-
-                        match table_heap
+                        let heap_handle = self.get_table_heap(db, schema, table)?;
+                        let row = heap_handle
+                            .lock()
+                            .unwrap()
                             .get_tuple(rid, &columns, &self.catalog.interner)
-                            .map_err(|e| ExecutionError::Storage(e.to_string()))?
-                        {
+                            .map_err(|e| ExecutionError::Storage(e.to_string()))?;
+                        match row {
                             Some(row) => vec![row],
                             None => vec![],
                         }
@@ -54,21 +53,17 @@ impl Executor {
 
                 return Ok(ExecutionResult::Selected { rows });
             }
-            // Predicate exists but column isn't indexed — fall through to
-            // full scan below. No post-filter applied yet (documented gap).
+            // Predicate exists but column isn't indexed — falls through to
+            // full scan below. No post-filter applied yet (documented gap:
+            // this returns ALL rows, not just matching ones, until a
+            // post-filter step is added).
         }
 
         // ── Full scan path (no predicate, or non-indexed column) ──
-        let key = (db, schema, table);
-
-        self.get_or_open_table_heap(db, schema, table)?;
-
-        let table_heap = self
-            .table_heaps
-            .get_mut(&key)
-            .expect("just inserted by get_or_open_table_heap");
-
-        let rows = table_heap
+        let heap_handle = self.get_table_heap(db, schema, table)?;
+        let rows = heap_handle
+            .lock()
+            .unwrap()
             .scan(&columns, &mut self.catalog.interner)
             .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 
