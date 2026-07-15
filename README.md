@@ -23,49 +23,8 @@ This project is built from scratch to provide a clean, extensible foundation for
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    subgraph Frontend["Query Frontend (Implemented)"]
-        SQL["SQL Input String"] -->|Char Indices / Bytes| Lexer["Lexer (src/lexer)"]
-        Lexer -->|Token Stream + Spans| Parser["Parser (src/parser)"]
-        Parser -->|Pratt Parsing / Recursive Descent| AST["Abstract Syntax Tree (src/ast)"]
-    end
+See [ARCHITECTURE.md](file:///c:/Projects/Database%20System/rust_sql/ARCHITECTURE.md) for a detailed overview of the system architecture and the 11-stage query execution lifecycle.
 
-    subgraph Intermediate["Query Compilation (Planned Roadmap)"]
-        AST -->|AST Nodes| Binder["Binder"]
-        Binder -->|Bound AST / Schema Resolved| Sem["Semantic Analyzer"]
-        Sem -->|Type-Checked & Validated AST| LP["Logical Planner"]
-        LP -->|Initial Logical Plan| Opt["Optimizer"]
-        Opt -->|Optimized Logical Plan| PP["Physical Planner"]
-    end
-
-    subgraph Backend["Query Execution & Storage (Planned Roadmap)"]
-        PP -->|Physical Plan| Exec["Executor"]
-        Exec -->|Get / Put Pages & Rows| Storage["Storage Engine"]
-    end
-    
-    style Frontend fill:#d4edda,stroke:#28a745,stroke-width:2px;
-    style Intermediate fill:#fff3cd,stroke:#ffc107,stroke-width:2px;
-    style Backend fill:#f8d7da,stroke:#dc3545,stroke-width:2px;
-```
-
-### Query Execution Lifecycle
-
-The system is designed around a classic 11-stage query compilation and execution pipeline:
-
-| Phase | Path / Status | Description |
-| :--- | :--- | :--- |
-| **1. SQL Input** | Input | Raw query string submitted by the user or client application. |
-| **2. Lexer** | [`src/lexer/`](src/lexer/) (Implemented) | Zero-copy lexical analyzer. Splits input characters into distinct tokens with precise `Span` locations. |
-| **3. Parser** | [`src/parser/`](src/parser/) (Implemented) | Hand-written recursive descent and Pratt parser. Converts tokens into structured syntax elements. |
-| **4. AST** | [`src/ast/`](src/ast/) (Implemented) | Strongly-typed Abstract Syntax Tree representing the statements (DDL/DML/Queries) and expressions. |
-| **5. Binder** | [`src/binder/`](src/binder/) (Implemented) | Resolves identifiers (tables, columns, views) against the catalog schema, matches functions, and produces a bound AST. |
-| **6. Semantic Analyzer**| Planned | Validates semantic rules (e.g. correct usage of window and aggregate functions, type safety, user privileges). |
-| **7. Logical Planner** | Planned | Translates the bound AST into a tree of relational algebra operators (e.g. Scan, Filter, Project, Join, Limit). |
-| **8. Optimizer** | Planned | Rewrites logical plans using rule-based transformations (predicate pushdown) and cost-based plan searches. |
-| **9. Physical Planner**| Planned | Translates the logical plan into a tree of concrete physical execution operators (e.g. HashJoin, IndexScan, SeqScan). |
-| **10. Executor** | [`src/executor/`](src/executor/) (Implemented) | Receives bound statements and applies them to the catalog and storage. Currently executes database DDL statements. |
-| **11. Storage Engine**| [`src/storage/`](src/storage/) (Implemented) | Manages on-disk layout, directories, and files. Currently supports directory creation and drop operations for databases and schemas. |
 
 ## Quick Start
 
