@@ -23,3 +23,6 @@ pub mod executor;
 pub mod lexer;
 pub mod parser;
 pub mod storage;
+
+pub mod execution;
+pub mod sql;
