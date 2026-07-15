@@ -168,6 +168,21 @@ impl Interner {
         self.map.borrow().get(s).copied()
     }
 
+    /// Looks up string
+    /// Returns Symbol if find any 
+    /// Returns the Symbol after intering if found None
+    /// 
+    /// # When to use this
+    /// 
+    /// - Use when you want to find a string and if not found you want it to intern
+    ///     This is used for strings where you want its Symbol regardless of its presence
+    pub fn get_or_intern(&self, s: &str) -> Symbol {
+        match self.get(s) {
+            Some(sym) => sym,
+            None => self.intern(s),
+        }
+    }
+
     /// Returns the number of unique strings currently interned.
     ///
     /// Useful for diagnostics, testing, and capacity planning.
