@@ -6,6 +6,7 @@ use std::{
 
 use crate::storage::{
     error::StorageError,
+    file::wal::Wal,
     page::{TablePage, table_page::PAGE_SIZE},
 };
 
@@ -46,6 +47,12 @@ pub struct HeapFile {
     /// Path to the file — stored for error messages only.
     path: PathBuf,
 
+    /// Every write goes through a small write-ahead log first (see [`Wal`]) —
+    /// the page image is logged and fsynced before the real write happens.
+    /// On [`Self::open`], any leftover WAL records from a previous crash are
+    /// replayed so a torn write can't leave the file in a half-written state.
+    wal: Wal,
+
     /// Number of pages currently in this file.
     ///
     /// Computed from `file.metadata().len() / PAGE_SIZE` at open time,
@@ -72,6 +79,8 @@ impl HeapFile {
     ///
     /// Returns [`StorageError::Io`] if the file cannot be opened or its
     /// metadata cannot be read.
+    ///
+    /// Recovers from any WAL records leftover from an unclean shutdown
     pub fn open(path: impl Into<PathBuf>) -> Result<Self, StorageError> {
         let path = path.into();
 
@@ -89,12 +98,18 @@ impl HeapFile {
 
         // Integer division: any partial trailing block is ignored.
         let num_pages = (file_len / PAGE_SIZE as u64) as u32;
+        let wal = Wal::open(&path)?;
 
-        Ok(Self {
+        let mut me = Self {
             file,
             path,
+            wal,
             num_pages,
-        })
+        };
+
+        me.recover()?;
+
+        Ok(me)
     }
 
     /// Allocates a new page at the end of the file and returns its `page_id`.
@@ -183,6 +198,48 @@ impl HeapFile {
         let offset = page_id as u64 * PAGE_SIZE as u64;
         self.file
             .seek(SeekFrom::Start(offset))
+            .map_err(|e| StorageError::io(&self.path, e))?;
+        Ok(())
+    }
+
+    /// Replays any valid WAL records against the real file, fsyncs the
+    /// result, then clears the WAL. A no-op if the WAL is empty (the
+    /// common case — this only does work after an unclean shutdown).
+    fn recover(&mut self) -> Result<(), StorageError> {
+        let records = self.wal.read_all_valid_records()?;
+        if records.is_empty() {
+            return Ok(());
+        }
+
+        for (page_id, data) in records {
+            self.write_page(page_id, &TablePage::from_bytes(data))?;
+        }
+
+        self.file
+            .sync_all()
+            .map_err(|e| StorageError::io(&self.path, e))?;
+        self.wal.checkpoint()
+    }
+
+    /// Writes `page` at `page_id` unconditionally, extending the file
+    /// with zero-pages first if `page_id` is beyond the current end.
+    /// Only used during recovery — a torn `allocate_page` may have
+    /// logged a page whose real on-disk write never landed, so
+    /// `num_pages` (computed from file length at open time) can be
+    /// stale by exactly that one page.
+    fn write_page_cover(&mut self, page_id: u32, page: &TablePage) -> Result<(), StorageError> {
+        while self.num_pages <= page_id {
+            self.seek_to(self.num_pages)?;
+            let filter = TablePage::new(self.num_pages);
+            self.file
+                .write_all(filter.as_bytes())
+                .map_err(|e| StorageError::io(&self.path, e))?;
+            self.num_pages += 1;
+        }
+
+        self.seek_to(page_id)?;
+        self.file
+            .write_all(page.as_bytes())
             .map_err(|e| StorageError::io(&self.path, e))?;
         Ok(())
     }
