@@ -123,12 +123,14 @@ impl HeapFile {
     /// # Errors
     ///
     /// Returns [`StorageError::Io`] if the seek or write fails.
+    ///
+    /// Allocates a new page at the end of the file and returns its `page_id`.
     pub fn allocate_page(&mut self) -> Result<u32, StorageError> {
         let page_id = self.num_pages;
         let page = TablePage::new(page_id);
 
-        // Seek to exact position rather than SeekFrom::End to be safe
-        // against any partial-page scenario detected at open time.
+        self.wal.log_page(page_id, &page)?;
+
         self.seek_to(page_id)?;
         self.file
             .write_all(page.as_bytes())
