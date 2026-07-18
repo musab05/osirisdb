@@ -1,4 +1,4 @@
-use crate::ast::*;
+use crate::ast::{session::database::UseDatabaseStmt, *};
 
 /// Represents the top-level SQL statements supported by the parser.
 ///
@@ -38,6 +38,8 @@ pub enum Statement {
     CreateType(CreateTypeStmt),
     /// A `CREATE DATABASE` DDL statement
     CreateDatabase(CreateDatabaseStmt),
+    /// A `USE DATABASE` statement
+    UseDatabase(UseDatabaseStmt),
     /// A `CREATE ROLE/USER` DDL statement
     CreateRole(CreateRoleStmt),
     /// A `CREATE TABLESPACE` DDL statement

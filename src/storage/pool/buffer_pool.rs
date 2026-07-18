@@ -267,6 +267,13 @@ impl BufferPool {
             }
         }
 
+        if last_err.is_none() {
+            // Every dirty page just written is now WAL-logged + written to
+            // the real file. Checkpoint clears the WAL since none of those
+            // records are needed for recovery anymore.
+            self.heap_file.checkpoint()?;
+        }
+
         match last_err {
             Some(e) => Err(e),
             None => Ok(()),

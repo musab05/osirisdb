@@ -8,6 +8,7 @@ pub mod ddl;
 pub mod dml;
 pub mod expression;
 pub mod query;
+pub mod session;
 pub mod statement;
 pub mod transaction;
 
@@ -16,5 +17,6 @@ pub use ddl::*;
 pub use dml::*;
 pub use expression::*;
 pub use query::*;
+pub use session::*;
 pub use statement::*;
 pub use transaction::*;

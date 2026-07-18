@@ -18,6 +18,10 @@ mod tests {
     /// so a failed previous run doesn't poison the next one.
     fn rm(path: &Path) {
         let _ = std::fs::remove_file(path);
+        let mut wal_path = path.to_path_buf();
+        let mut os = wal_path.into_os_string();
+        os.push(".wal");
+        let _ = std::fs::remove_file(os);
     }
 
     #[test]

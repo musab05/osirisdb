@@ -183,6 +183,8 @@ impl HeapFile {
             });
         }
 
+        self.wal.log_page(page_id, page)?;
+
         self.seek_to(page_id)?;
         self.file
             .write_all(page.as_bytes())
@@ -214,7 +216,7 @@ impl HeapFile {
         }
 
         for (page_id, data) in records {
-            self.write_page(page_id, &TablePage::from_bytes(data))?;
+            self.write_page_cover(page_id, &TablePage::from_bytes(data))?;
         }
 
         self.file
@@ -244,5 +246,16 @@ impl HeapFile {
             .write_all(page.as_bytes())
             .map_err(|e| StorageError::io(&self.path, e))?;
         Ok(())
+    }
+
+    /// Fsyncs the data file and truncates the WAL. Call after a batch
+    /// of writes is known to be fully applied (e.g. at the end of
+    /// `BufferPool::flush_all`) — the WAL only needs to hold records
+    /// for writes that haven't been confirmed durable yet.
+    pub fn checkpoint(&mut self) -> Result<(), StorageError> {
+        self.file
+            .sync_all()
+            .map_err(|e| StorageError::io(&self.path, e))?;
+        self.wal.checkpoint()
     }
 }
