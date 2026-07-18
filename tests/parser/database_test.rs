@@ -167,6 +167,19 @@ fn test_all_options() {
 }
 
 #[test]
+fn test_use_database() {
+    let mut parser = Parser::new("USE mydb;");
+    let stmts = parser.parse().expect("expected successful parse");
+    assert_eq!(stmts.len(), 1);
+    match &stmts[0] {
+        Statement::UseDatabase(s) => {
+            assert_eq!(parser.interner.resolve(s.database_name), "mydb");
+        }
+        _ => panic!("expected UseDatabase"),
+    }
+}
+
+#[test]
 fn test_options_any_order() {
     // options can appear in any order
     let a = parse("CREATE DATABASE mydb OWNER alice ENCODING 'UTF8';");

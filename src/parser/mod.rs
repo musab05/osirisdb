@@ -9,6 +9,7 @@ pub mod expression;
 pub mod parser;
 pub mod parser_error;
 pub mod query;
+pub mod session;
 pub mod statement;
 
 pub use parser::Parser;

@@ -54,6 +54,7 @@ pub enum TokenKind {
     Schema,
     Authorization,
     Drop,
+    Use,
     Truncate,
     Alter,
     Reset,

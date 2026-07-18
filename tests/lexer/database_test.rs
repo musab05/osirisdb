@@ -22,6 +22,11 @@ fn test_create_keyword() {
 }
 
 #[test]
+fn test_use_keyword() {
+    assert_eq!(lex("USE"), vec![TokenKind::Use, TokenKind::Eof]);
+}
+
+#[test]
 fn test_database_keyword() {
     assert_eq!(lex("DATABASE"), vec![TokenKind::Database, TokenKind::Eof]);
 }

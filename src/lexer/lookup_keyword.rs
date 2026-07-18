@@ -29,6 +29,7 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         "SCHEMA" => TokenKind::Schema,
         "AUTHORIZATION" => TokenKind::Authorization,
         "DROP" => TokenKind::Drop,
+        "USE" => TokenKind::Use,
         "TRUNCATE" => TokenKind::Truncate,
         "ALTER" => TokenKind::Alter,
         "RESET" => TokenKind::Reset,
