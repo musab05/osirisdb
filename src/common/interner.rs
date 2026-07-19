@@ -1,5 +1,5 @@
 use crate::common::symbol::Symbol;
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 /// A string interner that maps strings to compact numeric [`Symbol`]s.
 ///
@@ -62,20 +62,27 @@ use std::{cell::RefCell, collections::HashMap};
 /// `Interner` is **not** thread-safe. For concurrent query execution, wrap
 /// it in `Arc<RwLock<Interner>>` or use a per-thread interner with a shared
 /// read-only view after the parse phase.
-
+#[derive(Clone)]
 pub struct Interner {
+    // Combine the map and strings into a single inner struct.
+    // This allows BOTH fields at the same time using a single RefCell borrow,
+    // avoiding nested borrow panics and double-hashing.
+    inner: Arc<RefCell<InternerInner>>,
+}
+
+pub struct InternerInner {
     /// Maps interned string slices to their assigned [`Symbol`] id.
     ///
     /// The keys are `&'static str` obtained via [`Box::leak`] so they
     /// share the same pointer as the corresponding entry in `strings`.
     /// This avoids storing the string data twice.
-    map: RefCell<HashMap<&'static str, Symbol>>,
+    map: HashMap<&'static str, Symbol>,
 
     /// Stores all interned strings indexed by their [`Symbol`] id.
     ///
     /// `strings[sym.0]` gives the string for `sym`.
     /// This is the reverse direction of `map` and enables O(1) resolution.
-    strings: RefCell<Vec<&'static str>>,
+    strings: Vec<&'static str>,
 }
 
 impl Interner {
@@ -86,8 +93,10 @@ impl Interner {
 
     pub fn new() -> Self {
         Self {
-            map: RefCell::new(HashMap::new()),
-            strings: RefCell::new(Vec::new()),
+            inner: Arc::new(RefCell::new(InternerInner {
+                map: HashMap::new(),
+                strings: Vec::new(),
+            })),
         }
     }
 
@@ -112,14 +121,15 @@ impl Interner {
     /// In practice this limit (≈4 billion) will never be reached.
 
     pub fn intern(&self, s: &str) -> Symbol {
+        let mut inner = self.inner.borrow_mut();
         // Fast path — string already interned, return existing symbol.
         // This is the common case in a SQL engine where identifiers repeat.
-        if let Some(&sym) = self.map.borrow().get(s) {
+        if let Some(&sym) = inner.map.get(s) {
             return sym;
         }
 
         // Slow path — new string, assign next available symbol id.
-        let id = Symbol(self.strings.borrow().len() as u32);
+        let id = Symbol(inner.strings.len() as u32);
 
         // Leak the string to obtain a 'static lifetime.
         // This is intentional — interned strings live for the process lifetime.
@@ -128,8 +138,8 @@ impl Interner {
         let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
 
         // Store in both directions for O(1) lookup in either direction.
-        self.strings.borrow_mut().push(leaked); // Symbol → &str  (resolve)
-        self.map.borrow_mut().insert(leaked, id); // &str → Symbol  (intern)
+        inner.strings.push(leaked); // Symbol → &str  (resolve)
+        inner.map.insert(leaked, id); // &str → Symbol  (intern)
 
         id
     }
@@ -146,8 +156,8 @@ impl Interner {
     /// `sym` is [`Symbol::DUMMY`] (`Symbol(u32::MAX)`).
 
     pub fn resolve(&self, sym: Symbol) -> &str {
-        let strings = self.strings.borrow();
-        strings[sym.0 as usize]
+        let inner = self.inner.borrow();
+        inner.strings[sym.0 as usize]
     }
 
     /// Looks up a string without interning it.
@@ -165,7 +175,7 @@ impl Interner {
     ///   returned, the name is undefined and should produce an error.
 
     pub fn get(&self, s: &str) -> Option<Symbol> {
-        self.map.borrow().get(s).copied()
+        self.inner.borrow().map.get(s).copied()
     }
 
     /// Looks up string
@@ -177,10 +187,21 @@ impl Interner {
     /// - Use when you want to find a string and if not found you want it to intern
     ///     This is used for strings where you want its Symbol regardless of its presence
     pub fn get_or_intern(&self, s: &str) -> Symbol {
-        match self.get(s) {
-            Some(sym) => sym,
-            None => self.intern(s),
+        let mut inner = self.inner.borrow_mut();
+
+        // Check if it exist using shared mut borrow
+        if let Some(&sym) = inner.map.get(s) {
+            return sym;
         }
+
+        // If missing intern the string without releasing borrow
+        let id = Symbol(inner.strings.len() as u32);
+        let leaked: &'static str = Box::leak(s.to_string().into_boxed_str());
+
+        inner.strings.push(leaked);
+        inner.map.insert(leaked, id);
+
+        id
     }
 
     /// Returns the number of unique strings currently interned.
@@ -188,13 +209,13 @@ impl Interner {
     /// Useful for diagnostics, testing, and capacity planning.
 
     pub fn len(&self) -> usize {
-        self.strings.borrow().len()
+        self.inner.borrow().strings.len()
     }
 
     /// Returns `true` if no strings have been interned yet.
 
     pub fn is_empty(&self) -> bool {
-        self.strings.borrow().is_empty()
+        self.inner.borrow().strings.is_empty()
     }
 }
 
@@ -205,14 +226,5 @@ impl Default for Interner {
     /// used with `#[derive(Default)]` in structs that contain it.
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Clone for Interner {
-    fn clone(&self) -> Self {
-        Self {
-            map: RefCell::new(self.map.borrow().clone()),
-            strings: RefCell::new(self.strings.borrow().clone()),
-        }
     }
 }

@@ -1,4 +1,4 @@
-use crate::ast::{session::database::UseDatabaseStmt, *};
+use crate::ast::{session::database_session::UseDatabaseStmt, *};
 
 /// Represents the top-level SQL statements supported by the parser.
 ///

@@ -1,5 +1,5 @@
 use crate::{
-    ast::{CreateDatabaseStmt, session::database::UseDatabaseStmt},
+    ast::{CreateDatabaseStmt, session::database_session::UseDatabaseStmt},
     common::symbol::Symbol,
 };
 

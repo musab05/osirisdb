@@ -1,5 +1,5 @@
 use crate::{
-    ast::session::database::UseDatabaseStmt,
+    ast::session::database_session::UseDatabaseStmt,
     binder::{BindError, Binder, bound::database::BoundUseDatabaseStmt},
 };
 
