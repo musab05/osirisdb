@@ -36,4 +36,13 @@ impl std::fmt::Display for ExecutionError {
     }
 }
 
+impl ExecutionError {
+    pub fn format(&self, interner: &crate::common::Interner) -> String {
+        match self {
+            ExecutionError::Catalog(e) => format!("catalog error: {}", e.format(interner)),
+            ExecutionError::Storage(msg) => format!("storage error: {}", msg),
+        }
+    }
+}
+
 impl std::error::Error for ExecutionError {}

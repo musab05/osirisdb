@@ -11,24 +11,24 @@ use crate::{
 pub fn execute_sql() {
     let sql = "CREATE DATABASE mydb OWNER postgres ENCODING 'UTF8' CONNECTION LIMIT 100; \
            CREATE SCHEMA myschema; \
-           CREATE TABLE myschema.users (
-               id INT PRIMARY KEY,
-               name VARCHAR(255) NOT NULL,
-               email VARCHAR(255) UNIQUE
+           CREATE TABLE myschema.users ( \
+               id INT PRIMARY KEY, \
+               name VARCHAR(255) NOT NULL, \
+               email VARCHAR(255) UNIQUE \
            ); \
-           INSERT INTO myschema.users (id, name, email)
+           INSERT INTO myschema.users (id, name, email) \
            VALUES (1, 'Alice', 'alice@example.com'); \
-           INSERT INTO myschema.users (id, name, email)
+           INSERT INTO myschema.users (id, name, email) \
            VALUES (2, 'Bob', 'bob@example.com'); \
-           INSERT INTO myschema.users (id, name, email)
-           VALUES (3, 'Charlie', 'charlie@example.com');
-           INSERT INTO myschema.users (id, name, email)
+           INSERT INTO myschema.users (id, name, email) \
+           VALUES (3, 'Charlie', 'charlie@example.com'); \
+           INSERT INTO myschema.users (id, name, email) \
            VALUES (1, 'Alice', 'alice@example.com'); \
-           INSERT INTO myschema.users (id, name, email)
+           INSERT INTO myschema.users (id, name, email) \
            VALUES (2, 'Bob', 'bob@example.com'); \
-           INSERT INTO myschema.users (id, name, email)
-           VALUES (3, 'Charlie', 'charlie@example.com');";
-    let sql = "SELECT * FROM myschema.users where id != 3;";
+           INSERT INTO myschema.users (id, name, email) \
+           VALUES (3, 'Charlie', 'charlie@example.com'); \
+           SELECT * FROM myschema.users where id != 3;";
 
     // ── 1. Parse ──────────────────────────────────────────────────────────────
     let mut parser = Parser::new(sql);
@@ -45,10 +45,6 @@ pub fn execute_sql() {
     let catalog = CatalogManager::new(interner);
     let session_user = catalog.interner.intern("postgres");
 
-    // NOTE: there is no connection/session layer yet, so "current database"
-    // and "default schema" are hardcoded here. In a real engine these come
-    // from the connection (e.g. `\c mydb`) and `search_path`, and would be
-    // tracked per-session.
     let current_db = catalog.interner.intern("mydb");
     let public_schema = catalog.interner.intern("public");
 
@@ -70,15 +66,16 @@ pub fn execute_sql() {
                 let bound = match binder.bind_create_database(s) {
                     Ok(b) => b,
                     Err(e) => {
-                        eprintln!("Bind error: {}", e);
+                        eprintln!("Bind error: {}", e.format(&executor.catalog.interner));
                         return;
                     }
                 };
 
+                let start = std::time::Instant::now();
                 match executor.execute_create_database(bound) {
                     Ok(result) => {
+                        let elapsed = start.elapsed();
                         println!("{}", result.command_tag());
-                        // show what was created
                         let name = executor.catalog.interner.resolve(
                             executor
                                 .catalog
@@ -87,8 +84,13 @@ pub fn execute_sql() {
                                 .name,
                         );
                         println!("Database '{}' created successfully.", name);
+                        println!("Time: {:?}", elapsed);
                     }
-                    Err(e) => eprintln!("Execution error: {}", e),
+                    Err(e) => {
+                        let elapsed = start.elapsed();
+                        eprintln!("Execution error: {}", e.format(&executor.catalog.interner));
+                        println!("Time: {:?}", elapsed);
+                    }
                 }
             }
             Statement::CreateSchema(s) => {
@@ -96,22 +98,28 @@ pub fn execute_sql() {
                 let bound = match binder.bind_create_schema(current_db, s) {
                     Ok(b) => b,
                     Err(e) => {
-                        eprintln!("Bind error: {}", e);
+                        eprintln!("Bind error: {}", e.format(&executor.catalog.interner));
                         return;
                     }
                 };
 
+                let start = std::time::Instant::now();
                 match executor.execute_create_schema(current_db, bound) {
                     Ok(result) => {
+                        let elapsed = start.elapsed();
                         println!("{}", result.command_tag());
-                        // show what was created
                         let name = executor.catalog.interner.resolve(match &result {
                             ExecutionResult::SchemaCreated { name } => *name,
                             _ => unreachable!("execute_create_schema only returns SchemaCreated"),
                         });
                         println!("Schema '{}' created successfully.", name);
+                        println!("Time: {:?}", elapsed);
                     }
-                    Err(e) => eprintln!("Execution error: {}", e),
+                    Err(e) => {
+                        let elapsed = start.elapsed();
+                        eprintln!("Execution error: {}", e.format(&executor.catalog.interner));
+                        println!("Time: {:?}", elapsed);
+                    }
                 }
             }
             Statement::CreateTable(s) => {
@@ -119,22 +127,28 @@ pub fn execute_sql() {
                 let bound = match binder.bind_create_table(current_db, public_schema, s) {
                     Ok(b) => b,
                     Err(e) => {
-                        eprintln!("Bind error: {}", e);
+                        eprintln!("Bind error: {}", e.format(&executor.catalog.interner));
                         return;
                     }
                 };
 
+                let start = std::time::Instant::now();
                 match executor.execute_create_table(bound) {
                     Ok(result) => {
+                        let elapsed = start.elapsed();
                         println!("{}", result.command_tag());
-                        // show what was created
                         let name = executor.catalog.interner.resolve(match &result {
                             ExecutionResult::TableCreated { name } => *name,
                             _ => unreachable!("execute_create_table only returns TableCreated"),
                         });
                         println!("Table '{}' created successfully.", name);
+                        println!("Time: {:?}", elapsed);
                     }
-                    Err(e) => eprintln!("Execution error: {}", e),
+                    Err(e) => {
+                        let elapsed = start.elapsed();
+                        eprintln!("Execution error: {}", e.format(&executor.catalog.interner));
+                        println!("Time: {:?}", elapsed);
+                    }
                 }
             }
             Statement::Insert(s) => {
@@ -142,13 +156,15 @@ pub fn execute_sql() {
                 let bound = match binder.bind_insert_table(current_db, public_schema, s) {
                     Ok(b) => b,
                     Err(e) => {
-                        eprintln!("Bind error: {}", e);
+                        eprintln!("Bind error: {}", e.format(&executor.catalog.interner));
                         return;
                     }
                 };
 
+                let start = std::time::Instant::now();
                 match executor.execute_insert_table(bound) {
                     Ok(result) => {
+                        let elapsed = start.elapsed();
                         println!("{}", result.command_tag());
                         let (name, count) = match &result {
                             ExecutionResult::Inserted { name, count } => (*name, *count),
@@ -156,8 +172,13 @@ pub fn execute_sql() {
                         };
                         let table_name = executor.catalog.interner.resolve(name);
                         println!("{} row(s) inserted into '{}'.", count, table_name);
+                        println!("Time: {:?}", elapsed);
                     }
-                    Err(e) => eprintln!("Execution error: {}", e),
+                    Err(e) => {
+                        let elapsed = start.elapsed();
+                        eprintln!("Execution error: {}", e.format(&executor.catalog.interner));
+                        println!("Time: {:?}", elapsed);
+                    }
                 }
             }
             Statement::Select(s) => {
@@ -165,17 +186,18 @@ pub fn execute_sql() {
                 let bound = match binder.bind_select(current_db, public_schema, s) {
                     Ok(b) => b,
                     Err(e) => {
-                        eprintln!("Bind error: {}", e);
+                        eprintln!("Bind error: {}", e.format(&executor.catalog.interner));
                         return;
                     }
                 };
 
+                let start = std::time::Instant::now();
                 match executor.execute_select_table(bound) {
                     Ok(result) => {
+                        let elapsed = start.elapsed();
                         println!("{}", result.command_tag());
 
                         let rows = match result {
-                            // move, not &result
                             ExecutionResult::Selected { rows } => rows,
                             _ => unreachable!(),
                         };
@@ -196,8 +218,13 @@ pub fn execute_sql() {
                                 if rows.len() == 1 { "" } else { "s" }
                             );
                         }
+                        println!("Time: {:?}", elapsed);
                     }
-                    Err(e) => eprintln!("Execution error: {}", e),
+                    Err(e) => {
+                        let elapsed = start.elapsed();
+                        eprintln!("Execution error: {}", e.format(&executor.catalog.interner));
+                        println!("Time: {:?}", elapsed);
+                    }
                 }
             }
             _ => eprintln!("Unsupported statement"),

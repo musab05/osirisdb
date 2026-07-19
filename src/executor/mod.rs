@@ -20,6 +20,7 @@ pub mod error;
 pub mod executor;
 pub mod query;
 pub mod result;
+pub mod session;
 
 pub use error::ExecutionError;
 pub use executor::Executor;

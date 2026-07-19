@@ -174,4 +174,82 @@ impl std::fmt::Display for BindError {
     }
 }
 
+impl BindError {
+    pub fn format(&self, interner: &crate::common::Interner) -> String {
+        match self {
+            BindError::DatabaseAlreadyExists(s) => {
+                format!("database \"{}\" already exists", interner.resolve(*s))
+            }
+            BindError::RoleNotFound(s) => {
+                format!("role \"{}\" does not exist", interner.resolve(*s))
+            }
+            BindError::TablespaceNotFound(s) => {
+                format!("tablespace \"{}\" does not exist", interner.resolve(*s))
+            }
+            BindError::InvalidConnectionLimit(n) => {
+                format!("invalid connection limit {}, must be >= -1", n)
+            }
+            BindError::SchemaAlreadyExists(s) => {
+                format!("schema \"{}\" already exists", interner.resolve(*s))
+            }
+            BindError::DatabaseNotFound(s) => {
+                format!("database \"{}\" does not exist", interner.resolve(*s))
+            }
+            BindError::SchemaNotFound(s) => {
+                format!("schema \"{}\" does not exist", interner.resolve(*s))
+            }
+            BindError::TableAlreadyExists(s) => {
+                format!("table \"{}\" already exists", interner.resolve(*s))
+            }
+            BindError::DuplicateColumnName(s) => {
+                format!(
+                    "column \"{}\" specified more than once",
+                    interner.resolve(*s)
+                )
+            }
+            BindError::ColumnNotFound(s) => {
+                format!("column \"{}\" does not exist", interner.resolve(*s))
+            }
+            BindError::MultiplePrimaryKeys => {
+                "multiple primary keys for table specified".to_string()
+            }
+            BindError::TableNotFound(s) => {
+                format!("table \"{}\" does not exist", interner.resolve(*s))
+            }
+            BindError::UnsupportedInsertSource => "unsupported insert source".to_string(),
+            BindError::UnsupportedExpression => "unsupported expression".to_string(),
+            BindError::UnsupportedOnConflict => "unsupported ON CONFLICT clause".to_string(),
+            BindError::UnsupportedReturning => "unsupported RETURNING clause".to_string(),
+            BindError::ColumnCountMismatch { expected, found } => {
+                format!(
+                    "column count mismatch: expected {}, found {}",
+                    expected, found
+                )
+            }
+            BindError::MissingNotNullColumn(s) => {
+                format!(
+                    "column \"{}\" is NOT NULL but was not given a value",
+                    interner.resolve(*s)
+                )
+            }
+            BindError::UnsupportedSelect => "unsupported feature request for select".to_string(),
+            BindError::TypeMismatch {
+                col,
+                row,
+                expected,
+                got,
+            } => {
+                format!(
+                    "type mismatch at row {}: column \"{}\" expects {} but got {}",
+                    row,
+                    interner.resolve(*col),
+                    expected,
+                    got
+                )
+            }
+            BindError::DivisionByZero => "division by zero".to_string(),
+        }
+    }
+}
+
 impl std::error::Error for BindError {}

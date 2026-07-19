@@ -1,4 +1,7 @@
-use crate::{ast::CreateDatabaseStmt, common::symbol::Symbol};
+use crate::{
+    ast::{CreateDatabaseStmt, session::database::UseDatabaseStmt},
+    common::symbol::Symbol,
+};
 
 /// A fully resolved and validated `CREATE DATABASE` statement.
 ///
@@ -43,6 +46,19 @@ pub struct BoundCreateDatabaseStmt {
     pub connection_limit: Option<i64>,
 }
 
+/// A fully resolved and validated `USE` statement.
+///
+/// Unlike [`UseDatabaseStmt`] which is a raw parse-time snapshot,
+/// `BoundUseDatabaseStmt` has been verified against the catalog to ensure
+/// that the target database actually exists and the user has access privileges.
+///
+/// The executor receives this to update the session context state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BoundUseDatabaseStmt {
+    /// The validated name of the database to switch to.
+    pub database_name: Symbol,
+}
+
 /// Converts a bound statement back into a raw AST statement for the catalog.
 ///
 /// The bound statement has already resolved all defaults (e.g. owner),
@@ -58,6 +74,15 @@ impl From<BoundCreateDatabaseStmt> for CreateDatabaseStmt {
             locale: b.locale,
             tablespace: b.tablespace,
             connection_limit: b.connection_limit,
+        }
+    }
+}
+
+/// Converts a bound `USE` statement back into a raw AST statement.
+impl From<BoundUseDatabaseStmt> for UseDatabaseStmt {
+    fn from(b: BoundUseDatabaseStmt) -> Self {
+        UseDatabaseStmt {
+            database_name: b.database_name,
         }
     }
 }

@@ -59,4 +59,32 @@ impl std::fmt::Display for CatalogError {
     }
 }
 
+impl CatalogError {
+    pub fn format(&self, interner: &crate::common::Interner) -> String {
+        match self {
+            CatalogError::DatabaseAlreadyExists(sym) => {
+                format!("database \"{}\" already exists", interner.resolve(*sym))
+            }
+            CatalogError::DatabaseNotFound(sym) => {
+                format!("database \"{}\" does not exist", interner.resolve(*sym))
+            }
+            CatalogError::SchemaAlreadyExists(sym) => {
+                format!("schema \"{}\" already exists", interner.resolve(*sym))
+            }
+            CatalogError::SchemaNotFound(sym) => {
+                format!("schema \"{}\" does not exist", interner.resolve(*sym))
+            }
+            CatalogError::TableAlreadyExists(sym) => {
+                format!("table \"{}\" already exists", interner.resolve(*sym))
+            }
+            CatalogError::TableNotFound(sym) => {
+                format!("table \"{}\" does not exist", interner.resolve(*sym))
+            }
+            CatalogError::StorageError(msg) => {
+                format!("storage error: {}", msg)
+            }
+        }
+    }
+}
+
 impl std::error::Error for CatalogError {}

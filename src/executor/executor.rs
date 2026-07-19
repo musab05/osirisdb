@@ -42,6 +42,10 @@ pub struct Executor {
     /// OWNER clause. Resolved during session initialization.
     pub session_user: Symbol,
 
+    /// Tracks the active database namespace for this session execution context.
+    /// `None` means no database has been selected yet.
+    pub current_database: Option<Symbol>,
+
     /// The storage engine — manages on-disk layout.
     ///
     /// `None` when running in memory-only mode (e.g. tests that
@@ -92,6 +96,7 @@ impl Executor {
         Self {
             catalog,
             session_user,
+            current_database: None,
             storage: Some(storage),
             system_catalog: Some(system_catalog),
         }
@@ -105,6 +110,7 @@ impl Executor {
         Self {
             catalog,
             session_user,
+            current_database: None,
             storage: None,
             system_catalog: None,
         }
