@@ -110,7 +110,7 @@ impl BPlusTreeIndex {
                 Ok(slot) => {
                     if index_page.is_leaf() {
                         let val_bytes = index_page.get_value(slot).unwrap();
-                        let record_id = RecordId::from_bytes(val_bytes);
+                        let record_id = RecordId::from_bytes(val_bytes)?;
                         bp.unpin_page(frame_id, false);
                         return Ok(Some(record_id));
                     } else {

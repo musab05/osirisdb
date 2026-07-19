@@ -1,3 +1,5 @@
+use crate::storage::StorageError;
+
 /// References a specific row location inside a TableHeap file.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct RecordId {
@@ -15,9 +17,15 @@ impl RecordId {
     }
 
     /// Deserializes the RecordId from a fixed 6-byte array.
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        let page_id = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
-        let slot_id = u16::from_le_bytes(bytes[4..6].try_into().unwrap());
-        RecordId { page_id, slot_id }
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, StorageError> {
+        let array: &[u8; 6] = bytes.try_into().map_err(|_| {
+            StorageError::TupleError(format!(
+                "invalid RecordId byte length: expected 6 bytes, found {}",
+                bytes.len()
+            ))
+        })?;
+        let page_id = u32::from_le_bytes(array[0..4].try_into().unwrap());
+        let slot_id = u16::from_le_bytes(array[4..6].try_into().unwrap());
+        Ok(RecordId { page_id, slot_id })
     }
 }
