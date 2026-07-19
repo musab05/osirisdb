@@ -149,7 +149,7 @@ impl BPlusTreeIndex {
             {
                 let mut bp = self.buffer_pool.lock().unwrap();
                 let raw_page = bp.get_page_mut(frame_id);
-                let index_page = IndexPage::from_page_mut(raw_page);
+                let mut index_page = IndexPage::from_page_mut(raw_page);
                 index_page.init(true, 0);
                 index_page.insert_at(0, key, &val_bytes);
                 bp.unpin_page(frame_id, true);
@@ -169,7 +169,7 @@ impl BPlusTreeIndex {
             {
                 let mut bp = self.buffer_pool.lock().unwrap();
                 let raw_page = bp.get_page_mut(frame_id);
-                let new_root = IndexPage::from_page_mut(raw_page);
+                let mut new_root = IndexPage::from_page_mut(raw_page);
                 new_root.init(false, root_id);
                 new_root.insert_at(0, &promoted_key, &right_child_page_id.to_le_bytes());
                 bp.unpin_page(frame_id, true);
@@ -194,7 +194,7 @@ impl BPlusTreeIndex {
         let is_leaf = IndexPage::from_page_ref(bp.get_page(frame_id)).is_leaf();
 
         if is_leaf {
-            let index_page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
+            let mut index_page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
 
             let slot_idx = match index_page.binary_search_key(key, |b| b) {
                 Ok(idx) | Err(idx) => idx,
@@ -209,18 +209,14 @@ impl BPlusTreeIndex {
             // page via the locked helper (self.alloc_page() would deadlock).
             let (right_page_id, right_frame_id) =
                 Self::alloc_page_locked(&mut self.free_head, &mut bp)?;
-            let (raw_left, raw_right) = unsafe {
-                let left_ptr = bp.get_page_mut(frame_id) as *mut _;
-                let right_ptr = bp.get_page_mut(right_frame_id) as *mut _;
-                (&mut *left_ptr, &mut *right_ptr)
-            };
+            let (raw_left, raw_right) = bp.get_two_pages_mut(frame_id, right_frame_id);
 
-            let left_page = IndexPage::from_page_mut(raw_left);
-            let right_page = IndexPage::from_page_mut(raw_right);
+            let mut left_page = IndexPage::from_page_mut(raw_left);
+            let mut right_page = IndexPage::from_page_mut(raw_right);
 
             right_page.init(true, left_page.next_page_id());
 
-            let promoted_key = left_page.split_into(right_page);
+            let promoted_key = left_page.split_into(&mut right_page);
             left_page.set_next_page_id(right_page_id);
 
             if slot_idx < left_page.key_count() {
@@ -260,7 +256,7 @@ impl BPlusTreeIndex {
         {
             let mut bp = self.buffer_pool.lock().unwrap();
             let frame_id = bp.pin_page(current_page_id)?;
-            let index_page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
+            let mut index_page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
 
             let target_slot = match index_page.binary_search_key(&promoted_key[..], |b| b) {
                 Ok(idx) | Err(idx) => idx,
@@ -281,12 +277,12 @@ impl BPlusTreeIndex {
                 (&mut *left_ptr, &mut *right_ptr)
             };
 
-            let left_internal = IndexPage::from_page_mut(raw_left);
-            let right_internal = IndexPage::from_page_mut(raw_right);
+            let mut left_internal = IndexPage::from_page_mut(raw_left);
+            let mut right_internal = IndexPage::from_page_mut(raw_right);
 
             right_internal.init(false, 0);
 
-            let parent_promoted_key = left_internal.split_into(right_internal);
+            let parent_promoted_key = left_internal.split_into(&mut right_internal);
 
             if target_slot <= left_internal.key_count() {
                 left_internal.insert_at(target_slot, &promoted_key, &right_bytes);
@@ -351,7 +347,7 @@ impl BPlusTreeIndex {
         let is_leaf = IndexPage::from_page_ref(bp.get_page(frame_id)).is_leaf();
 
         if is_leaf {
-            let page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
+            let mut page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
             let found = match page.binary_search_key(key, |b| b) {
                 Ok(slot) => {
                     page.remove_at(slot);
@@ -446,8 +442,8 @@ impl BPlusTreeIndex {
                     let r = bp.get_page_mut(right_frame) as *mut _;
                     (&mut *c, &mut *r)
                 };
-                let child = IndexPage::from_page_mut(raw_c);
-                let rsib = IndexPage::from_page_mut(raw_r);
+                let mut child = IndexPage::from_page_mut(raw_c);
+                let mut rsib = IndexPage::from_page_mut(raw_r);
 
                 let k = rsib.get_key(0).unwrap().to_vec();
                 let v = rsib.get_value(0).unwrap().to_vec();
@@ -465,7 +461,7 @@ impl BPlusTreeIndex {
                 let r = bp.get_page_mut(right_frame) as *mut _;
                 (&mut *c, &mut *r)
             };
-            let child = IndexPage::from_page_mut(raw_c);
+            let mut child = IndexPage::from_page_mut(raw_c);
             let rsib = IndexPage::from_page_mut(raw_r);
             for i in 0..rsib.key_count() {
                 let k = rsib.get_key(i).unwrap().to_vec();
@@ -479,7 +475,7 @@ impl BPlusTreeIndex {
             bp.unpin_page(right_frame, false);
 
             let parent_frame = bp.pin_page(parent_id)?;
-            let parent = IndexPage::from_page_mut(bp.get_page_mut(parent_frame));
+            let mut parent = IndexPage::from_page_mut(bp.get_page_mut(parent_frame));
             if let Some(slot) = child_slot {
                 parent.remove_at(slot);
             }
@@ -504,8 +500,8 @@ impl BPlusTreeIndex {
                     let l = bp.get_page_mut(left_frame) as *mut _;
                     (&mut *c, &mut *l)
                 };
-                let child = IndexPage::from_page_mut(raw_c);
-                let lsib = IndexPage::from_page_mut(raw_l);
+                let mut child = IndexPage::from_page_mut(raw_c);
+                let mut lsib = IndexPage::from_page_mut(raw_l);
 
                 let last = lsib.key_count() - 1;
                 let k = lsib.get_key(last).unwrap().to_vec();
@@ -524,7 +520,7 @@ impl BPlusTreeIndex {
                 let c = bp.get_page_mut(child_frame) as *mut _;
                 (&mut *l, &mut *c)
             };
-            let lsib = IndexPage::from_page_mut(raw_l);
+            let mut lsib = IndexPage::from_page_mut(raw_l);
             let child = IndexPage::from_page_mut(raw_c);
             for i in 0..child.key_count() {
                 let k = child.get_key(i).unwrap().to_vec();
@@ -538,7 +534,7 @@ impl BPlusTreeIndex {
             bp.unpin_page(child_frame, false);
 
             let parent_frame = bp.pin_page(parent_id)?;
-            let parent = IndexPage::from_page_mut(bp.get_page_mut(parent_frame));
+            let mut parent = IndexPage::from_page_mut(bp.get_page_mut(parent_frame));
             if let Some(slot) = child_slot {
                 let remove_slot = if slot == 0 { 0 } else { slot - 1 };
                 parent.remove_at(remove_slot);
@@ -591,7 +587,7 @@ impl BPlusTreeIndex {
 
     fn free_page_locked(free_head: &mut u32, bp: &mut BufferPool, page_id: u32) {
         if let Ok(frame_id) = bp.pin_page(page_id) {
-            let page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
+            let mut page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
             page.write_next_free(*free_head);
             bp.unpin_page(frame_id, true);
             *free_head = page_id;

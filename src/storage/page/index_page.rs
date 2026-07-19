@@ -1,16 +1,16 @@
 use std::cmp::Ordering;
 
 use crate::storage::page::TablePage;
+pub use crate::storage::page::raw_page::PAGE_SIZE;
 
-pub const PAGE_SIZE: usize = 8192;
 const INDEX_HEADER_SIZE: usize = 9; // 1 (is_leaf) + 2 (key_count) + 4 (next_page_id) + 2 (fsp)
 const INDEX_SLOT_SIZE: usize = 6; // 2 (payload_offset) + 2 (key_len) + 2 (value_len)
 
-pub struct IndexPage {
-    data: [u8; PAGE_SIZE],
+pub struct IndexPage<T = [u8; PAGE_SIZE]> {
+    pub(crate) data: T,
 }
 
-impl IndexPage {
+impl IndexPage<[u8; PAGE_SIZE]> {
     pub fn new(is_leaf: bool, next_page_id: u32) -> Self {
         let mut page = Self {
             data: [0u8; PAGE_SIZE],
@@ -22,49 +22,153 @@ impl IndexPage {
         page
     }
 
+    /// Converts a reference to a TablePage to a reference to an IndexPage.
+    ///
+    /// This is a completely safe conversion that returns an IndexPage view
+    /// borrowing from the underlying page's data.
+    pub fn from_page_ref<'a, U: AsRef<[u8]>>(page: &'a TablePage<U>) -> IndexPage<&'a [u8]> {
+        IndexPage {
+            data: page.data.as_ref(),
+        }
+    }
+
+    /// Converts a mutable reference to a TablePage to a mutable reference to an IndexPage.
+    ///
+    /// This is a completely safe conversion that returns an IndexPage view
+    /// borrowing from the underlying page's data mutably.
+    pub fn from_page_mut<'a, U: AsMut<[u8]>>(
+        page: &'a mut TablePage<U>,
+    ) -> IndexPage<&'a mut [u8]> {
+        IndexPage {
+            data: page.data.as_mut(),
+        }
+    }
+}
+
+impl<T> IndexPage<T> {
+    /// Creates a view of a page wrapping existing storage (e.g. `&[u8]` or `&mut [u8]`).
+    pub fn new_view(data: T) -> Self {
+        Self { data }
+    }
+}
+
+impl<T: AsRef<[u8]>> IndexPage<T> {
+    pub fn is_leaf(&self) -> bool {
+        self.data.as_ref()[0] != 0
+    }
+
+    pub fn key_count(&self) -> u16 {
+        u16::from_le_bytes(self.data.as_ref()[1..3].try_into().unwrap())
+    }
+
+    pub fn next_page_id(&self) -> u32 {
+        u32::from_le_bytes(self.data.as_ref()[3..7].try_into().unwrap())
+    }
+
+    fn free_space_pointer(&self) -> u16 {
+        u16::from_le_bytes(self.data.as_ref()[7..9].try_into().unwrap())
+    }
+
+    pub fn free_space(&self) -> usize {
+        let slot_array_end = INDEX_HEADER_SIZE + (self.key_count() as usize * INDEX_SLOT_SIZE);
+        self.free_space_pointer() as usize - slot_array_end
+    }
+
+    pub fn get_key(&self, slot_idx: u16) -> Option<&[u8]> {
+        if slot_idx >= self.key_count() {
+            return None;
+        }
+
+        let slot_off = INDEX_HEADER_SIZE + slot_idx as usize * INDEX_SLOT_SIZE;
+        let payload_off = u16::from_le_bytes(
+            self.data.as_ref()[slot_off..slot_off + 2]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let key_len = u16::from_le_bytes(
+            self.data.as_ref()[slot_off + 2..slot_off + 4]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+
+        Some(&self.data.as_ref()[payload_off..payload_off + key_len])
+    }
+
+    pub fn get_value(&self, slot_idx: u16) -> Option<&[u8]> {
+        if slot_idx >= self.key_count() {
+            return None;
+        }
+
+        let slot_off = INDEX_HEADER_SIZE + slot_idx as usize * INDEX_SLOT_SIZE;
+        let payload_off = u16::from_le_bytes(
+            self.data.as_ref()[slot_off..slot_off + 2]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let key_len = u16::from_le_bytes(
+            self.data.as_ref()[slot_off + 2..slot_off + 4]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let val_len = u16::from_le_bytes(
+            self.data.as_ref()[slot_off + 4..slot_off + 6]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+
+        let value_off = payload_off + key_len;
+        Some(&self.data.as_ref()[value_off..value_off + val_len])
+    }
+
+    pub fn binary_search_key<K: Ord + ?Sized>(
+        &self,
+        target_key: &K,
+        decode_fn: impl Fn(&[u8]) -> &K,
+    ) -> Result<u16, u16> {
+        let mut low = 0;
+        let mut high = self.key_count();
+        while low < high {
+            let mid = low + (high - low) / 2;
+            let mid_key_bytes = self.get_key(mid).unwrap();
+            let mid_key = decode_fn(mid_key_bytes);
+
+            match mid_key.cmp(target_key) {
+                Ordering::Equal => return Ok(mid),
+                Ordering::Less => low = mid + 1,
+                Ordering::Greater => high = mid,
+            }
+        }
+        Err(low)
+    }
+
+    pub fn read_next_free(&self) -> u32 {
+        u32::from_le_bytes(self.data.as_ref()[0..4].try_into().unwrap())
+    }
+}
+
+impl<T: AsRef<[u8]> + AsMut<[u8]>> IndexPage<T> {
     pub fn init(&mut self, is_leaf: bool, next_page_id: u32) {
-        self.data.fill(0);
+        self.data.as_mut().fill(0);
         self.set_is_leaf(is_leaf);
         self.set_key_count(0);
         self.set_next_page_id(next_page_id);
         self.set_free_space_pointer(PAGE_SIZE as u16);
     }
 
-    pub fn is_leaf(&self) -> bool {
-        self.data[0] != 0
-    }
-
     pub fn set_is_leaf(&mut self, is_leaf: bool) {
-        self.data[0] = if is_leaf { 1 } else { 0 };
-    }
-
-    pub fn key_count(&self) -> u16 {
-        u16::from_le_bytes(self.data[1..3].try_into().unwrap())
+        self.data.as_mut()[0] = if is_leaf { 1 } else { 0 };
     }
 
     pub fn set_key_count(&mut self, count: u16) {
-        self.data[1..3].copy_from_slice(&count.to_le_bytes());
-    }
-
-    pub fn next_page_id(&self) -> u32 {
-        u32::from_le_bytes(self.data[3..7].try_into().unwrap())
+        self.data.as_mut()[1..3].copy_from_slice(&count.to_le_bytes());
     }
 
     pub fn set_next_page_id(&mut self, id: u32) {
-        self.data[3..7].copy_from_slice(&id.to_le_bytes());
-    }
-
-    fn free_space_pointer(&self) -> u16 {
-        u16::from_le_bytes(self.data[7..9].try_into().unwrap())
+        self.data.as_mut()[3..7].copy_from_slice(&id.to_le_bytes());
     }
 
     fn set_free_space_pointer(&mut self, ptr: u16) {
-        self.data[7..9].copy_from_slice(&ptr.to_le_bytes());
-    }
-
-    pub fn free_space(&self) -> usize {
-        let slot_array_end = INDEX_HEADER_SIZE + (self.key_count() as usize * INDEX_SLOT_SIZE);
-        self.free_space_pointer() as usize - slot_array_end
+        self.data.as_mut()[7..9].copy_from_slice(&ptr.to_le_bytes());
     }
 
     pub fn insert_at(&mut self, slot_idx: u16, key: &[u8], value: &[u8]) -> bool {
@@ -84,21 +188,21 @@ impl IndexPage {
         let current_slot_array_end = INDEX_HEADER_SIZE + count as usize * INDEX_SLOT_SIZE;
 
         if (slot_idx as usize) < count as usize {
-            self.data.copy_within(
+            self.data.as_mut().copy_within(
                 target_slot_off..current_slot_array_end,
                 target_slot_off + INDEX_SLOT_SIZE,
             );
         }
 
         let new_fsp = self.free_space_pointer() as usize - payload_len;
-        self.data[new_fsp..new_fsp + key.len()].copy_from_slice(key);
-        self.data[new_fsp + key.len()..new_fsp + payload_len].copy_from_slice(value);
+        self.data.as_mut()[new_fsp..new_fsp + key.len()].copy_from_slice(key);
+        self.data.as_mut()[new_fsp + key.len()..new_fsp + payload_len].copy_from_slice(value);
 
-        self.data[target_slot_off..target_slot_off + 2]
+        self.data.as_mut()[target_slot_off..target_slot_off + 2]
             .copy_from_slice(&(new_fsp as u16).to_le_bytes());
-        self.data[target_slot_off + 2..target_slot_off + 4]
+        self.data.as_mut()[target_slot_off + 2..target_slot_off + 4]
             .copy_from_slice(&(key.len() as u16).to_le_bytes());
-        self.data[target_slot_off + 4..target_slot_off + 6]
+        self.data.as_mut()[target_slot_off + 4..target_slot_off + 6]
             .copy_from_slice(&(value.len() as u16).to_le_bytes());
 
         self.set_key_count(count + 1);
@@ -106,38 +210,10 @@ impl IndexPage {
         true
     }
 
-    pub fn get_key(&self, slot_idx: u16) -> Option<&[u8]> {
-        if slot_idx >= self.key_count() {
-            return None;
-        }
-
-        let slot_off = INDEX_HEADER_SIZE + slot_idx as usize * INDEX_SLOT_SIZE;
-        let payload_off =
-            u16::from_le_bytes(self.data[slot_off..slot_off + 2].try_into().unwrap()) as usize;
-        let key_len =
-            u16::from_le_bytes(self.data[slot_off + 2..slot_off + 4].try_into().unwrap()) as usize;
-
-        Some(&self.data[payload_off..payload_off + key_len])
-    }
-
-    pub fn get_value(&self, slot_idx: u16) -> Option<&[u8]> {
-        if slot_idx >= self.key_count() {
-            return None;
-        }
-
-        let slot_off = INDEX_HEADER_SIZE + slot_idx as usize * INDEX_SLOT_SIZE;
-        let payload_off =
-            u16::from_le_bytes(self.data[slot_off..slot_off + 2].try_into().unwrap()) as usize;
-        let key_len =
-            u16::from_le_bytes(self.data[slot_off + 2..slot_off + 4].try_into().unwrap()) as usize;
-        let val_len =
-            u16::from_le_bytes(self.data[slot_off + 4..slot_off + 6].try_into().unwrap()) as usize;
-
-        let value_off = payload_off + key_len;
-        Some(&self.data[value_off..value_off + val_len])
-    }
-
-    pub fn split_into(&mut self, right_page: &mut IndexPage) -> Vec<u8> {
+    pub fn split_into<U: AsRef<[u8]> + AsMut<[u8]>>(
+        &mut self,
+        right_page: &mut IndexPage<U>,
+    ) -> Vec<u8> {
         let total_count = self.key_count();
         let mid = total_count / 2;
 
@@ -170,6 +246,7 @@ impl IndexPage {
         let slot_off = INDEX_HEADER_SIZE + slot_idx as usize * INDEX_SLOT_SIZE;
         let end = INDEX_HEADER_SIZE + count as usize * INDEX_SLOT_SIZE;
         self.data
+            .as_mut()
             .copy_within(slot_off + INDEX_SLOT_SIZE..end, slot_off);
         self.set_key_count(count - 1);
         self.compact();
@@ -191,68 +268,56 @@ impl IndexPage {
         for i in 0..count {
             let slot_off = INDEX_HEADER_SIZE + i * INDEX_SLOT_SIZE;
 
-            let old_payload_off =
-                u16::from_le_bytes(self.data[slot_off..slot_off + 2].try_into().unwrap()) as usize;
-            let key_len =
-                u16::from_le_bytes(self.data[slot_off + 2..slot_off + 4].try_into().unwrap())
-                    as usize;
-            let val_len =
-                u16::from_le_bytes(self.data[slot_off + 4..slot_off + 6].try_into().unwrap())
-                    as usize;
+            let old_payload_off = u16::from_le_bytes(
+                self.data.as_ref()[slot_off..slot_off + 2]
+                    .try_into()
+                    .unwrap(),
+            ) as usize;
+            let key_len = u16::from_le_bytes(
+                self.data.as_ref()[slot_off + 2..slot_off + 4]
+                    .try_into()
+                    .unwrap(),
+            ) as usize;
+            let val_len = u16::from_le_bytes(
+                self.data.as_ref()[slot_off + 4..slot_off + 6]
+                    .try_into()
+                    .unwrap(),
+            ) as usize;
             let payload_len = key_len + val_len;
 
             temp_fsp -= payload_len;
 
-            temp_buffer[temp_fsp..temp_fsp + payload_len]
-                .copy_from_slice(&self.data[old_payload_off..old_payload_off + payload_len]);
+            temp_buffer[temp_fsp..temp_fsp + payload_len].copy_from_slice(
+                &self.data.as_ref()[old_payload_off..old_payload_off + payload_len],
+            );
 
             new_offsets[i] = temp_fsp as u16;
         }
 
-        self.data[temp_fsp..PAGE_SIZE].copy_from_slice(&temp_buffer[temp_fsp..PAGE_SIZE]);
+        self.data.as_mut()[temp_fsp..PAGE_SIZE].copy_from_slice(&temp_buffer[temp_fsp..PAGE_SIZE]);
 
         for i in 0..count {
             let slot_off = INDEX_HEADER_SIZE + i * INDEX_SLOT_SIZE;
-            self.data[slot_off..slot_off + 2].copy_from_slice(&new_offsets[i].to_le_bytes());
+            self.data.as_mut()[slot_off..slot_off + 2]
+                .copy_from_slice(&new_offsets[i].to_le_bytes());
         }
 
         self.set_free_space_pointer(temp_fsp as u16);
     }
 
-    pub fn binary_search_key<K: Ord + ?Sized>(
-        &self,
-        target_key: &K,
-        decode_fn: impl Fn(&[u8]) -> &K,
-    ) -> Result<u16, u16> {
-        let mut low = 0;
-        let mut high = self.key_count();
-        while low < high {
-            let mid = low + (high - low) / 2;
-            let mid_key_bytes = self.get_key(mid).unwrap();
-            let mid_key = decode_fn(mid_key_bytes);
-
-            match mid_key.cmp(target_key) {
-                Ordering::Equal => return Ok(mid),
-                Ordering::Less => low = mid + 1,
-                Ordering::Greater => high = mid,
-            }
-        }
-        Err(low)
-    }
-
-    pub fn from_page_ref(page: &TablePage) -> &Self {
-        unsafe { &*(page as *const TablePage as *const IndexPage) }
-    }
-
-    pub fn from_page_mut(page: &mut TablePage) -> &mut Self {
-        unsafe { &mut *(page as *mut TablePage as *mut IndexPage) }
-    }
-
     pub fn write_next_free(&mut self, next: u32) {
-        self.data[0..4].copy_from_slice(&next.to_le_bytes());
+        self.data.as_mut()[0..4].copy_from_slice(&next.to_le_bytes());
     }
+}
 
-    pub fn read_next_free(&self) -> u32 {
-        u32::from_be_bytes(self.data[0..4].try_into().unwrap())
+impl<T: AsRef<[u8]>> AsRef<[u8]> for IndexPage<T> {
+    fn as_ref(&self) -> &[u8] {
+        self.data.as_ref()
+    }
+}
+
+impl<T: AsMut<[u8]>> AsMut<[u8]> for IndexPage<T> {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.data.as_mut()
     }
 }

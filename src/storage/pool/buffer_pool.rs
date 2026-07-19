@@ -354,6 +354,37 @@ impl BufferPool {
     pub fn num_pages(&self) -> u32 {
         self.heap_file.num_pages
     }
+
+    /// Safely returns mutable references to two distinct frames simultaneously.
+    /// Returns an error or panics if the same frame is requested twice.
+    pub fn get_two_pages_mut(
+        &mut self,
+        frame_a: usize,
+        frame_b: usize,
+    ) -> (&mut TablePage, &mut TablePage) {
+        // Enforce distinct frames to protect aliasing invariants
+        assert!(
+            frame_a != frame_b,
+            "Cannot mutably borrow the same frame twice"
+        );
+
+        // Safely obtain disjoint mutable references using pointer slicing
+        let frame_ptr = self.frames.as_mut_ptr();
+
+        // Mark dirty immediately — the caller is about to modify the pages.
+        self.dirty_flag[frame_a] = true;
+        self.dirty_flag[frame_b] = true;
+
+        unsafe {
+            let ref_a = (&mut *frame_ptr.add(frame_a))
+                .as_mut()
+                .expect("frame_a is empty — did you forget to pin the page?");
+            let ref_b = (&mut *frame_ptr.add(frame_b))
+                .as_mut()
+                .expect("frame_b is empty — did you forget to pin the page?");
+            (ref_a, ref_b)
+        }
+    }
 }
 
 impl Drop for BufferPool {

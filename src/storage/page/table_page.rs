@@ -1,11 +1,6 @@
 use std::convert::TryInto;
 
-/// Size of a single page in bytes.
-///
-/// 8KB matches PostgreSQL's default `BLCKSZ`. Every page on disk and in
-/// the buffer pool is exactly this size — fixed-size pages are what make
-/// `page_id * PAGE_SIZE` a valid file offset (Stage 2: `HeapFile`).
-pub const PAGE_SIZE: usize = 8192;
+pub use crate::storage::page::raw_page::PAGE_SIZE;
 
 /// Size of the page header in bytes.
 ///
@@ -64,12 +59,12 @@ const SLOT_SIZE: usize = 4;
 /// identifier (`slot_id`) that other parts of the engine (indexes, the
 /// buffer pool, MVCC version chains) can reference even if the tuple's
 /// bytes later move during compaction.
-pub struct TablePage {
-    data: [u8; PAGE_SIZE],
+pub struct TablePage<T = [u8; PAGE_SIZE]> {
+    pub(crate) data: T,
 }
 
-impl TablePage {
-    /// Creates a new, empty page with the given `page_id`.
+impl TablePage<[u8; PAGE_SIZE]> {
+    /// Creates a new, empty owned page with the given `page_id`.
     ///
     /// Initializes the header so that:
     /// - `slot_count = 0` — no tuples yet
@@ -90,17 +85,33 @@ impl TablePage {
         page
     }
 
+    /// Constructs an owned page from a raw on-disk page image.
+    ///
+    /// `HeapFile::read_page` reads exactly `PAGE_SIZE` bytes from disk and
+    /// passes them here to reconstruct the in-memory `Page` representation.
+    ///
+    /// No validation is performed — the caller is responsible for ensuring
+    /// the bytes originated from a valid page written by this storage engine.
+    pub fn from_bytes(data: [u8; PAGE_SIZE]) -> Self {
+        Self { data }
+    }
+}
+
+impl<T> TablePage<T> {
+    /// Creates a view of a page wrapping existing storage (e.g. `&[u8]` or `&mut [u8]`).
+    pub fn new_view(data: T) -> Self {
+        Self { data }
+    }
+}
+
+impl<T: AsRef<[u8]>> TablePage<T> {
     // ─────────────────────────────────────────────────────────────────
     // Header accessors
     // ─────────────────────────────────────────────────────────────────
 
     /// Returns this page's identifier.
     pub fn page_id(&self) -> u32 {
-        u32::from_le_bytes(self.data[0..4].try_into().unwrap())
-    }
-
-    fn set_page_id(&mut self, page_id: u32) {
-        self.data[0..4].copy_from_slice(&page_id.to_le_bytes());
+        u32::from_le_bytes(self.data.as_ref()[0..4].try_into().unwrap())
     }
 
     /// Returns the number of slots in the slot array.
@@ -109,11 +120,7 @@ impl TablePage {
     /// (Stage 1 does not reclaim/reuse slot indices). A slot with length 0
     /// is "deleted" but its index remains allocated.
     pub fn slot_count(&self) -> u16 {
-        u16::from_le_bytes(self.data[4..6].try_into().unwrap())
-    }
-
-    fn set_slot_count(&mut self, count: u16) {
-        self.data[4..6].copy_from_slice(&count.to_le_bytes());
+        u16::from_le_bytes(self.data.as_ref()[4..6].try_into().unwrap())
     }
 
     /// Returns the current free-space pointer.
@@ -125,11 +132,7 @@ impl TablePage {
     ///
     /// Free space is the region `[slot_array_end, free_space_pointer)`.
     fn free_space_pointer(&self) -> u16 {
-        u16::from_le_bytes(self.data[6..8].try_into().unwrap())
-    }
-
-    fn set_free_space_pointer(&mut self, ptr: u16) {
-        self.data[6..8].copy_from_slice(&ptr.to_le_bytes());
+        u16::from_le_bytes(self.data.as_ref()[6..8].try_into().unwrap())
     }
 
     /// Returns the number of bytes currently available for a new tuple
@@ -170,9 +173,56 @@ impl TablePage {
         }
 
         let off = Self::slot_entry_offset(slot_id);
-        let tuple_offset = u16::from_le_bytes(self.data[off..off + 2].try_into().unwrap());
-        let tuple_length = u16::from_le_bytes(self.data[off + 2..off + 4].try_into().unwrap());
+        let tuple_offset = u16::from_le_bytes(self.data.as_ref()[off..off + 2].try_into().unwrap());
+        let tuple_length =
+            u16::from_le_bytes(self.data.as_ref()[off + 2..off + 4].try_into().unwrap());
         Some((tuple_offset, tuple_length))
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Tuple operations
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Returns the bytes for the tuple stored in `slot_id`.
+    ///
+    /// Returns `None` if `slot_id` is out of range or the slot has been
+    /// deleted (length 0).
+    pub fn get_tuple(&self, slot_id: u16) -> Option<&[u8]> {
+        let (offset, length) = self.read_slot(slot_id)?;
+        if length == 0 {
+            return None;
+        }
+        let offset = offset as usize;
+        let length = length as usize;
+        Some(&self.data.as_ref()[offset..offset + length])
+    }
+
+    /// Returns the page's raw byte representation.
+    ///
+    /// The returned slice contains the complete page image, including the
+    /// header, slot array, free space, and tuple data regions. This is used
+    /// by `HeapFile::write_page` to persist the page to disk with a single
+    /// `write_all` call.
+    ///
+    /// The returned bytes should be treated as opaque by callers; page
+    /// contents should normally be accessed through the page API rather than
+    /// by manually parsing the byte array.
+    pub fn as_bytes(&self) -> &[u8] {
+        self.data.as_ref()
+    }
+}
+
+impl<T: AsRef<[u8]> + AsMut<[u8]>> TablePage<T> {
+    fn set_page_id(&mut self, page_id: u32) {
+        self.data.as_mut()[0..4].copy_from_slice(&page_id.to_le_bytes());
+    }
+
+    fn set_slot_count(&mut self, count: u16) {
+        self.data.as_mut()[4..6].copy_from_slice(&count.to_le_bytes());
+    }
+
+    fn set_free_space_pointer(&mut self, ptr: u16) {
+        self.data.as_mut()[6..8].copy_from_slice(&ptr.to_le_bytes());
     }
 
     /// Writes slot `slot_id`'s `(tuple_offset, tuple_length)` pair.
@@ -183,13 +233,9 @@ impl TablePage {
     /// existed).
     fn write_slot(&mut self, slot_id: u16, tuple_offset: u16, tuple_length: u16) {
         let off = Self::slot_entry_offset(slot_id);
-        self.data[off..off + 2].copy_from_slice(&tuple_offset.to_le_bytes());
-        self.data[off + 2..off + 4].copy_from_slice(&tuple_length.to_le_bytes());
+        self.data.as_mut()[off..off + 2].copy_from_slice(&tuple_offset.to_le_bytes());
+        self.data.as_mut()[off + 2..off + 4].copy_from_slice(&tuple_length.to_le_bytes());
     }
-
-    // ─────────────────────────────────────────────────────────────────
-    // Tuple operations
-    // ─────────────────────────────────────────────────────────────────
 
     /// Inserts `tuple` into this page and returns its slot id.
     ///
@@ -236,7 +282,7 @@ impl TablePage {
         // New tuple data is written just below the current free-space
         // pointer, growing the tuple-data region toward the slot array.
         let new_fsp = self.free_space_pointer() as usize - tuple_len;
-        self.data[new_fsp..new_fsp + tuple_len].copy_from_slice(tuple);
+        self.data.as_mut()[new_fsp..new_fsp + tuple_len].copy_from_slice(tuple);
         self.set_free_space_pointer(new_fsp as u16);
 
         let slot_id = match reusable_slot {
@@ -250,20 +296,6 @@ impl TablePage {
 
         self.write_slot(slot_id, new_fsp as u16, tuple_len as u16);
         Some(slot_id)
-    }
-
-    /// Returns the bytes for the tuple stored in `slot_id`.
-    ///
-    /// Returns `None` if `slot_id` is out of range or the slot has been
-    /// deleted (length 0).
-    pub fn get_tuple(&self, slot_id: u16) -> Option<&[u8]> {
-        let (offset, length) = self.read_slot(slot_id)?;
-        if length == 0 {
-            return None;
-        }
-        let offset = offset as usize;
-        let length = length as usize;
-        Some(&self.data[offset..offset + length])
     }
 
     /// Marks the tuple in `slot_id` as deleted.
@@ -290,33 +322,20 @@ impl TablePage {
         }
     }
 
-    /// Constructs a page from a raw on-disk page image.
-    ///
-    /// `HeapFile::read_page` reads exactly `PAGE_SIZE` bytes from disk and
-    /// passes them here to reconstruct the in-memory `Page` representation.
-    ///
-    /// No validation is performed — the caller is responsible for ensuring
-    /// the bytes originated from a valid page written by this storage engine.
-    pub fn from_bytes(data: [u8; PAGE_SIZE]) -> Self {
-        Self { data }
-    }
-
-    /// Returns the page's raw byte representation.
-    ///
-    /// The returned slice contains the complete page image, including the
-    /// header, slot array, free space, and tuple data regions. This is used
-    /// by `HeapFile::write_page` to persist the page to disk with a single
-    /// `write_all` call.
-    ///
-    /// The returned bytes should be treated as opaque by callers; page
-    /// contents should normally be accessed through the page API rather than
-    /// by manually parsing the byte array.
-    pub fn as_bytes(&self) -> &[u8; PAGE_SIZE] {
-        &self.data
-    }
-
     /// Returns the mutable pages's raw byte
-    pub fn as_bytes_mut(&mut self) -> &mut [u8; PAGE_SIZE] {
-        &mut self.data
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
+        self.data.as_mut()
+    }
+}
+
+impl<T: AsRef<[u8]>> AsRef<[u8]> for TablePage<T> {
+    fn as_ref(&self) -> &[u8] {
+        self.data.as_ref()
+    }
+}
+
+impl<T: AsMut<[u8]>> AsMut<[u8]> for TablePage<T> {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.data.as_mut()
     }
 }
