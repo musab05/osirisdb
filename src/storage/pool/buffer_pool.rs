@@ -52,6 +52,9 @@ pub struct BufferPool {
     /// Maps `page_id → frame_index` for O(1) cache-hit detection.
     page_table: HashMap<u32, usize>,
 
+    /// Maps frame_index -> page_id.
+    frame_to_page: Vec<Option<u32>>,
+
     /// Number of active pinners per frame.
     ///
     /// A frame with `pin_count > 0` is in use and cannot be evicted.
@@ -92,6 +95,7 @@ impl BufferPool {
             heap_file,
             frames: (0..capacity).map(|_| None).collect(),
             page_table: HashMap::new(),
+            frame_to_page: vec![None; capacity],
             pin_count: vec![0; capacity],
             dirty_flag: vec![false; capacity],
             last_used: vec![0; capacity],
@@ -143,6 +147,7 @@ impl BufferPool {
 
         // Register in the page table and mark as pinned.
         self.page_table.insert(page_id, frame_id);
+        self.frame_to_page[frame_id] = Some(page_id);
         self.clock += 1;
         self.last_used[frame_id] = self.clock;
         self.pin_count[frame_id] = 1;
@@ -176,6 +181,7 @@ impl BufferPool {
 
         self.frames[frame_id] = Some(page);
         self.page_table.insert(page_id, frame_id);
+        self.frame_to_page[frame_id] = Some(page_id);
         self.clock += 1;
         self.last_used[frame_id] = self.clock;
         self.pin_count[frame_id] = 1;
@@ -253,12 +259,7 @@ impl BufferPool {
         for frame_id in 0..self.capacity {
             if self.dirty_flag[frame_id] {
                 if let Some(page) = &self.frames[frame_id] {
-                    let page_id = *self
-                        .page_table
-                        .iter()
-                        .find(|&(_, &fid)| fid == frame_id)
-                        .map(|(pid, _)| pid)
-                        .expect("frame not found in page table");
+                    let page_id = self.frame_to_page[frame_id].expect("frame not found");
                     match self.heap_file.write_page(page_id, page) {
                         Ok(_) => self.dirty_flag[frame_id] = false,
                         Err(e) => last_err = Some(e),
@@ -325,12 +326,7 @@ impl BufferPool {
     /// `pin_count[frame_id]` must be 0. This is enforced by
     /// [`Self::find_or_evict`] before calling here.
     fn evict(&mut self, frame_id: usize) -> Result<(), StorageError> {
-        let page_id = *self
-            .page_table
-            .iter()
-            .find(|&(_, &fid)| fid == frame_id)
-            .map(|(pid, _)| pid)
-            .expect("frame not found in page table");
+        let page_id = self.frame_to_page[frame_id].expect("frame not found");
 
         if self.dirty_flag[frame_id] {
             // Write the dirty page back to disk before discarding it.
@@ -346,6 +342,8 @@ impl BufferPool {
         self.frames[frame_id] = None;
         self.dirty_flag[frame_id] = false;
         self.pin_count[frame_id] = 0;
+
+        self.frame_to_page[frame_id] = None;
 
         Ok(())
     }
