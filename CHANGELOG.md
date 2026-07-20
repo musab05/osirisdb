@@ -7,7 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-06-27
+## [0.7.0] - 2026-07-20
+
+### Added
+
+- **B+Tree Indexing & On-Disk Index Page Storage**:
+  - Implemented `BPlusTreeIndex` supporting lookup, insert, delete, and recursive page split/merge deletion algorithms.
+  - Introduced `IndexPage` for index page management with structural header layout (including `free_space_pointer` / FSP, header size of 9 bytes, page free list, and deallocation).
+  - Added page underflow handling, index page missing errors, and storage directory validation checks.
+  - Coupled catalog `TableEntry` with `TableHeap` and `BPlusTreeIndex` storage backends.
+- **Write-Ahead Logging (WAL) & Crash Consistency**:
+  - Implemented Write-Ahead Logging (`WAL` module) for crash consistency and page modification recovery.
+  - Added WAL logging support to `HeapFile` page allocation and storage operations for durable data updates.
+- **SQL Session Management & `USE` Statement**:
+  - Added full pipeline support for `USE <database>;` SQL statements (`UseDatabaseStmt`).
+  - Integrated `USE` statement support into lexer, parser, AST, binder, and session module (`database_session`).
+- **SQL Execution & Query Pipeline**:
+  - Implemented equality predicate filtering in `SELECT` statement `WHERE` clauses (`WHERE col = val`).
+  - Added `sql` and `execution` top-level modules for executing raw SQL command strings and managing end-to-end statement execution workflows.
+- **CASE Expression Binder & Evaluator**:
+  - Added compile-time scalar evaluation and binding for simple and searched `CASE` expressions in `eval_expr`.
+  - Added comprehensive binder integration tests for `CASE` expressions (`tests/binder/expr_test.rs`).
+- **Runtime Constraint Enforcement**:
+  - Added runtime primary key and uniqueness constraint enforcement in `execute_insert_table` via sequential table heap scans (supporting single-column and composite key constraints).
+  - Added integration tests for INSERT constraint violations (`tests/executor/constraint_test.rs`).
+- **Buffer Pool & Storage Primitives**:
+  - Added `frame_to_page` reverse mapping in `BufferPool` for efficient frame lookups and page lifecycle management.
+  - Introduced `RawPage` struct for handling raw byte array page storage.
+  - Exposed `as_bytes_mut` on `Page` for direct buffer modifications.
+
+### Changed & Refactored
+
+- **Storage Layer Modularization**:
+  - Reorganized `src/storage` into modular subdirectories (`btree`, `file`, `heap`, `page`, `pool`, `ddl`).
+  - Fixed page eviction bug in `BufferPool` and `HeapFile::write_page` to resolve page IDs using the buffer pool `page_table` rather than reading corrupted bytes from index page headers.
+- **Thread-Safety & Memory Safety**:
+  - Updated `BufferPool` handles in `TableHeap` and `SystemCatalog` to `Arc<Mutex<BufferPool>>` for thread-safe concurrent access.
+  - Refactored `Interner` with `get_or_intern` for thread-safe string interning.
+- **Error Handling & Insert Optimizations**:
+  - Updated `RecordId::from_bytes` to return `Result<RecordId, StorageError>` for safer byte decoding error handling.
+  - Optimized `INSERT` execution key validation and reused pre-serialized keys.
+  - Enhanced table constraint handling and validation in Binder.
+- **Documentation & Benchmarks**:
+  - Added 1000-row INSERT execution performance test suite (`tests/executor/insert_test.rs`) and Criterion benchmarks (`benches/executor/insert_bench.rs`).
+  - Moved architecture diagrams and execution lifecycle documentation from `README.md` to `ARCHITECTURE.md`.
+
+
 
 ### Added
 
