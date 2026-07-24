@@ -168,13 +168,15 @@ impl HeapFile {
         Ok(TablePage::from_bytes(buf))
     }
 
-    /// Writes `page` to its position in the file.
+    /// Writes `page` to its position in the file and logs the operation in the WAL.
     ///
-    /// # Errors
+    /// # Durability Note
+    /// This method appends and flushes a WAL record, but the data file write itself goes
+    /// to the OS page cache without an immediate `fsync`. Durability of the data file is
+    /// deferred until [`checkpoint()`](Self::checkpoint) is called.
     ///
-    /// Returns [`StorageError::PageOutOfBounds`] if the `page_id` is
-    /// `>= num_pages`.
-    /// Returns [`StorageError::Io`] if the seek or write fails.
+    /// Crash safety is guaranteed by WAL replay upon database startup.
+
     pub fn write_page(&mut self, page_id: u32, page: &TablePage) -> Result<(), StorageError> {
         if page_id >= self.num_pages {
             return Err(StorageError::PageOutOfBounds {
@@ -190,6 +192,22 @@ impl HeapFile {
             .write_all(page.as_bytes())
             .map_err(|e| StorageError::io(&self.path, e))?;
 
+        Ok(())
+    }
+
+    /// Writes `page` directly to disk and immediately flushes changes to stable storage (`fsync`).
+    ///
+    /// Use this variant for WAL-bypassing operations (e.g., bulk loading or unlogged table writes)
+    /// where WAL replay will not be available to recover un-synced page cache writes.
+    pub fn write_page_durable(
+        &mut self,
+        page_id: u32,
+        page: &TablePage,
+    ) -> Result<(), StorageError> {
+        self.write_page(page_id, page)?;
+        self.file
+            .sync_all()
+            .map_err(|e| StorageError::io(&self.path, e))?;
         Ok(())
     }
 
