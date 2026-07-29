@@ -88,7 +88,7 @@ impl Executor {
                         let index_handle = self.get_index(db, schema, table, col.name)?;
                         if index_handle
                             .lock()
-                            .unwrap()
+                            .unwrap_or_else(|e| e.into_inner())
                             .lookup(&encoded_key)
                             .map_err(|e| ExecutionError::Storage(e.to_string()))?
                             .is_some()
@@ -159,7 +159,7 @@ impl Executor {
 
                         if index_handle
                             .lock()
-                            .unwrap()
+                            .unwrap_or_else(|e| e.into_inner())
                             .lookup(&encoded_composite_key)
                             .map_err(|e| ExecutionError::Storage(e.to_string()))?
                             .is_some()
@@ -197,7 +197,7 @@ impl Executor {
             // ── Pass B: write heap + indexes, reusing keys computed above ──
             for pending in &prepared {
                 let (page_id, slot_id) = {
-                    let mut heap = heap_handle.lock().unwrap();
+                    let mut heap = heap_handle.lock().unwrap_or_else(|e| e.into_inner());
                     heap.insert_tuple(&columns, &pending.row, &self.catalog.interner)
                         .map_err(|e| ExecutionError::Storage(e.to_string()))?
                 };
@@ -208,7 +208,7 @@ impl Executor {
                     let index_handle = self.get_index(db, schema, table, *col_name)?;
                     index_handle
                         .lock()
-                        .unwrap()
+                        .unwrap_or_else(|e| e.into_inner())
                         .insert(encoded_key, new_record_id)
                         .map_err(|e| ExecutionError::Storage(e.to_string()))?;
                 }
@@ -217,7 +217,7 @@ impl Executor {
                     let index_handle = self.get_index(db, schema, table, *idx_name)?;
                     index_handle
                         .lock()
-                        .unwrap()
+                        .unwrap_or_else(|e| e.into_inner())
                         .insert(encoded_key, new_record_id)
                         .map_err(|e| ExecutionError::Storage(e.to_string()))?;
                 }

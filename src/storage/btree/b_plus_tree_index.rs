@@ -31,7 +31,7 @@ impl BPlusTreeIndex {
         buffer_pool: Arc<Mutex<BufferPool>>,
     ) -> Result<Self, StorageError> {
         let (root_page_id, free_head) = {
-            let mut bp = buffer_pool.lock().unwrap();
+            let mut bp = buffer_pool.lock().unwrap_or_else(|err| err.into_inner());
             if bp.num_pages() == 0 {
                 let (_, frame_id) = bp.new_page()?; // page 0
                 let raw = bp.get_page_mut(frame_id);
@@ -83,7 +83,10 @@ impl BPlusTreeIndex {
     /// changes. Locks the pool itself — never call while already holding
     /// a lock (use inline writes instead, as `alloc_page_locked` does).
     fn persist_meta(&mut self) -> Result<(), StorageError> {
-        let mut bp = self.buffer_pool.lock().unwrap();
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         let frame_id = bp.pin_page(META_PAGE_ID)?;
         let raw = bp.get_page_mut(frame_id);
         let root = self.root_page_id.unwrap_or(NIL);
@@ -100,7 +103,10 @@ impl BPlusTreeIndex {
         };
 
         loop {
-            let mut bp = self.buffer_pool.lock().unwrap();
+            let mut bp = self
+                .buffer_pool
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             let frame_id = bp.pin_page(current_page_id)?;
 
             let raw_page = bp.get_page(frame_id);
@@ -147,7 +153,10 @@ impl BPlusTreeIndex {
         if self.root_page_id.is_none() {
             let (new_page_id, frame_id) = self.alloc_page()?;
             {
-                let mut bp = self.buffer_pool.lock().unwrap();
+                let mut bp = self
+                    .buffer_pool
+                    .lock()
+                    .unwrap_or_else(|err| err.into_inner());
                 let raw_page = bp.get_page_mut(frame_id);
                 let mut index_page = IndexPage::from_page_mut(raw_page);
                 index_page.init(true, 0);
@@ -167,7 +176,10 @@ impl BPlusTreeIndex {
         {
             let (new_root_id, frame_id) = self.alloc_page()?;
             {
-                let mut bp = self.buffer_pool.lock().unwrap();
+                let mut bp = self
+                    .buffer_pool
+                    .lock()
+                    .unwrap_or_else(|err| err.into_inner());
                 let raw_page = bp.get_page_mut(frame_id);
                 let mut new_root = IndexPage::from_page_mut(raw_page);
                 new_root.init(false, root_id);
@@ -188,7 +200,10 @@ impl BPlusTreeIndex {
         key: &[u8],
         value: &[u8],
     ) -> Result<Option<(Vec<u8>, u32)>, StorageError> {
-        let mut bp = self.buffer_pool.lock().unwrap();
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         let frame_id = bp.pin_page(current_page_id)?;
 
         let is_leaf = IndexPage::from_page_ref(bp.get_page(frame_id)).is_leaf();
@@ -254,7 +269,10 @@ impl BPlusTreeIndex {
         if let Some((promoted_key, right_child_id)) =
             self.insert_recursive(child_page_id, key, value)?
         {
-            let mut bp = self.buffer_pool.lock().unwrap();
+            let mut bp = self
+                .buffer_pool
+                .lock()
+                .unwrap_or_else(|err| err.into_inner());
             let frame_id = bp.pin_page(current_page_id)?;
             let mut index_page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
 
@@ -308,7 +326,10 @@ impl BPlusTreeIndex {
         let result = self.delete(key)?;
         if let Some(root) = self.root_page_id {
             let (collapse, new_root) = {
-                let mut bp = self.buffer_pool.lock().unwrap();
+                let mut bp = self
+                    .buffer_pool
+                    .lock()
+                    .unwrap_or_else(|err| err.into_inner());
                 let frame_id = bp.pin_page(root)?;
                 let page = IndexPage::from_page_ref(bp.get_page(frame_id));
                 let collapse = !page.is_leaf() && page.key_count() == 0;
@@ -342,7 +363,10 @@ impl BPlusTreeIndex {
     /// Returns `(found, underflow)` — `underflow` tells the caller whether
     /// this node dropped below `MIN_KEYS` and needs merge/redistribute.
     fn delete_recursive(&mut self, page_id: u32, key: &[u8]) -> Result<(bool, bool), StorageError> {
-        let mut bp = self.buffer_pool.lock().unwrap();
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         let frame_id = bp.pin_page(page_id)?;
         let is_leaf = IndexPage::from_page_ref(bp.get_page(frame_id)).is_leaf();
 
@@ -379,7 +403,10 @@ impl BPlusTreeIndex {
             self.fix_underflow(page_id, child_id)?;
         }
 
-        let mut bp = self.buffer_pool.lock().unwrap();
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         let frame_id = bp.pin_page(page_id)?;
         let underflow = IndexPage::from_page_ref(bp.get_page(frame_id)).key_count() < MIN_KEYS;
         bp.unpin_page(frame_id, false);
@@ -390,7 +417,10 @@ impl BPlusTreeIndex {
     /// Rebalances `child_id` under `parent_id`: borrow from a sibling with
     /// spare keys, else merge with one and free the emptied page.
     fn fix_underflow(&mut self, parent_id: u32, child_id: u32) -> Result<(), StorageError> {
-        let mut bp = self.buffer_pool.lock().unwrap();
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         let parent_frame = bp.pin_page(parent_id)?;
 
         let (left_sib, right_sib, child_slot) = {
@@ -554,14 +584,20 @@ impl BPlusTreeIndex {
     /// Grabs a page — reuses a freed one if available, else allocates fresh.
     /// Locks the pool itself; do not call while already holding a lock.
     fn alloc_page(&mut self) -> Result<(u32, usize), StorageError> {
-        let mut bp = self.buffer_pool.lock().unwrap();
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         Self::alloc_page_locked(&mut self.free_head, &mut bp)
     }
 
     /// Returns `page_id` to the free list. Locks the pool itself; do not
     /// call while already holding a lock.
     fn free_page(&mut self, page_id: u32) -> Result<(), StorageError> {
-        let mut bp = self.buffer_pool.lock().unwrap();
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         Self::free_page_locked(&mut self.free_head, &mut bp, page_id);
         drop(bp);
         self.persist_meta()

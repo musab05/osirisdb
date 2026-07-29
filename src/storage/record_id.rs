@@ -1,7 +1,7 @@
 use crate::storage::StorageError;
 
 /// References a specific row location inside a TableHeap file.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd)]
 pub struct RecordId {
     pub page_id: u32,
     pub slot_id: u16,

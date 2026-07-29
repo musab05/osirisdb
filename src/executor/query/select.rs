@@ -31,7 +31,7 @@ impl Executor {
                 let index_handle = self.get_index(db, schema, table, pred.column_name)?;
                 let record_id = index_handle
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .lookup(&encoded_key)
                     .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 
@@ -41,7 +41,7 @@ impl Executor {
                         let heap_handle = self.get_table_heap(db, schema, table)?;
                         let row = heap_handle
                             .lock()
-                            .unwrap()
+                            .unwrap_or_else(|e| e.into_inner())
                             .get_tuple(rid, &columns, &self.catalog.interner)
                             .map_err(|e| ExecutionError::Storage(e.to_string()))?;
                         match row {
@@ -63,7 +63,7 @@ impl Executor {
         let heap_handle = self.get_table_heap(db, schema, table)?;
         let rows = heap_handle
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .scan(&columns, &mut self.catalog.interner)
             .map_err(|e| ExecutionError::Storage(e.to_string()))?;
 

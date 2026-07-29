@@ -47,7 +47,10 @@ impl TableHeap {
     ) -> Result<(u32, u16), StorageError> {
         let bytes = serialize_tuple(schema, values, interner)?;
 
-        let mut bp = self.buffer_pool.lock().unwrap();
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
 
         let (page_id, frame_id) = if bp.num_pages() == 0 {
             bp.new_page()?
@@ -85,7 +88,10 @@ impl TableHeap {
         interner: &Interner,
     ) -> Result<Vec<Vec<Value>>, StorageError> {
         let mut all_rows = Vec::new();
-        let mut bp = self.buffer_pool.lock().unwrap();
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
 
         for page_id in 0..bp.num_pages() {
             let frame_id = bp.pin_page(page_id)?;
@@ -115,7 +121,10 @@ impl TableHeap {
         schema: &[ColumnEntry],
         interner: &Interner,
     ) -> Result<Option<Vec<Value>>, StorageError> {
-        let mut bp = self.buffer_pool.lock().unwrap();
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
         let frame_id = bp.pin_page(rid.page_id)?;
         let page = bp.get_page(frame_id);
         let result = match page.get_tuple(rid.slot_id) {

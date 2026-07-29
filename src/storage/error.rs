@@ -40,6 +40,15 @@ pub enum StorageError {
 
     /// index check
     IndexNotInitialized,
+
+    /// Data or page layout corruption encountered.
+    CorruptedData(String),
+
+    /// A WAL logging or recovery error occurred.
+    WalError(String),
+
+    /// A thread panicked while holding a mutex lock.
+    LockPoisoned(String),
 }
 
 impl StorageError {
@@ -82,6 +91,15 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::IndexNotInitialized => {
                 write!(f, "index has no pages yet")
+            }
+            StorageError::CorruptedData(msg) => {
+                write!(f, "corrupted data: {}", msg)
+            }
+            StorageError::WalError(msg) => {
+                write!(f, "WAL error: {}", msg)
+            }
+            StorageError::LockPoisoned(msg) => {
+                write!(f, "lock poisoned: {}", msg)
             }
         }
     }

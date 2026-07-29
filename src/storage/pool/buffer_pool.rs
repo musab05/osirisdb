@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, vec};
 
 use crate::storage::{error::StorageError, file::HeapFile, page::TablePage};
 
@@ -68,18 +68,11 @@ pub struct BufferPool {
     /// Cleared to `false` after the page is written back to disk.
     dirty_flag: Vec<bool>,
 
-    /// Monotonic access timestamp per frame — used for LRU eviction.
-    ///
-    /// Updated to the current `clock` value every time a frame is
-    /// accessed (pin or cache hit). The frame with the smallest
-    /// `last_used` among unpinned frames is chosen as the eviction victim.
-    last_used: Vec<u64>,
+    /// Reference bit per frame slot — set to `true` on access.
+    referenced: Vec<bool>,
 
-    /// Global monotonic counter incremented on every frame access.
-    ///
-    /// Together with `last_used` this implements a simple LRU policy
-    /// without needing an explicit queue or doubly-linked list.
-    clock: u64,
+    /// Pointer to current position in the circular frame buffer.
+    clock_hand: usize,
 
     /// Maximum number of frames this pool can hold simultaneously.
     capacity: usize,
@@ -98,8 +91,8 @@ impl BufferPool {
             frame_to_page: vec![None; capacity],
             pin_count: vec![0; capacity],
             dirty_flag: vec![false; capacity],
-            last_used: vec![0; capacity],
-            clock: 0,
+            referenced: vec![false; capacity],
+            clock_hand: 0,
             capacity,
         }
     }
@@ -131,8 +124,7 @@ impl BufferPool {
         // The page is already in a frame — just bump its pin count and
         // update the LRU timestamp; no disk access needed.
         if let Some(&frame_id) = self.page_table.get(&page_id) {
-            self.clock += 1;
-            self.last_used[frame_id] = self.clock;
+            self.referenced[frame_id] = true;
             self.pin_count[frame_id] += 1;
             return Ok(frame_id);
         }
@@ -148,8 +140,7 @@ impl BufferPool {
         // Register in the page table and mark as pinned.
         self.page_table.insert(page_id, frame_id);
         self.frame_to_page[frame_id] = Some(page_id);
-        self.clock += 1;
-        self.last_used[frame_id] = self.clock;
+        self.referenced[frame_id] = true;
         self.pin_count[frame_id] = 1;
         self.dirty_flag[frame_id] = false;
 
@@ -182,8 +173,7 @@ impl BufferPool {
         self.frames[frame_id] = Some(page);
         self.page_table.insert(page_id, frame_id);
         self.frame_to_page[frame_id] = Some(page_id);
-        self.clock += 1;
-        self.last_used[frame_id] = self.clock;
+        self.referenced[frame_id] = true;
         self.pin_count[frame_id] = 1;
         self.dirty_flag[frame_id] = false;
 
@@ -298,22 +288,32 @@ impl BufferPool {
     ///
     /// Returns [`StorageError::BufferPoolFull`] if all frames are pinned.
     fn find_or_evict(&mut self) -> Result<usize, StorageError> {
-        // ── 1. Prefer an empty frame ──────────────────────────────────
+        // 1. Prefer an empty frame
         if let Some(frame_id) = self.frames.iter().position(|f| f.is_none()) {
             return Ok(frame_id);
         }
 
-        // ── 2. Find LRU unpinned frame ────────────────────────────────
-        let victim = (0..self.capacity)
-            .filter(|&i| self.pin_count[i] == 0)
-            .min_by_key(|&i| self.last_used[i]);
+        // 2. Perform Clock-Sweep algorithm across frames
+        // We sweep up to 2 * capacity iterations to ensure every unpinned
+        // frame has its second chance cleared before selection.
+        for _ in 0..(2 * self.capacity) {
+            let frame_id = self.clock_hand;
+            self.clock_hand = (self.clock_hand + 1) % self.capacity;
 
-        let frame_id = victim.ok_or(StorageError::BufferPoolFull)?;
+            if self.pin_count[frame_id] == 0 {
+                if self.referenced[frame_id] {
+                    // Give second chance and clear bit
+                    self.referenced[frame_id] = false;
+                } else {
+                    // Victim found!
+                    self.evict(frame_id)?;
+                    return Ok(frame_id); // Return the evicted frame index to caller
+                }
+            }
+        }
 
-        // Evict — write back to disk if dirty, then clear the frame.
-        self.evict(frame_id)?;
-
-        Ok(frame_id)
+        // All frames are pinned
+        Err(StorageError::BufferPoolFull)
     }
 
     /// Evicts the page currently in `frame_id`.
@@ -342,7 +342,7 @@ impl BufferPool {
         self.frames[frame_id] = None;
         self.dirty_flag[frame_id] = false;
         self.pin_count[frame_id] = 0;
-
+        self.referenced[frame_id] = false;
         self.frame_to_page[frame_id] = None;
 
         Ok(())
