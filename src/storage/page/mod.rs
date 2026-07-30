@@ -1,3 +1,4 @@
+pub mod header;
 pub mod index_page;
 pub mod raw_page;
 pub mod table_page;
