@@ -1,26 +1,7 @@
 use std::convert::TryInto;
 
+pub use crate::storage::page::header::{HEADER_SIZE, PageFlags, PageType, SLOT_SIZE};
 pub use crate::storage::page::raw_page::PAGE_SIZE;
-
-/// Size of the page header in bytes.
-///
-/// Layout (little-endian):
-/// ```text
-/// offset 0..4   page_id            (u32)
-/// offset 4..6   slot_count         (u16)
-/// offset 6..8   free_space_pointer (u16)
-/// ```
-/// 8 bytes total, naturally aligned.
-const HEADER_SIZE: usize = 8;
-
-/// Size of a single slot array entry in bytes.
-///
-/// Layout (little-endian):
-/// ```text
-/// offset 0..2   tuple offset (u16) — byte offset into `data` where the tuple starts
-/// offset 2..4   tuple length (u16) — length in bytes; 0 means "deleted/empty slot"
-/// ```
-const SLOT_SIZE: usize = 4;
 
 /// A fixed-size, disk-block-sized page using a slotted layout.
 ///
@@ -81,6 +62,9 @@ impl TablePage<[u8; PAGE_SIZE]> {
         // will be placed at `PAGE_SIZE - tuple.len()`, growing the "used"
         // region from the end of the page backward.
         page.set_free_space_pointer(PAGE_SIZE as u16);
+        page.set_page_type(PageType::Heap); // Set page_type = Heap
+        page.set_page_lsn(0); // Default LSN = 0
+        page.set_flags(0); // Clear flags
 
         page
     }
@@ -114,13 +98,34 @@ impl<T: AsRef<[u8]>> TablePage<T> {
         u32::from_le_bytes(self.data.as_ref()[0..4].try_into().unwrap())
     }
 
+    /// Returns the Log Sequence Number (LSN) of the last WAL record that modified this page.
+    pub fn page_lsn(&self) -> u64 {
+        u64::from_le_bytes(self.data.as_ref()[4..12].try_into().unwrap())
+    }
+
+    /// Returns the CRC32C checksum of the page body.
+    pub fn checksum(&self) -> u32 {
+        u32::from_le_bytes(self.data.as_ref()[12..16].try_into().unwrap())
+    }
+
+    /// Returns the page type (Heap, Index, Overflow, FSM, VisibilityMap).
+    pub fn page_type(&self) -> Result<PageType, String> {
+        let raw = u16::from_le_bytes(self.data.as_ref()[20..22].try_into().unwrap());
+        PageType::try_from(raw)
+    }
+
+    /// Returns the bitflags of this page.
+    pub fn flags(&self) -> u16 {
+        u16::from_le_bytes(self.data.as_ref()[22..24].try_into().unwrap())
+    }
+
     /// Returns the number of slots in the slot array.
     ///
     /// This includes deleted/empty slots — `slot_count` only ever grows
     /// (Stage 1 does not reclaim/reuse slot indices). A slot with length 0
     /// is "deleted" but its index remains allocated.
     pub fn slot_count(&self) -> u16 {
-        u16::from_le_bytes(self.data.as_ref()[4..6].try_into().unwrap())
+        u16::from_le_bytes(self.data.as_ref()[16..18].try_into().unwrap())
     }
 
     /// Returns the current free-space pointer.
@@ -132,7 +137,7 @@ impl<T: AsRef<[u8]>> TablePage<T> {
     ///
     /// Free space is the region `[slot_array_end, free_space_pointer)`.
     fn free_space_pointer(&self) -> u16 {
-        u16::from_le_bytes(self.data.as_ref()[6..8].try_into().unwrap())
+        u16::from_le_bytes(self.data.as_ref()[18..20].try_into().unwrap())
     }
 
     /// Returns the number of bytes currently available for a new tuple
@@ -217,12 +222,28 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> TablePage<T> {
         self.data.as_mut()[0..4].copy_from_slice(&page_id.to_le_bytes());
     }
 
+    pub fn set_page_lsn(&mut self, lsn: u64) {
+        self.data.as_mut()[4..12].copy_from_slice(&lsn.to_le_bytes());
+    }
+
+    pub fn set_checksum(&mut self, checksum: u32) {
+        self.data.as_mut()[12..16].copy_from_slice(&checksum.to_le_bytes());
+    }
+
     fn set_slot_count(&mut self, count: u16) {
-        self.data.as_mut()[4..6].copy_from_slice(&count.to_le_bytes());
+        self.data.as_mut()[16..18].copy_from_slice(&count.to_le_bytes());
     }
 
     fn set_free_space_pointer(&mut self, ptr: u16) {
-        self.data.as_mut()[6..8].copy_from_slice(&ptr.to_le_bytes());
+        self.data.as_mut()[18..20].copy_from_slice(&ptr.to_le_bytes());
+    }
+
+    pub fn set_page_type(&mut self, page_type: PageType) {
+        self.data.as_mut()[20..22].copy_from_slice(&(page_type as u16).to_le_bytes());
+    }
+
+    pub fn set_flags(&mut self, flags: u16) {
+        self.data.as_mut()[22..24].copy_from_slice(&flags.to_le_bytes());
     }
 
     /// Writes slot `slot_id`'s `(tuple_offset, tuple_length)` pair.

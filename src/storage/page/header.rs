@@ -53,13 +53,13 @@ pub struct PageHeader {
 impl PageHeader {
     /// Deserializes a 24-byte header slice.
     pub fn from_bytes(bytes: &[u8; HEADER_SIZE]) -> Result<Self, String> {
-        let page_id = u32::from_be_bytes(bytes[0..4].try_into().unwrap());
-        let page_lsn = u64::from_be_bytes(bytes[4..12].try_into().unwrap());
-        let checksum = u32::from_be_bytes(bytes[12..16].try_into().unwrap());
-        let slot_count = u16::from_be_bytes(bytes[16..18].try_into().unwrap());
-        let free_space_pointer = u16::from_be_bytes(bytes[18..20].try_into().unwrap());
-        let page_type_raw = u16::from_be_bytes(bytes[20..22].try_into().unwrap());
-        let flags = u16::from_be_bytes(bytes[22..24].try_into().unwrap());
+        let page_id = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        let page_lsn = u64::from_le_bytes(bytes[4..12].try_into().unwrap());
+        let checksum = u32::from_le_bytes(bytes[12..16].try_into().unwrap());
+        let slot_count = u16::from_le_bytes(bytes[16..18].try_into().unwrap());
+        let free_space_pointer = u16::from_le_bytes(bytes[18..20].try_into().unwrap());
+        let page_type_raw = u16::from_le_bytes(bytes[20..22].try_into().unwrap());
+        let flags = u16::from_le_bytes(bytes[22..24].try_into().unwrap());
 
         let page_type = PageType::try_from(page_type_raw)?;
 
