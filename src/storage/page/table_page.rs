@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 
+use crate::storage::checksum::fnv1a;
 pub use crate::storage::page::header::{HEADER_SIZE, PageFlags, PageType, SLOT_SIZE};
 pub use crate::storage::page::raw_page::PAGE_SIZE;
 
@@ -346,6 +347,27 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> TablePage<T> {
     /// Returns the mutable pages's raw byte
     pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         self.data.as_mut()
+    }
+
+    /// Compute checksum
+    pub fn compute_checksum(&mut self) {
+        self.set_checksum(0);
+
+        let checksum = fnv1a(self.as_bytes());
+
+        self.set_checksum(checksum);
+    }
+
+    pub fn verify_checksum(&mut self) -> bool {
+        let stored = self.checksum();
+
+        self.set_checksum(0);
+
+        let calculated = fnv1a(self.as_bytes());
+
+        self.set_checksum(stored);
+
+        stored == calculated
     }
 }
 

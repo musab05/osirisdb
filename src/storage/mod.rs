@@ -23,6 +23,7 @@
 //! - [`ddl`]     — DDL storage operations, one file per object type
 
 pub mod btree;
+pub mod checksum;
 pub mod ddl;
 pub mod error;
 pub mod file;

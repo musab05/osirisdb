@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::storage::{
+    checksum::fnv1a,
     error::StorageError,
     page::{TablePage, table_page::PAGE_SIZE},
 };
@@ -150,15 +151,4 @@ impl Wal {
             .map_err(|e| StorageError::io(&self.path, e))?;
         Ok(())
     }
-}
-
-/// FNV-1a 32-bit — not cryptographic, just here to catch torn writes
-/// and bit-level corruption. No external crate needed.
-fn fnv1a(data: &[u8]) -> u32 {
-    let mut hash: u32 = 0x811c9dc5;
-    for &b in data {
-        hash ^= b as u32;
-        hash = hash.wrapping_mul(0x01000193);
-    }
-    hash
 }
