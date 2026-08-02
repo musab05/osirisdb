@@ -1,4 +1,4 @@
-use std::{collections::HashMap, vec};
+use std::{collections::HashMap, format, vec};
 
 use crate::storage::{error::StorageError, file::HeapFile, page::TablePage};
 
@@ -134,7 +134,16 @@ impl BufferPool {
         let frame_id = self.find_or_evict()?;
 
         // Load the page from disk into the chosen frame.
-        let page = self.heap_file.read_page(page_id)?;
+        let mut page = self.heap_file.read_page(page_id)?;
+
+        // Verify page integrity — a failed checksum means on-disk corruption.
+        // Skip verification for fresh pages (checksum == 0 means never written with checksums).
+        if page.checksum() != 0 && !page.verify_checksum() {
+            return Err(StorageError::CorruptedData(format!(
+                "page {} failed CRC32C checksum verification",
+                page_id
+            )));
+        }
         self.frames[frame_id] = Some(page);
 
         // Register in the page table and mark as pinned.
@@ -248,7 +257,8 @@ impl BufferPool {
 
         for frame_id in 0..self.capacity {
             if self.dirty_flag[frame_id] {
-                if let Some(page) = &self.frames[frame_id] {
+                if let Some(page) = &mut self.frames[frame_id] {
+                    page.compute_checksum();
                     let page_id = self.frame_to_page[frame_id].expect("frame not found");
                     match self.heap_file.write_page(page_id, page) {
                         Ok(_) => self.dirty_flag[frame_id] = false,
@@ -330,7 +340,8 @@ impl BufferPool {
 
         if self.dirty_flag[frame_id] {
             // Write the dirty page back to disk before discarding it.
-            if let Some(page) = &self.frames[frame_id] {
+            if let Some(page) = &mut self.frames[frame_id] {
+                page.compute_checksum();
                 self.heap_file.write_page(page_id, page)?;
             }
         }

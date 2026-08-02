@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::storage::{
-    checksum::fnv1a,
+    checksum::crc32c,
     error::StorageError,
     page::{TablePage, table_page::PAGE_SIZE},
 };
@@ -80,7 +80,7 @@ impl Wal {
 
         // Checksum covers page_id + page data (not the magic — the magic
         // is the record-boundary marker, not payload).
-        let checksum = fnv1a(&buf[4..]);
+        let checksum = crc32c(&buf[4..]);
         buf.extend_from_slice(&checksum.to_le_bytes());
 
         self.file
@@ -125,7 +125,7 @@ impl Wal {
             let data = &buf[8..8 + PAGE_SIZE];
             let stored_checksum =
                 u32::from_le_bytes(buf[8 + PAGE_SIZE..RECORD_SIZE].try_into().unwrap());
-            let computed = fnv1a(&buf[4..8 + PAGE_SIZE]);
+            let computed = crc32c(&buf[4..8 + PAGE_SIZE]);
 
             if computed != stored_checksum {
                 break; // torn or corrupted — stop, discard this and everything after

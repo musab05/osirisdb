@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use crate::storage::checksum::fnv1a;
+use crate::storage::checksum::crc32c;
 pub use crate::storage::page::header::{HEADER_SIZE, PageFlags, PageType, SLOT_SIZE};
 pub use crate::storage::page::raw_page::PAGE_SIZE;
 
@@ -353,7 +353,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> TablePage<T> {
     pub fn compute_checksum(&mut self) {
         self.set_checksum(0);
 
-        let checksum = fnv1a(self.as_bytes());
+        let checksum = crc32c(self.as_bytes());
 
         self.set_checksum(checksum);
     }
@@ -363,7 +363,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> TablePage<T> {
 
         self.set_checksum(0);
 
-        let calculated = fnv1a(self.as_bytes());
+        let calculated = crc32c(self.as_bytes());
 
         self.set_checksum(stored);
 
