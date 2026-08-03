@@ -369,6 +369,65 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> TablePage<T> {
 
         stored == calculated
     }
+
+    /// Defragments the page by repacking all live tuples contiguously
+    /// at the end of the page, reclaiming holes left by deleted tuples.
+    ///
+    /// After compaction, `free_space()` reflects the true contiguous
+    /// free region — no fragmentation.
+    ///
+    /// Slot IDs and slot_count are preserved (deleted slots remain as
+    /// length-0 markers). Only the tuple data region is reorganized.
+    pub fn compact(&mut self) {
+        let count = self.slot_count() as usize;
+
+        if count == 0 {
+            self.set_free_space_pointer(PAGE_SIZE as u16);
+            return;
+        }
+
+        // Temporary buffer to hold repacked tuples
+        let mut temp = [0u8; PAGE_SIZE];
+        let mut new_fsp = PAGE_SIZE;
+
+        // New offsets for each slot
+        let mut new_offsets: Vec<(u16, u16)> = Vec::with_capacity(count);
+
+        for slot_id in 0..count as u16 {
+            if let Some((offset, length)) = self.read_slot(slot_id) {
+                if length == 0 {
+                    // Deleted slot — keep it as-is (offset irrelevant, length stays 0)
+                    new_offsets.push((0, 0));
+                    continue;
+                }
+                let off = offset as usize;
+                let len = length as usize;
+
+                // Pack this tuple at the new position
+                new_fsp -= len;
+                temp[new_fsp..new_fsp + len].copy_from_slice(&self.data.as_ref()[off..off + len]);
+                new_offsets.push((new_fsp as u16, length))
+            }
+        }
+
+        // Copy repacked tuple region back into page
+        self.data.as_mut()[new_fsp..PAGE_SIZE].copy_from_slice(&temp[new_fsp..PAGE_SIZE]);
+
+        // Zero out the old tuple region that's now free space
+        let slot_array_end = HEADER_SIZE + count * SLOT_SIZE;
+        self.data.as_mut()[slot_array_end..new_fsp].fill(0);
+
+        // Update slot entries with new offsets
+        for (slot_id, (new_off, new_len)) in new_offsets.iter().enumerate() {
+            self.write_slot(slot_id as u16, *new_off, *new_len);
+        }
+
+        self.set_free_space_pointer(new_fsp as u16);
+
+        // Set the COMPACT flag to indicate this page has been compacted
+        let flags = self.flags() | PageFlags::COMPACT;
+        self.set_flags(flags);
+    }
 }
 
 impl<T: AsRef<[u8]>> AsRef<[u8]> for TablePage<T> {
