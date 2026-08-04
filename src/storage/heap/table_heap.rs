@@ -134,4 +134,38 @@ impl TableHeap {
         bp.unpin_page(frame_id, false);
         Ok(result)
     }
+
+    /// Scans all pages in the table heap and compacts any pages
+    /// that have fragmented space from deleted tuples.
+    ///
+    /// Returns the total number of bytes reclaimed across all pages.
+    pub fn vacuum(&mut self) -> Result<usize, StorageError> {
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+
+        let num_pages = bp.num_pages();
+        let mut total_reclaimed = 0;
+
+        for page_id in 0..num_pages {
+            let frame_id = bp.pin_page(page_id)?;
+
+            let (fragmented, dirty) = {
+                let page = bp.get_page(frame_id);
+                let frag = page.fragmented_space();
+                (frag, frag > 0)
+            };
+
+            if dirty {
+                let page = bp.get_page_mut(frame_id);
+                page.compact();
+                total_reclaimed += fragmented;
+            }
+
+            bp.unpin_page(frame_id, dirty);
+        }
+
+        Ok(total_reclaimed)
+    }
 }

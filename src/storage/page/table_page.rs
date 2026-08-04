@@ -295,6 +295,17 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> TablePage<T> {
             tuple_len + SLOT_SIZE
         };
 
+        // Checking if contiguous free space is available right now
+        if self.free_space() < needed {
+            // If contiguous space is lacking, check if compacting will free up enough space
+            if self.total_free_spcace() >= needed {
+                self.compact();
+            } else {
+                // Not enough space even after compaction
+                return None;
+            }
+        }
+
         let slot_array_end = HEADER_SIZE + self.slot_count() as usize * SLOT_SIZE;
         let fsp = self.free_space_pointer() as usize;
         if fsp < slot_array_end || needed > fsp - slot_array_end {
@@ -439,5 +450,33 @@ impl<T: AsRef<[u8]>> AsRef<[u8]> for TablePage<T> {
 impl<T: AsMut<[u8]>> AsMut<[u8]> for TablePage<T> {
     fn as_mut(&mut self) -> &mut [u8] {
         self.data.as_mut()
+    }
+}
+
+impl<T: AsRef<[u8]>> TablePage<T> {
+    /// Calculates space wasted by deleted tuples (fragmentation).
+    ///
+    /// This is the total byte size of tuples that were marked as deleted (`length == 0`)
+    /// but whose bytes still occupy space in the tuple-data region.
+    pub fn fragmented_space(&self) -> usize {
+        let count = self.slot_count();
+        if count == 0 {
+            return 0;
+        }
+
+        let live_bytes: usize = (0..count)
+            .filter_map(|id| self.read_slot(id))
+            .map(|(_, len)| len as usize)
+            .sum();
+
+        let used_tuple_region = PAGE_SIZE - self.free_space_pointer() as usize;
+        used_tuple_region.saturating_sub(live_bytes)
+    }
+
+    /// Returns total free space if the page were to be compacted.
+    ///
+    /// `contiguous free space + fragmented space from deleted slots`
+    pub fn total_free_spcace(&self) -> usize {
+        self.free_space() + self.fragmented_space()
     }
 }
