@@ -6,8 +6,9 @@ use crate::{
     common::interner::Interner,
     storage::{
         BufferPool, HeapFile, Storage, StorageError,
+        page::table_page::PageFlags,
         record_id::RecordId,
-        tuple::{deserialize_tuple, serialize_tuple},
+        tuple::{deserialize_tuple, serialize_tuple_with_toast},
     },
 };
 
@@ -15,6 +16,7 @@ const DEFAULT_POOL_CAPACITY: usize = 16;
 
 pub struct TableHeap {
     buffer_pool: Arc<Mutex<BufferPool>>,
+    toast_file: Option<HeapFile>, // Lazily opened on demand
 }
 
 impl TableHeap {
@@ -30,7 +32,27 @@ impl TableHeap {
             heap_file,
             DEFAULT_POOL_CAPACITY,
         )));
-        Ok(Self { buffer_pool })
+        Ok(Self {
+            buffer_pool,
+            toast_file: None,
+        })
+    }
+
+    /// Opens or lazily initializes the toast file for this table heap.
+    pub fn get_or_open_toast_file(
+        &mut self,
+        storage: &Storage,
+        db_name: &str,
+        schema_name: &str,
+        table_name: &str,
+    ) -> Result<&mut HeapFile, StorageError> {
+        if self.toast_file.is_none() {
+            let toast_path = storage.toast_path(db_name, schema_name, table_name)?;
+            let toast_file = HeapFile::open(toast_path)?;
+            self.toast_file = Some(toast_file);
+        }
+
+        Ok(self.toast_file.as_mut().unwrap())
     }
 
     /// Returns a clone of this table's shared buffer pool handle, so its
@@ -45,7 +67,8 @@ impl TableHeap {
         values: &[Value],
         interner: &Interner,
     ) -> Result<(u32, u16), StorageError> {
-        let bytes = serialize_tuple(schema, values, interner)?;
+        let (bytes, has_toast) =
+            serialize_tuple_with_toast(schema, values, interner, self.toast_file.as_mut())?;
 
         let mut bp = self
             .buffer_pool
@@ -60,6 +83,12 @@ impl TableHeap {
             (last_page_id, frame_id)
         };
 
+        if has_toast {
+            let page = bp.get_page_mut(frame_id);
+            let flags = page.flags() | PageFlags::HAS_TOAST;
+            page.set_flags(flags);
+        }
+
         let inserted = bp.get_page_mut(frame_id).insert_tuple(&bytes);
 
         if let Some(slot_id) = inserted {
@@ -70,6 +99,13 @@ impl TableHeap {
         bp.unpin_page(frame_id, false);
 
         let (new_page_id, new_frame_id) = bp.new_page()?;
+
+        if has_toast {
+            let page = bp.get_page_mut(new_frame_id);
+            let flags = page.flags() | PageFlags::HAS_TOAST;
+            page.set_flags(flags);
+        }
+
         let inserted = bp.get_page_mut(new_frame_id).insert_tuple(&bytes);
 
         bp.unpin_page(new_frame_id, true);
@@ -112,7 +148,10 @@ impl TableHeap {
     }
 
     pub fn from_buffer_pool(bp: Arc<Mutex<BufferPool>>) -> Self {
-        Self { buffer_pool: bp }
+        Self {
+            buffer_pool: bp,
+            toast_file: None,
+        }
     }
 
     pub fn get_tuple(

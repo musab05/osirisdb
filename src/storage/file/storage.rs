@@ -101,4 +101,12 @@ impl Storage {
         }
         Ok(self.schema_path(db, schema).join(format!("{}.dat", table)))
     }
+
+    /// Returns the expected on-disk path for a table's overflow (TOAST) file.
+    pub fn toast_path(&self, db: &str, schema: &str, table: &str) -> Result<PathBuf, StorageError> {
+        let table_dat_path = self.table_path(db, schema, table)?;
+        let mut toast_path = table_dat_path;
+        toast_path.set_extension("toast");
+        Ok(toast_path)
+    }
 }

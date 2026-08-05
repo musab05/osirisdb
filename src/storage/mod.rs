@@ -31,6 +31,8 @@ pub mod heap;
 pub mod page;
 pub mod pool;
 pub mod record_id;
+pub mod toast;
+pub mod toast_pointer;
 pub mod tuple;
 
 pub use btree::BPlusTreeIndex;

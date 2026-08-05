@@ -1,8 +1,15 @@
+use std::vec;
+
 use crate::{
     ast::{DataType, Value},
     catalog::objects::ColumnEntry,
     common::interner::Interner,
-    storage::error::StorageError,
+    storage::{
+        HeapFile,
+        error::StorageError,
+        toast::ToastManager,
+        toast_pointer::{TOAST_POINTER_SIZE, TOAST_TAG_POINTER, TOAST_THRESHOLD, ToastPointer},
+    },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -91,6 +98,58 @@ pub fn serialize_tuple(
     Ok(buf)
 }
 
+pub fn serialize_tuple_with_toast(
+    schema: &[ColumnEntry],
+    values: &[Value],
+    interner: &Interner,
+    toast_file: Option<&mut HeapFile>,
+) -> Result<(Vec<u8>, bool), StorageError> {
+    // Returns (bytes, has_toast_flag)
+    let raw_bytes = serialize_tuple(schema, values, interner)?;
+
+    // If tuple fits inline or no toast_file available, return normal bytes
+    if raw_bytes.len() <= TOAST_THRESHOLD || toast_file.is_none() {
+        return Ok((raw_bytes, false));
+    }
+
+    let toast_file = toast_file.unwrap();
+    let col_count = schema.len();
+    let bitmap_bytes = (col_count + 7) / 8;
+    let mut buf = vec![0u8; bitmap_bytes];
+    let mut has_toast = false;
+
+    // Find large string columns to TOAST
+    for (i, (col, val)) in schema.iter().zip(values.iter()).enumerate() {
+        match val {
+            Value::Null => {
+                set_null_bit(&mut buf, i);
+            }
+            Value::String(sym) => {
+                let s = interner.resolve(*sym);
+                let bytes = s.as_bytes();
+
+                // Toast string if payload is large (> 128 bytes)
+                if bytes.len() > 128 {
+                    let first_page_id = ToastManager::write_payload(toast_file, bytes)?;
+                    let ptr = ToastPointer {
+                        total_length: bytes.len() as u32,
+                        first_page_id,
+                    };
+                    buf.extend_from_slice(&ptr.to_bytes());
+                    has_toast = true;
+                } else {
+                    encode_value(&col.data_type, val, interner, &mut buf)?;
+                }
+            }
+            _ => {
+                encode_value(&col.data_type, val, interner, &mut buf)?;
+            }
+        }
+    }
+
+    Ok((buf, has_toast))
+}
+
 /// Deserializes a flat byte buffer back into a row of [`Value`]s according
 /// to `schema`.
 ///
@@ -126,6 +185,43 @@ pub fn deserialize_tuple(
     }
 
     Ok(values)
+}
+
+pub fn decode_value_with_toast(
+    data_type: &DataType,
+    data: &[u8],
+    interner: &Interner,
+    toast_file: Option<&mut HeapFile>,
+) -> Result<(Value, usize), StorageError> {
+    match data_type {
+        DataType::VarChar(_) | DataType::Char(_) | DataType::Text => {
+            need(data, 4, "string length or tag")?;
+
+            // Check if this is a TOAST (tag == 0x01)
+            if data[0] == TOAST_TAG_POINTER {
+                need(data, TOAST_POINTER_SIZE, "TOAST pointer")?;
+                let ptr = ToastPointer::from_bytes(&data[..TOAST_POINTER_SIZE])?;
+
+                let toast_file = toast_file.ok_or_else(|| {
+                    StorageError::TupleError(
+                        "TOAST pointer found but no toast file provided".into(),
+                    )
+                })?;
+
+                let payload_bytes = ToastManager::read_payload(toast_file, ptr.first_page_id)?;
+                let s = std::str::from_utf8(&payload_bytes).map_err(|_| {
+                    StorageError::TupleError("invalid UTF-8 in TOAST string".into())
+                })?;
+                let sym = interner.intern(s);
+
+                Ok((Value::String(sym), TOAST_POINTER_SIZE))
+            } else {
+                // Fallback to standard inline string decoding
+                decode_value(data_type, data, interner)
+            }
+        }
+        _ => decode_value(data_type, data, interner),
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
