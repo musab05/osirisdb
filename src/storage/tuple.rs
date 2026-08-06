@@ -187,6 +187,42 @@ pub fn deserialize_tuple(
     Ok(values)
 }
 
+pub fn deserialize_tuple_with_toast(
+    schema: &[ColumnEntry],
+    data: &[u8],
+    interner: &Interner,
+    mut toast_file: Option<&mut HeapFile>,
+) -> Result<Vec<Value>, StorageError> {
+    let col_count = schema.len();
+    let bitmap_bytes = bitmap_size(col_count);
+
+    if data.len() < bitmap_bytes {
+        return Err(StorageError::TupleError(
+            "tuple data too short to contain NULL bitmap".into(),
+        ));
+    }
+
+    let mut cursor = bitmap_bytes;
+    let mut values = Vec::with_capacity(col_count);
+
+    for (i, col) in schema.iter().enumerate() {
+        if is_null(data, i) {
+            values.push(Value::Null);
+        } else {
+            let (val, bytes_read) = decode_value_with_toast(
+                &col.data_type,
+                &data[cursor..],
+                interner,
+                toast_file.as_deref_mut(),
+            )?;
+            cursor += bytes_read;
+            values.push(val);
+        }
+    }
+
+    Ok(values)
+}
+
 pub fn decode_value_with_toast(
     data_type: &DataType,
     data: &[u8],

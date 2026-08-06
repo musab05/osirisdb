@@ -18,7 +18,7 @@ mod tests {
     /// so a failed previous run doesn't poison the next one.
     fn rm(path: &Path) {
         let _ = std::fs::remove_file(path);
-        let mut wal_path = path.to_path_buf();
+        let wal_path = path.to_path_buf();
         let mut os = wal_path.into_os_string();
         os.push(".wal");
         let _ = std::fs::remove_file(os);
@@ -389,6 +389,136 @@ mod tests {
         assert_eq!(scanned[0], row1);
         assert_eq!(scanned[1], row2);
         assert_eq!(scanned[2], row3);
+
+        let _ = std::fs::remove_dir_all(&path);
+    }
+
+    #[test]
+    fn crc32c_checksum_verification_and_corruption_detection() {
+        use osirisdb::storage::page::TablePage;
+
+        let mut page = TablePage::new(1);
+        page.insert_tuple(b"checksum payload test").unwrap();
+        page.compute_checksum();
+
+        // Verification should succeed on an uncorrupted page
+        assert!(page.verify_checksum());
+
+        // Corrupt a byte in the tuple area
+        let bytes = page.as_bytes_mut();
+        bytes[200] ^= 0xFF;
+
+        // Verification must now fail
+        assert!(!page.verify_checksum());
+    }
+
+    #[test]
+    fn table_page_fragmentation_and_compaction() {
+        use osirisdb::storage::page::{PageFlags, TablePage};
+
+        let mut page = TablePage::new(0);
+        let s0 = page.insert_tuple(b"row zero").unwrap();
+        let s1 = page.insert_tuple(b"row one to be deleted").unwrap();
+        let s2 = page.insert_tuple(b"row two").unwrap();
+
+        assert_eq!(page.fragmented_space(), 0);
+
+        // Delete row 1 -> leaves fragmented space
+        assert!(page.delete_tuple(s1));
+        assert!(page.fragmented_space() > 0);
+
+        // Compact the page
+        page.compact();
+        assert_eq!(page.fragmented_space(), 0);
+        assert!(PageFlags::is_set(page.flags(), PageFlags::COMPACT));
+
+        // Surviving rows should still be accessible
+        assert_eq!(page.get_tuple(s0), Some(&b"row zero"[..]));
+        assert_eq!(page.get_tuple(s1), None);
+        assert_eq!(page.get_tuple(s2), Some(&b"row two"[..]));
+    }
+
+    #[test]
+    fn table_heap_vacuum_reclaims_defragmented_bytes() {
+        let path = env::temp_dir().join("osirisdb_th_vacuum_test");
+        if path.exists() {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+
+        let storage = Storage::new_or_create(&path).unwrap();
+        std::fs::create_dir_all(storage.schema_path("test_db", "test_schema")).unwrap();
+
+        let mut th = TableHeap::open(&storage, "test_db", "test_schema", "test_table").unwrap();
+        let mut interner = Interner::new();
+
+        let schema = vec![
+            col(&mut interner, "id", DataType::Int, false),
+            col(&mut interner, "val", DataType::VarChar(None), false),
+        ];
+
+        let str_sym = interner.intern("temporary row data");
+        let row = vec![Value::Int(1), Value::String(str_sym)];
+
+        // Insert tuples
+        th.insert_tuple(&schema, &row, &interner).unwrap();
+        th.insert_tuple(&schema, &row, &interner).unwrap();
+
+        // Vacuum on a page with no deleted tuples reclaims 0 bytes
+        let reclaimed = th.vacuum().unwrap();
+        assert_eq!(reclaimed, 0);
+
+        let _ = std::fs::remove_dir_all(&path);
+    }
+
+    #[test]
+    fn toast_large_string_round_trip() {
+        use osirisdb::storage::tuple::{deserialize_tuple_with_toast, serialize_tuple_with_toast};
+
+        let path = env::temp_dir().join("osirisdb_toast_test");
+        if path.exists() {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+
+        let storage = Storage::new_or_create(&path).unwrap();
+        std::fs::create_dir_all(storage.schema_path("test_db", "test_schema")).unwrap();
+
+        let mut th = TableHeap::open(&storage, "test_db", "test_schema", "toast_table").unwrap();
+        let mut interner = Interner::new();
+
+        let schema = vec![
+            col(&mut interner, "id", DataType::Int, false),
+            col(&mut interner, "big_text", DataType::Text, false),
+        ];
+
+        // Create a large string exceeding TOAST threshold (3000 bytes)
+        let large_string = "A".repeat(3000);
+        let large_sym = interner.intern(&large_string);
+        let row = vec![Value::Int(100), Value::String(large_sym)];
+
+        let toast_file = th
+            .get_or_open_toast_file(&storage, "test_db", "test_schema", "toast_table")
+            .unwrap();
+
+        let (bytes, has_toast) =
+            serialize_tuple_with_toast(&schema, &row, &interner, Some(toast_file)).unwrap();
+        assert!(has_toast);
+        // The inline tuple size should now be very small (NULL bitmap + 8B int + 10B ToastPointer)
+        assert!(bytes.len() < 100);
+
+        // Deserializing with the toast file should reassemble the full 3000-byte string
+        let toast_file_read = th
+            .get_or_open_toast_file(&storage, "test_db", "test_schema", "toast_table")
+            .unwrap();
+        let decoded =
+            deserialize_tuple_with_toast(&schema, &bytes, &interner, Some(toast_file_read))
+                .unwrap();
+
+        assert_eq!(decoded[0], Value::Int(100));
+        if let Value::String(sym) = &decoded[1] {
+            assert_eq!(interner.resolve(sym.clone()), large_string);
+        } else {
+            panic!("expected string value");
+        }
 
         let _ = std::fs::remove_dir_all(&path);
     }
