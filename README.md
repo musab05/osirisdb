@@ -92,7 +92,10 @@ fn main() {
 - [`src/catalog/`](src/catalog/): The system catalog metadata manager, tracking databases, schemas, tables, and roles.
 - [`src/executor/`](src/executor/): Volcano-style iterator model execution engine, currently executing DDL statements.
 - [`src/storage/`](src/storage/): The disk storage engine. Manages layout, file storage, database folders, and schemas on disk.
-
+  - Features slotted page format (`TablePage`) with CRC32C checksums for data integrity.
+  - TOAST (The Oversized-Attribute Storage Technique) support for handling large, out-of-line tuples.
+  - Page compaction and vacuuming for reclaiming fragmented space.
+  - WAL (Write-Ahead Logging) support and durable `fsync` for reliable data persistence.
 ## License
 
 This project is licensed under the Apache License, Version 2.0. See the [LICENSE](LICENSE) file for details.

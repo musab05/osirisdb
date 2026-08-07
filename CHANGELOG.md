@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-07
+
+### Added
+
+- **Storage Engine Enhancements**:
+  - Implemented slotted page format (`TablePage`, `PageHeader`) replacing raw page management for better space utilization.
+  - Added TOAST (The Oversized-Attribute Storage Technique) support for serializing and deserializing large, out-of-line tuples.
+  - Introduced page compaction and `vacuum` methods in `TableHeap` to reclaim fragmented free space.
+  - Replaced FNV-1a hashing with CRC32C checksums for robust data integrity verification across all storage pages.
+  - Enhanced page persistence with Write-Ahead Logging (WAL) and added `write_page_durable` for immediate `fsync` support.
+
 ## [0.7.0] - 2026-07-20
 
 ### Added
