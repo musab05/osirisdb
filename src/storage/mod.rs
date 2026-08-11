@@ -28,6 +28,7 @@ pub mod ddl;
 pub mod error;
 pub mod file;
 pub mod heap;
+pub mod log_record;
 pub mod page;
 pub mod pool;
 pub mod record_id;
