@@ -59,4 +59,7 @@ impl logRecord {
         4 + self.after_image.len() + // after_image length + data
         4 // crc32c
     }
+
+    // pub fn serialize(&self) -> Vec<u8> { ... }
+    // pub fn deserialize(bytes: &[u8]) -> Self { ... }
 }
