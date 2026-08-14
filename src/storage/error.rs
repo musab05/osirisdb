@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, write};
 
 /// Errors that can occur during storage operations.
 ///
@@ -49,6 +49,15 @@ pub enum StorageError {
 
     /// A thread panicked while holding a mutex lock.
     LockPoisoned(String),
+
+    /// log records error
+    LogRecordTooSmall,
+
+    /// Checksum verification failed
+    ChecksumMismatch,
+
+    /// Invalid log record type
+    InvalidRecordType,
 }
 
 impl StorageError {
@@ -100,6 +109,15 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::LockPoisoned(msg) => {
                 write!(f, "lock poisoned: {}", msg)
+            }
+            StorageError::LogRecordTooSmall => {
+                write!(f, "Record size is small")
+            }
+            StorageError::ChecksumMismatch => {
+                write!(f, "checksum mismatch in log record")
+            }
+            StorageError::InvalidRecordType => {
+                write!(f, "invalid record type encountered")
             }
         }
     }
