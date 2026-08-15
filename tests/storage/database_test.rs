@@ -472,7 +472,9 @@ mod tests {
 
     #[test]
     fn toast_large_string_round_trip() {
-        use osirisdb::storage::tuple::tuple::{deserialize_tuple_with_toast, serialize_tuple_with_toast};
+        use osirisdb::storage::tuple::tuple::{
+            deserialize_tuple_with_toast, serialize_tuple_with_toast,
+        };
 
         let path = env::temp_dir().join("osirisdb_toast_test");
         if path.exists() {

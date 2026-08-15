@@ -1,8 +1,16 @@
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    ast::Value, catalog::objects::ColumnEntry, common::interner::Interner, storage::{
-        BufferPool, HeapFile, Storage, StorageError, page::table_page::PageFlags, tuple::{record_id::RecordId, tuple::{deserialize_tuple, serialize_tuple_with_toast}},
+    ast::Value,
+    catalog::objects::ColumnEntry,
+    common::interner::Interner,
+    storage::{
+        BufferPool, HeapFile, Storage, StorageError,
+        page::table_page::PageFlags,
+        tuple::{
+            record_id::RecordId,
+            tuple::{deserialize_tuple, serialize_tuple_with_toast},
+        },
     },
 };
 

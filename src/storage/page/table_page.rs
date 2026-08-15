@@ -1,8 +1,8 @@
 use std::convert::TryInto;
 
-use crate::storage::util::checksum::crc32c;
 pub use crate::storage::page::header::{HEADER_SIZE, PageFlags, PageType, SLOT_SIZE};
 pub use crate::storage::page::raw_page::PAGE_SIZE;
+use crate::storage::util::checksum::crc32c;
 
 /// A fixed-size, disk-block-sized page using a slotted layout.
 ///

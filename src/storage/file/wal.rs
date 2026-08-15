@@ -5,9 +5,9 @@ use std::{
 };
 
 use crate::storage::{
-    util::checksum::crc32c,
     error::StorageError,
     page::{TablePage, table_page::PAGE_SIZE},
+    util::checksum::crc32c,
 };
 
 /// Marks the start of a valid record. Used to detect a torn/garbage
