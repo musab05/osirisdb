@@ -1,5 +1,7 @@
 use crate::{
-    binder::bound::BoundSelectStmt, executor::{ExecutionError, ExecutionResult, Executor}, storage::tuple::tuple::serialize_tuple,
+    binder::bound::BoundSelectStmt,
+    executor::{ExecutionError, ExecutionResult, Executor},
+    storage::tuple::tuple::serialize_tuple,
 };
 
 impl Executor {

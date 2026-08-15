@@ -1,5 +1,10 @@
 use crate::{
-    ast::{TableConstraint, Value}, binder::bound::BoundInsertStmt, catalog::objects::ColumnEntry, common::symbol::Symbol, executor::{ExecutionError, ExecutionResult, Executor}, storage::tuple::{record_id::RecordId, tuple::serialize_tuple},
+    ast::{TableConstraint, Value},
+    binder::bound::BoundInsertStmt,
+    catalog::objects::ColumnEntry,
+    common::symbol::Symbol,
+    executor::{ExecutionError, ExecutionResult, Executor},
+    storage::tuple::{record_id::RecordId, tuple::serialize_tuple},
 };
 
 /// Encoded index keys computed once during validation, reused during

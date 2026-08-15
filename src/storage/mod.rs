@@ -27,11 +27,11 @@ pub mod ddl;
 pub mod error;
 pub mod file;
 pub mod heap;
+pub mod log;
 pub mod page;
 pub mod pool;
 pub mod toast;
 pub mod tuple;
-pub mod log;
 pub mod util;
 
 pub use btree::BPlusTreeIndex;
