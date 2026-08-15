@@ -7,8 +7,10 @@ use crate::{
     storage::{
         HeapFile,
         error::StorageError,
-        toast::ToastManager,
-        toast_pointer::{TOAST_POINTER_SIZE, TOAST_TAG_POINTER, TOAST_THRESHOLD, ToastPointer},
+        toast::toast::ToastManager,
+        toast::toast_pointer::{
+            TOAST_POINTER_SIZE, TOAST_TAG_POINTER, TOAST_THRESHOLD, ToastPointer,
+        },
     },
 };
 

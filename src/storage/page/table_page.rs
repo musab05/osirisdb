@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use crate::storage::checksum::crc32c;
+use crate::storage::util::checksum::crc32c;
 pub use crate::storage::page::header::{HEADER_SIZE, PageFlags, PageType, SLOT_SIZE};
 pub use crate::storage::page::raw_page::PAGE_SIZE;
 

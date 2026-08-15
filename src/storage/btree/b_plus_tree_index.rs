@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::storage::{
-    BufferPool, HeapFile, Storage, StorageError, page::IndexPage, record_id::RecordId,
+    BufferPool, HeapFile, Storage, StorageError, page::IndexPage, tuple::record_id::RecordId,
 };
 
 /// Page 0 of every index file — never used as a tree node.

@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::storage::{
-    checksum::crc32c,
+    util::checksum::crc32c,
     error::StorageError,
     page::{TablePage, table_page::PAGE_SIZE},
 };

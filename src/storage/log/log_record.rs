@@ -1,4 +1,4 @@
-use crate::storage::{StorageError, checksum::crc32c};
+use crate::storage::{StorageError, util::checksum::crc32c};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

@@ -109,4 +109,12 @@ impl Storage {
         toast_path.set_extension("toast");
         Ok(toast_path)
     }
+
+    /// Returns the path for logs
+    pub fn log_path(&self, db: &str) -> Result<PathBuf, StorageError> {
+        let db_path = self.database_path(db);
+        let mut log_path = db_path;
+        log_path.set_extension("log");
+        Ok(log_path)
+    }
 }

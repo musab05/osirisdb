@@ -23,18 +23,16 @@
 //! - [`ddl`]     — DDL storage operations, one file per object type
 
 pub mod btree;
-pub mod checksum;
 pub mod ddl;
 pub mod error;
 pub mod file;
 pub mod heap;
-pub mod log_record;
 pub mod page;
 pub mod pool;
-pub mod record_id;
 pub mod toast;
-pub mod toast_pointer;
 pub mod tuple;
+pub mod log;
+pub mod util;
 
 pub use btree::BPlusTreeIndex;
 pub use error::StorageError;
