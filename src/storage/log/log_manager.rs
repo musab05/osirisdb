@@ -2,9 +2,13 @@ use std::{
     fs::{File, OpenOptions},
     io::Write,
     path::Path,
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use crate::storage::{StorageError, log::log_record::LogRecord};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Lsn(pub u64);
 
 pub struct LogManager {
     /// The log file on disk where WAL records are persisted.
@@ -15,11 +19,11 @@ pub struct LogManager {
     log_buffer: Vec<u8>,
 
     /// The next Log Sequence Number to assign to an incoming log record.
-    next_lsn: u64,
+    next_lsn: AtomicU64,
 
     /// The highest LSN that has been safely flushed to disk.
     /// This is crucial for the Buffer Pool to enforce the WAL rule.
-    flushed_lsn: u64,
+    flushed_lsn: AtomicU64,
 
     /// Maximum size of the log buffer (e.g., 4MB) before an automatic flush is triggered.
     buffer_capacity: usize,
@@ -36,8 +40,8 @@ impl LogManager {
         Ok(LogManager {
             file,
             log_buffer: Vec::with_capacity(4096),
-            next_lsn: 1,
-            flushed_lsn: 0,
+            next_lsn: AtomicU64::new(1),
+            flushed_lsn: AtomicU64::new(0),
             buffer_capacity: 4096,
         })
     }
@@ -47,19 +51,22 @@ impl LogManager {
     /// This method assigns a monotonically increasing LSN to the record.
     /// If the serialized record exceeds the remaining buffer capacity,
     /// the buffer is automatically flushed to disk before appending.
-    pub fn append_record(&mut self, record: &mut LogRecord) -> Result<u64, StorageError> {
-        record.lsn = self.next_lsn;
+    pub fn append_record(&mut self, record: &mut LogRecord) -> Result<Lsn, StorageError> {
+        // Atomically get and increment the LSN
+        let assigned_lsn = self.next_lsn.fetch_add(1, Ordering::SeqCst);
+        record.lsn = assigned_lsn;
+
+        // Serialize the record
         let bytes = record.serialize();
 
-        // BUG FIX: We should flush if the combined size is GREATER than capacity
+        // Flush if buffer capacity exceeded
         if self.log_buffer.len() + bytes.len() > self.buffer_capacity {
             self.flush()?;
         }
 
+        // Append to buffer
         self.log_buffer.extend_from_slice(&bytes);
-        let nxt_lsn = self.next_lsn;
-        self.next_lsn += 1;
-        Ok(nxt_lsn)
+        Ok(Lsn(assigned_lsn))
     }
 
     /// Flushes all pending log records in the memory buffer to the physical disk file.
@@ -80,7 +87,10 @@ impl LogManager {
             .sync_data()
             .map_err(|e| StorageError::io("log_file", e))?;
 
-        self.flushed_lsn = self.next_lsn - 1;
+        // Here updating to work with Atomicu64
+        let current_next = self.next_lsn.load(Ordering::SeqCst);
+        self.flushed_lsn
+            .store(current_next.saturating_sub(1), Ordering::SeqCst);
 
         self.log_buffer.clear();
         Ok(())
@@ -92,6 +102,6 @@ impl LogManager {
     /// by ensuring a dirty page's `page_lsn` is less than or equal to this value
     /// before evicting the page to disk.
     pub fn get_flushed_lsn(&self) -> u64 {
-        self.flushed_lsn
+        self.flushed_lsn.load(Ordering::SeqCst)
     }
 }
