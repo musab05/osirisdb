@@ -1,6 +1,8 @@
-use std::{collections::HashMap, format, vec};
+use std::{collections::HashMap, format, sync::Arc, vec};
 
-use crate::storage::{error::StorageError, file::HeapFile, page::TablePage};
+use crate::storage::{
+    error::StorageError, file::HeapFile, log::log_manager::LogManager, page::TablePage,
+};
 
 /// A fixed-capacity in-memory cache of [`Page`]s backed by a [`HeapFile`].
 ///
@@ -76,6 +78,9 @@ pub struct BufferPool {
 
     /// Maximum number of frames this pool can hold simultaneously.
     capacity: usize,
+
+    /// Reference to the WAL Log Manager
+    log_manager: Option<Arc<LogManager>>,
 }
 
 impl BufferPool {
@@ -94,6 +99,27 @@ impl BufferPool {
             referenced: vec![false; capacity],
             clock_hand: 0,
             capacity,
+            log_manager: None,
+        }
+    }
+
+    /// `BufferPool` with a shared WAL LogManager.
+    pub fn with_log_manager(
+        heap_file: HeapFile,
+        capacity: usize,
+        log_manager: Arc<LogManager>,
+    ) -> Self {
+        Self {
+            heap_file,
+            frames: (0..capacity).map(|_| None).collect(),
+            page_table: HashMap::new(),
+            frame_to_page: vec![None; capacity],
+            pin_count: vec![0; capacity],
+            dirty_flag: vec![false; capacity],
+            referenced: vec![false; capacity],
+            clock_hand: 0,
+            capacity,
+            log_manager: Some(log_manager),
         }
     }
 
@@ -258,8 +284,15 @@ impl BufferPool {
         for frame_id in 0..self.capacity {
             if self.dirty_flag[frame_id] {
                 if let Some(page) = &mut self.frames[frame_id] {
-                    page.compute_checksum();
                     let page_id = self.frame_to_page[frame_id].expect("frame not found");
+
+                    // Enforce the WAL Rule, flush wal records before writing to disk
+                    if let Some(lm) = &self.log_manager {
+                        if page.page_lsn() > lm.get_flushed_lsn() {
+                            lm.flush()?;
+                        }
+                    }
+                    page.compute_checksum();
                     match self.heap_file.write_page(page_id, page) {
                         Ok(_) => self.dirty_flag[frame_id] = false,
                         Err(e) => last_err = Some(e),
@@ -341,6 +374,13 @@ impl BufferPool {
         if self.dirty_flag[frame_id] {
             // Write the dirty page back to disk before discarding it.
             if let Some(page) = &mut self.frames[frame_id] {
+                // Enforcing the WAL Rule: flush log records before eviction write
+                if let Some(lm) = &self.log_manager {
+                    if page.page_lsn() > lm.get_flushed_lsn() {
+                        lm.flush()?;
+                    }
+                }
+
                 page.compute_checksum();
                 self.heap_file.write_page(page_id, page)?;
             }
