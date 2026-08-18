@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    vec,
+};
 
 use crate::{
     ast::Value,
@@ -6,7 +9,12 @@ use crate::{
     common::interner::Interner,
     storage::{
         BufferPool, HeapFile, Storage, StorageError,
-        page::table_page::PageFlags,
+        log::{
+            log_manager::LogManager,
+            log_record::{LogRecord, RecordType},
+        },
+        page::{self, table_page::PageFlags},
+        pool::buffer_pool,
         tuple::{
             record_id::RecordId,
             tuple::{deserialize_tuple, serialize_tuple_with_toast},
@@ -19,6 +27,7 @@ const DEFAULT_POOL_CAPACITY: usize = 16;
 pub struct TableHeap {
     buffer_pool: Arc<Mutex<BufferPool>>,
     toast_file: Option<HeapFile>, // Lazily opened on demand
+    log_manager: Option<Arc<LogManager>>,
 }
 
 impl TableHeap {
@@ -37,6 +46,7 @@ impl TableHeap {
         Ok(Self {
             buffer_pool,
             toast_file: None,
+            log_manager: None,
         })
     }
 
@@ -55,6 +65,29 @@ impl TableHeap {
         }
 
         Ok(self.toast_file.as_mut().unwrap())
+    }
+
+    /// Open with log manager
+    pub fn open_with_log_manager(
+        storage: &Storage,
+        db_name: &str,
+        schema_name: &str,
+        table_name: &str,
+        log_manager: Arc<LogManager>,
+    ) -> Result<Self, StorageError> {
+        let path = storage.table_path(db_name, schema_name, table_name)?;
+        let heap_file = HeapFile::open(path)?;
+        let buffer_pool = Arc::new(Mutex::new(BufferPool::with_log_manager(
+            heap_file,
+            DEFAULT_POOL_CAPACITY,
+            Arc::clone(&log_manager),
+        )));
+
+        Ok(Self {
+            buffer_pool,
+            toast_file: None,
+            log_manager: Some(log_manager),
+        })
     }
 
     /// Returns a clone of this table's shared buffer pool handle, so its
@@ -85,38 +118,79 @@ impl TableHeap {
             (last_page_id, frame_id)
         };
 
-        if has_toast {
+        // Trying to insert into current page
+        let inserted = {
             let page = bp.get_page_mut(frame_id);
-            let flags = page.flags() | PageFlags::HAS_TOAST;
-            page.set_flags(flags);
-        }
-
-        let inserted = bp.get_page_mut(frame_id).insert_tuple(&bytes);
+            if has_toast {
+                let flags = page.flags() | PageFlags::HAS_TOAST;
+                page.set_flags(flags);
+            }
+            page.insert_tuple(&bytes)
+        };
 
         if let Some(slot_id) = inserted {
+            // WAL Logging: if log_manager is enabled log the insert and update page_lsn
+            if let Some(lm) = &self.log_manager {
+                let mut record = LogRecord {
+                    lsn: 0,
+                    prev_lsn: 0,
+                    txt_id: 1, // Will link to transaction txt_id in future
+                    record_type: RecordType::Insert,
+                    file_id: 0,
+                    page_id,
+                    offset: slot_id,
+                    length: bytes.len() as u16,
+                    before_image: vec![],
+                    after_image: bytes.clone(),
+                };
+                let lsn = lm.append_record(&mut record)?;
+                bp.get_page_mut(frame_id).set_page_lsn(lsn.0);
+            }
+
             bp.unpin_page(frame_id, true);
             return Ok((page_id, slot_id));
         }
 
+        // Current page was full allocate new page
         bp.unpin_page(frame_id, false);
 
         let (new_page_id, new_frame_id) = bp.new_page()?;
 
-        if has_toast {
+        let inserted = {
             let page = bp.get_page_mut(new_frame_id);
-            let flags = page.flags() | PageFlags::HAS_TOAST;
-            page.set_flags(flags);
-        }
+            if has_toast {
+                let flags = page.flags() | PageFlags::HAS_TOAST;
+                page.set_flags(flags);
+            }
+            page.insert_tuple(&bytes)
+        };
 
-        let inserted = bp.get_page_mut(new_frame_id).insert_tuple(&bytes);
+        if let Some(slot_id) = inserted {
+            // WAL logging for new page
+            if let Some(lm) = &self.log_manager {
+                let mut record = LogRecord {
+                    lsn: 0,
+                    prev_lsn: 0,
+                    txt_id: 1,
+                    record_type: RecordType::Insert,
+                    file_id: 0,
+                    page_id: new_page_id,
+                    offset: slot_id,
+                    length: bytes.len() as u16,
+                    before_image: vec![],
+                    after_image: bytes,
+                };
+                let lsn = lm.append_record(&mut record)?;
+                bp.get_page_mut(new_frame_id).set_page_lsn(lsn.0);
+            }
 
-        bp.unpin_page(new_frame_id, true);
-
-        match inserted {
-            Some(slot_id) => Ok((new_page_id, slot_id)),
-            None => Err(StorageError::TupleError(
+            bp.unpin_page(new_frame_id, true);
+            Ok((new_page_id, slot_id))
+        } else {
+            bp.unpin_page(new_frame_id, false);
+            Err(StorageError::TupleError(
                 "tuple too large to fit in an empty page".to_string(),
-            )),
+            ))
         }
     }
 
@@ -153,6 +227,7 @@ impl TableHeap {
         Self {
             buffer_pool: bp,
             toast_file: None,
+            log_manager: None,
         }
     }
 
