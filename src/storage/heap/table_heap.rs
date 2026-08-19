@@ -13,8 +13,7 @@ use crate::{
             log_manager::LogManager,
             log_record::{LogRecord, RecordType},
         },
-        page::{self, table_page::PageFlags},
-        pool::buffer_pool,
+        page::table_page::PageFlags,
         tuple::{
             record_id::RecordId,
             tuple::{deserialize_tuple, serialize_tuple_with_toast},

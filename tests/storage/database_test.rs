@@ -524,4 +524,159 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&path);
     }
+
+    #[test]
+    fn table_heap_with_log_manager_assigns_page_lsn() {
+        use osirisdb::storage::log::log_manager::LogManager;
+        use std::sync::Arc;
+
+        let path = env::temp_dir().join("osirisdb_th_wal_test");
+        if path.exists() {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+
+        let storage = Storage::new_or_create(&path).unwrap();
+        std::fs::create_dir_all(storage.schema_path("test_db", "test_schema")).unwrap();
+
+        let log_path = path.join("test_wal.log");
+        let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
+
+        let mut th = TableHeap::open_with_log_manager(
+            &storage,
+            "test_db",
+            "test_schema",
+            "users",
+            Arc::clone(&log_manager),
+        )
+        .unwrap();
+
+        let mut interner = Interner::new();
+        let schema = vec![
+            col(&mut interner, "id", DataType::Int, false),
+            col(&mut interner, "name", DataType::VarChar(Some(50)), false),
+        ];
+
+        let alice = interner.intern("Alice");
+        let row1 = vec![Value::Int(1), Value::String(alice)];
+        let (page_id, slot_id) = th.insert_tuple(&schema, &row1, &interner).unwrap();
+
+        assert_eq!(page_id, 0);
+        assert_eq!(slot_id, 0);
+
+        // Access the buffer pool to verify page_lsn was updated
+        let bp_handle = th.buffer_pool_handle();
+        let mut bp = bp_handle.lock().unwrap();
+        let frame_id = bp.pin_page(page_id).unwrap();
+        let page = bp.get_page(frame_id);
+
+        // page_lsn must be 1 (first assigned LSN)
+        assert_eq!(page.page_lsn(), 1);
+        bp.unpin_page(frame_id, false);
+        drop(bp);
+
+        let _ = std::fs::remove_dir_all(&path);
+    }
+
+    #[test]
+    fn buffer_pool_eviction_enforces_wal_flush_rule() {
+        use osirisdb::storage::log::log_manager::LogManager;
+        use osirisdb::storage::log::log_record::{LogRecord, RecordType};
+        use std::sync::Arc;
+
+        let p1 = tmp("bp_wal_evict_1");
+        let p2 = tmp("bp_wal_evict_2");
+        let log_p = tmp("bp_wal_evict.log");
+        rm(&p1);
+        rm(&p2);
+        rm(&log_p);
+
+        let log_manager = Arc::new(LogManager::new(&log_p).unwrap());
+        let hf = HeapFile::open(&p1).unwrap();
+
+        // Buffer pool with capacity 1
+        let mut bp = BufferPool::with_log_manager(hf, 1, Arc::clone(&log_manager));
+
+        // Allocate and pin page 0
+        let (page_0_id, frame_0) = bp.new_page().unwrap();
+        assert_eq!(page_0_id, 0);
+
+        // Mutate page 0 and assign a higher LSN
+        let mut dummy_record = LogRecord {
+            lsn: 0,
+            prev_lsn: 0,
+            txt_id: 1,
+            record_type: RecordType::Insert,
+            file_id: 1,
+            page_id: 0,
+            offset: 0,
+            length: 5,
+            before_image: vec![],
+            after_image: vec![1, 2, 3, 4, 5],
+        };
+        let assigned_lsn = log_manager.append_record(&mut dummy_record).unwrap();
+        assert_eq!(assigned_lsn.0, 1);
+        assert_eq!(log_manager.get_flushed_lsn(), 0); // Not flushed yet
+
+        let page = bp.get_page_mut(frame_0);
+        page.set_page_lsn(assigned_lsn.0);
+        page.insert_tuple(b"data").unwrap();
+        bp.unpin_page(frame_0, true);
+
+        // Now allocate page 1 — since capacity is 1, this FORCES eviction of page 0
+        let (page_1_id, _) = bp.new_page().unwrap();
+        assert_eq!(page_1_id, 1);
+
+        // The WAL Rule must have forced LogManager to flush page 0's LSN before writing it to disk
+        assert!(log_manager.get_flushed_lsn() >= assigned_lsn.0);
+
+        rm(&p1);
+        rm(&p2);
+        rm(&log_p);
+    }
+
+    #[test]
+    fn buffer_pool_flush_all_enforces_wal_flush_rule() {
+        use osirisdb::storage::log::log_manager::LogManager;
+        use osirisdb::storage::log::log_record::{LogRecord, RecordType};
+        use std::sync::Arc;
+
+        let p = tmp("bp_wal_flush_all");
+        let log_p = tmp("bp_wal_flush_all.log");
+        rm(&p);
+        rm(&log_p);
+
+        let log_manager = Arc::new(LogManager::new(&log_p).unwrap());
+        let hf = HeapFile::open(&p).unwrap();
+
+        let mut bp = BufferPool::with_log_manager(hf, 4, Arc::clone(&log_manager));
+
+        let (page_id, frame_id) = bp.new_page().unwrap();
+
+        let mut dummy = LogRecord {
+            lsn: 0,
+            prev_lsn: 0,
+            txt_id: 1,
+            record_type: RecordType::Insert,
+            file_id: 1,
+            page_id,
+            offset: 0,
+            length: 4,
+            before_image: vec![],
+            after_image: vec![9, 8, 7, 6],
+        };
+        let lsn = log_manager.append_record(&mut dummy).unwrap();
+        assert_eq!(log_manager.get_flushed_lsn(), 0);
+
+        let page = bp.get_page_mut(frame_id);
+        page.set_page_lsn(lsn.0);
+        page.insert_tuple(b"test").unwrap();
+        bp.unpin_page(frame_id, true);
+
+        // Calling flush_all must enforce WAL flush before disk write
+        bp.flush_all().unwrap();
+        assert!(log_manager.get_flushed_lsn() >= lsn.0);
+
+        rm(&p);
+        rm(&log_p);
+    }
 }
