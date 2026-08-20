@@ -33,6 +33,7 @@ pub mod pool;
 pub mod toast;
 pub mod tuple;
 pub mod util;
+pub mod txn;
 
 pub use btree::BPlusTreeIndex;
 pub use error::StorageError;
