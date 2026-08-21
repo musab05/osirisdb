@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Phase 3: Write-Ahead Logging (WAL) & Recovery Infrastructure**:
+  - **Physiological LogRecord**:
+    - Implemented `LogRecord` supporting physiological record types (`Insert`, `Delete`, `Update`, `Begin`, `Commit`, `Abort`, `CheckpointBegin`, `CheckpointEnd`, `Compensation`).
+    - Added binary serialization and deserialization with CRC32C integrity checksum verification.
+    - Added before/after image byte slices, slot offset, and tuple length tracking.
+  - **Thread-Safe LogManager & Group Commit**:
+    - Created `LogManager` and `LogManagerInner` with atomic, lock-free LSN generation using `AtomicU64`.
+    - Implemented background flusher thread (`flusher_loop`) batching pending records with periodic 5ms `fsync` intervals.
+    - Implemented Group Commit condition variable signaling via `wait_for_flush(target_lsn)` to wake up committing transaction threads simultaneously without redundant `fsync` calls.
+  - **Buffer Pool & TableHeap WAL Protocol Integration**:
+    - Connected `BufferPool` to `LogManager` via `BufferPool::with_log_manager`.
+    - Enforced the fundamental Write-Ahead Logging invariant in `BufferPool::evict` and `BufferPool::flush_all`: dirty pages are prevented from writing to disk until `page.page_lsn() <= log_manager.get_flushed_lsn()`.
+    - Updated `TableHeap` (`TableHeap::open_with_log_manager`) to emit `Insert` `LogRecord`s and update `page.set_page_lsn(lsn.0)` on tuple insertion.
+  - **Test Suite & Benchmarks**:
+    - Added comprehensive unit and concurrency test suite in `tests/storage/log_manager_test.rs` (concurrent appenders across 8 threads, parallel group commit waiters, capacity auto-flush).
+    - Added WAL protocol enforcement tests in `tests/storage/database_test.rs` (`table_heap_with_log_manager_assigns_page_lsn`, `buffer_pool_eviction_enforces_wal_flush_rule`, `buffer_pool_flush_all_enforces_wal_flush_rule`).
+    - Added Criterion benchmarks in `benches/storage/log_manager_bench.rs` and `benches/storage/database_bench.rs` comparing tuple insertion throughput with and without WAL logging.
+
 ## [0.8.0] - 2026-08-07
 
 ### Added
