@@ -5,6 +5,7 @@ pub enum TxnStatus {
     Aborted,
 }
 
+#[derive(Clone)]
 pub struct Transaction {
     /// Unique monotonically increasing transaction ID.
     pub txn_id: u64,
