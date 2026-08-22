@@ -198,7 +198,7 @@ impl Executor {
             for pending in &prepared {
                 let (page_id, slot_id) = {
                     let mut heap = heap_handle.lock().unwrap_or_else(|e| e.into_inner());
-                    heap.insert_tuple(&columns, &pending.row, &self.catalog.interner)
+                    heap.insert_tuple(&columns, &pending.row, &self.catalog.interner, None)
                         .map_err(|e| ExecutionError::Storage(e.to_string()))?
                 };
 

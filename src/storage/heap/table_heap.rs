@@ -18,6 +18,7 @@ use crate::{
             record_id::RecordId,
             tuple::{deserialize_tuple, serialize_tuple_with_toast},
         },
+        txn::transaction::Transaction,
     },
 };
 
@@ -100,6 +101,7 @@ impl TableHeap {
         schema: &[ColumnEntry],
         values: &[Value],
         interner: &Interner,
+        mut txn: Option<&mut Transaction>,
     ) -> Result<(u32, u16), StorageError> {
         let (bytes, has_toast) =
             serialize_tuple_with_toast(schema, values, interner, self.toast_file.as_mut())?;
@@ -130,10 +132,15 @@ impl TableHeap {
         if let Some(slot_id) = inserted {
             // WAL Logging: if log_manager is enabled log the insert and update page_lsn
             if let Some(lm) = &self.log_manager {
+                // Pulling txn_id and prev_lsn from the transaction or suing defaults
+                let (txt_id, prev_lsn) = match txn.as_ref().map(|t| (t.txn_id, t.last_lsn)) {
+                    Some(pair) => pair,
+                    None => (0, 0),
+                };
                 let mut record = LogRecord {
                     lsn: 0,
-                    prev_lsn: 0,
-                    txt_id: 1, // Will link to transaction txt_id in future
+                    prev_lsn,
+                    txt_id,
                     record_type: RecordType::Insert,
                     file_id: 0,
                     page_id,
@@ -144,6 +151,11 @@ impl TableHeap {
                 };
                 let lsn = lm.append_record(&mut record)?;
                 bp.get_page_mut(frame_id).set_page_lsn(lsn.0);
+
+                // Updating the transaction's backward chain pointer
+                if let Some(t) = txn.as_mut() {
+                    t.last_lsn = lsn.0
+                }
             }
 
             bp.unpin_page(frame_id, true);
@@ -167,10 +179,14 @@ impl TableHeap {
         if let Some(slot_id) = inserted {
             // WAL logging for new page
             if let Some(lm) = &self.log_manager {
+                let (txt_id, prev_lsn) = match txn.as_ref().map(|t| (t.txn_id, t.last_lsn)) {
+                    Some(pair) => pair,
+                    None => (0, 0),
+                };
                 let mut record = LogRecord {
                     lsn: 0,
-                    prev_lsn: 0,
-                    txt_id: 1,
+                    prev_lsn,
+                    txt_id,
                     record_type: RecordType::Insert,
                     file_id: 0,
                     page_id: new_page_id,
@@ -181,6 +197,11 @@ impl TableHeap {
                 };
                 let lsn = lm.append_record(&mut record)?;
                 bp.get_page_mut(new_frame_id).set_page_lsn(lsn.0);
+
+                // Update the transaction's backward chain pointer
+                if let Some(t) = txn.as_mut() {
+                    t.last_lsn = lsn.0;
+                }
             }
 
             bp.unpin_page(new_frame_id, true);

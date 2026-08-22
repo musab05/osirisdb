@@ -4,7 +4,6 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
-    todo,
 };
 
 use crate::storage::{
@@ -13,7 +12,7 @@ use crate::storage::{
         log_manager::LogManager,
         log_record::{LogRecord, RecordType},
     },
-    txn::transaction::Transaction,
+    txn::transaction::{Transaction, TxnStatus},
 };
 
 pub struct TransactionManager {
@@ -57,16 +56,74 @@ impl TransactionManager {
         // Append to WAL, get the assigned LSN
         let lsn = self.log_manager.append_record(&mut record)?;
 
-        // Create the Transaction object with last_lsn pointing to BEGIN\
-        let txn = Transaction::new(txn_id);
-
-        // Set last_lsn
-        let mut txn = txn;
+        // Create the Transaction object with last_lsn pointing to BEGIN
+        let mut txn = Transaction::new(txn_id);
         txn.last_lsn = lsn.0;
 
         // Insert into Active Transaction Table
         self.active_txns.lock().unwrap().insert(txn_id, txn.clone());
 
         Ok(txn)
+    }
+
+    pub fn commit(&self, txn: &mut Transaction) -> Result<(), StorageError> {
+        // Creating COMMIT log record, chaining prev_lsn to txn's last record
+        let mut record = LogRecord {
+            lsn: 0,
+            prev_lsn: txn.last_lsn, // Backward chain link
+            txt_id: txn.txn_id,
+            record_type: RecordType::Commit,
+            file_id: 0,
+            page_id: 0,
+            offset: 0,
+            length: 0,
+            before_image: Vec::new(),
+            after_image: Vec::new(),
+        };
+
+        // Append to WAL
+        let lsn = self.log_manager.append_record(&mut record)?;
+        txn.last_lsn = lsn.0;
+
+        // DURABILITY: wait until the commit record is fsynced to disk
+        //      This is where Group Commit kicks in - multiple committing txns
+        //      will all block here and be woken by one fync from the flusher thread
+        self.log_manager.wait_for_flush(lsn.0)?;
+
+        // Update transaction status
+        txn.status = TxnStatus::Committed;
+
+        // Remove from Active Transaction Table
+        self.active_txns.lock().unwrap().remove(&txn.txn_id);
+
+        Ok(())
+    }
+
+    pub fn abort(&self, txn: &mut Transaction) -> Result<(), StorageError> {
+        // Create ABORT log record
+        let mut record = LogRecord {
+            lsn: 0,
+            prev_lsn: txn.last_lsn,
+            txt_id: txn.txn_id,
+            record_type: RecordType::Abort,
+            file_id: 0,
+            page_id: 0,
+            offset: 0,
+            length: 0,
+            before_image: Vec::new(),
+            after_image: Vec::new(),
+        };
+
+        // Append to WAL
+        let lsn = self.log_manager.append_record(&mut record)?;
+        txn.last_lsn = lsn.0;
+
+        // Update transaction status
+        txn.status = TxnStatus::Aborted;
+
+        // Remove from Active Transaction Table
+        self.active_txns.lock().unwrap().remove(&txn.txn_id);
+
+        Ok(())
     }
 }

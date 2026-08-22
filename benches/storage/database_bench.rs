@@ -86,7 +86,7 @@ fn bench_table_heap_insert(c: &mut Criterion) {
     c.bench_function("table_heap_insert_without_wal", |b| {
         b.iter(|| {
             th_no_wal
-                .insert_tuple(black_box(&schema), black_box(&row), &interner)
+                .insert_tuple(black_box(&schema), black_box(&row), &interner, None)
                 .unwrap();
         })
     });
@@ -100,7 +100,7 @@ fn bench_table_heap_insert(c: &mut Criterion) {
     c.bench_function("table_heap_insert_with_wal", |b| {
         b.iter(|| {
             th_wal
-                .insert_tuple(black_box(&schema), black_box(&row), &interner)
+                .insert_tuple(black_box(&schema), black_box(&row), &interner, None)
                 .unwrap();
         })
     });

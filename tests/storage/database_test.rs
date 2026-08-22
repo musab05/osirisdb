@@ -379,9 +379,9 @@ mod tests {
         let name3 = interner.intern("charlie");
         let row3 = vec![Value::Int(3), Value::String(name3)];
 
-        th.insert_tuple(&schema, &row1, &interner).unwrap();
-        th.insert_tuple(&schema, &row2, &interner).unwrap();
-        th.insert_tuple(&schema, &row3, &interner).unwrap();
+        th.insert_tuple(&schema, &row1, &interner, None).unwrap();
+        th.insert_tuple(&schema, &row2, &interner, None).unwrap();
+        th.insert_tuple(&schema, &row3, &interner, None).unwrap();
 
         let scanned = th.scan(&schema, &mut interner).unwrap();
 
@@ -460,8 +460,8 @@ mod tests {
         let row = vec![Value::Int(1), Value::String(str_sym)];
 
         // Insert tuples
-        th.insert_tuple(&schema, &row, &interner).unwrap();
-        th.insert_tuple(&schema, &row, &interner).unwrap();
+        th.insert_tuple(&schema, &row, &interner, None).unwrap();
+        th.insert_tuple(&schema, &row, &interner, None).unwrap();
 
         // Vacuum on a page with no deleted tuples reclaims 0 bytes
         let reclaimed = th.vacuum().unwrap();
@@ -558,7 +558,7 @@ mod tests {
 
         let alice = interner.intern("Alice");
         let row1 = vec![Value::Int(1), Value::String(alice)];
-        let (page_id, slot_id) = th.insert_tuple(&schema, &row1, &interner).unwrap();
+        let (page_id, slot_id) = th.insert_tuple(&schema, &row1, &interner, None).unwrap();
 
         assert_eq!(page_id, 0);
         assert_eq!(slot_id, 0);
