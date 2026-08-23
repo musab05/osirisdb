@@ -271,6 +271,125 @@ impl TableHeap {
         Ok(result)
     }
 
+    pub fn delete_tuple(
+        &mut self,
+        rid: RecordId,
+        mut txn: Option<&mut Transaction>,
+    ) -> Result<bool, StorageError> {
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+        let frame_id = bp.pin_page(rid.page_id)?;
+
+        let before_image = match bp.get_page(frame_id).get_tuple(rid.slot_id) {
+            Some(bytes) => bytes.to_vec(),
+            None => {
+                bp.unpin_page(frame_id, false); // Not dirty because nothing changed
+                return Ok(false);
+            }
+        };
+
+        bp.get_page_mut(frame_id).delete_tuple(rid.slot_id);
+
+        // WAL logging for delete page
+        if let Some(lm) = &self.log_manager {
+            let (txt_id, prev_lsn) = match txn.as_ref().map(|t| (t.txn_id, t.last_lsn)) {
+                Some(pair) => pair,
+                None => (0, 0),
+            };
+
+            let mut record = LogRecord {
+                lsn: 0,
+                prev_lsn,
+                txt_id,
+                record_type: RecordType::Delete,
+                file_id: 0,
+                page_id: rid.page_id,
+                offset: rid.slot_id,
+                length: before_image.len() as u16,
+                before_image,
+                after_image: vec![],
+            };
+
+            let lsn = lm.append_record(&mut record)?;
+            bp.get_page_mut(frame_id).set_page_lsn(lsn.0);
+
+            if let Some(t) = txn.as_mut() {
+                t.last_lsn = lsn.0;
+            }
+        }
+
+        bp.unpin_page(frame_id, true);
+        Ok(true)
+    }
+
+    pub fn update_tuple(
+        &mut self,
+
+        schema: &[ColumnEntry],
+        new_values: &[Value],
+        interner: &Interner,
+        rid: RecordId,
+        mut txn: Option<&mut Transaction>,
+    ) -> Result<bool, StorageError> {
+        let (bytes, has_toast) =
+            serialize_tuple_with_toast(schema, new_values, interner, self.toast_file.as_mut())?;
+
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+
+        let frame_id = bp.pin_page(rid.page_id)?;
+
+        let before_image = match bp.get_page(frame_id).get_tuple(rid.slot_id) {
+            Some(old_bytes) => old_bytes.to_vec(),
+            None => {
+                bp.unpin_page(frame_id, false);
+                return Ok(false);
+            }
+        };
+
+        bp.get_page_mut(frame_id).delete_tuple(rid.slot_id);
+        let page = bp.get_page_mut(frame_id);
+        if has_toast {
+            let flags = page.flags() | PageFlags::HAS_TOAST;
+            page.set_flags(flags);
+        }
+        page.insert_tuple(&bytes);
+
+        if let Some(lm) = &self.log_manager {
+            let (txt_id, prev_lsn) = match txn.as_ref().map(|t| (t.txn_id, t.last_lsn)) {
+                Some(pair) => pair,
+                None => (0, 0),
+            };
+
+            let mut record = LogRecord {
+                lsn: 0,
+                prev_lsn,
+                txt_id,
+                record_type: RecordType::Update,
+                file_id: 0,
+                page_id: rid.page_id,
+                offset: rid.slot_id,
+                length: bytes.len() as u16,
+                before_image: before_image,
+                after_image: bytes,
+            };
+
+            let lsn = lm.append_record(&mut record)?;
+            bp.get_page_mut(frame_id).set_page_lsn(lsn.0);
+
+            if let Some(t) = txn.as_mut() {
+                t.last_lsn = lsn.0;
+            }
+        }
+
+        bp.unpin_page(frame_id, true);
+        Ok(true)
+    }
+
     /// Scans all pages in the table heap and compacts any pages
     /// that have fragmented space from deleted tuples.
     ///
