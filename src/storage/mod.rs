@@ -41,6 +41,7 @@ pub use file::{HeapFile, Storage};
 pub use heap::TableHeap;
 pub use log::log_manager::LogManager;
 pub use pool::BufferPool;
+pub use tuple::record_id::RecordId;
 pub use txn::{
     transaction::{Transaction, TxnStatus},
     transaction_manager::TransactionManager,

@@ -5,7 +5,7 @@ use osirisdb::{
     catalog::objects::ColumnEntry,
     common::Interner,
     storage::{
-        LogManager, Storage, TableHeap, TransactionManager,
+        LogManager, RecordId, Storage, TableHeap, TransactionManager,
         log::log_record::{LogRecord, RecordType},
         txn::transaction::TxnStatus,
     },
@@ -325,5 +325,208 @@ fn test_transaction_concurrent_begin_commit() {
 
     drop(tm);
     drop(log_manager);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_table_heap_delete_tuple_wal_record_and_chaining() {
+    let dir = env::temp_dir().join("osirisdb_txn_test_delete");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let storage = Storage::new_or_create(&dir).unwrap();
+    std::fs::create_dir_all(storage.schema_path("shop_db", "public")).unwrap();
+
+    let log_path = dir.join("wal.log");
+    let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
+    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+
+    let mut th = TableHeap::open_with_log_manager(
+        &storage,
+        "shop_db",
+        "public",
+        "items",
+        Arc::clone(&log_manager),
+    )
+    .unwrap();
+
+    let mut interner = Interner::new();
+    let schema = vec![
+        col(&mut interner, "item_id", DataType::Int, false),
+        col(&mut interner, "name", DataType::VarChar(Some(30)), false),
+    ];
+
+    // 1. BEGIN txn
+    let mut txn = tm.begin().unwrap();
+    let txn_id = txn.txn_id;
+    let begin_lsn = txn.last_lsn;
+
+    // 2. INSERT tuple
+    let name_sym = interner.intern("Keyboard");
+    let row = vec![Value::Int(1), Value::String(name_sym)];
+    let (page_id, slot_id) = th
+        .insert_tuple(&schema, &row, &interner, Some(&mut txn))
+        .unwrap();
+    let insert_lsn = txn.last_lsn;
+    assert!(insert_lsn > begin_lsn);
+
+    let rid = RecordId { page_id, slot_id };
+
+    // Verify tuple exists before delete
+    let fetched = th.get_tuple(rid, &schema, &interner).unwrap();
+    assert_eq!(fetched, Some(row));
+
+    // 3. DELETE tuple
+    let deleted = th.delete_tuple(rid, Some(&mut txn)).unwrap();
+    assert!(deleted);
+    let delete_lsn = txn.last_lsn;
+    assert!(delete_lsn > insert_lsn);
+
+    // Verify tuple is gone
+    let fetched_after = th.get_tuple(rid, &schema, &interner).unwrap();
+    assert_eq!(fetched_after, None);
+
+    // 4. COMMIT txn
+    tm.commit(&mut txn).unwrap();
+    let commit_lsn = txn.last_lsn;
+    assert!(commit_lsn > delete_lsn);
+
+    drop(th);
+    drop(tm);
+    drop(log_manager);
+
+    // 5. Read physical WAL file
+    let records = read_all_log_records(&log_path);
+    assert_eq!(records.len(), 4);
+
+    // Record 0: BEGIN
+    assert_eq!(records[0].record_type, RecordType::Begin);
+    assert_eq!(records[0].lsn, begin_lsn);
+    assert_eq!(records[0].prev_lsn, 0);
+
+    // Record 1: INSERT
+    assert_eq!(records[1].record_type, RecordType::Insert);
+    assert_eq!(records[1].lsn, insert_lsn);
+    assert_eq!(records[1].prev_lsn, begin_lsn);
+    assert_eq!(records[1].txt_id, txn_id);
+    assert_eq!(records[1].page_id, page_id);
+    assert_eq!(records[1].offset, slot_id);
+
+    // Record 2: DELETE (with before_image containing original tuple bytes, after_image empty)
+    assert_eq!(records[2].record_type, RecordType::Delete);
+    assert_eq!(records[2].lsn, delete_lsn);
+    assert_eq!(records[2].prev_lsn, insert_lsn);
+    assert_eq!(records[2].txt_id, txn_id);
+    assert_eq!(records[2].page_id, page_id);
+    assert_eq!(records[2].offset, slot_id);
+    assert!(!records[2].before_image.is_empty());
+    assert!(records[2].after_image.is_empty());
+
+    // Record 3: COMMIT
+    assert_eq!(records[3].record_type, RecordType::Commit);
+    assert_eq!(records[3].lsn, commit_lsn);
+    assert_eq!(records[3].prev_lsn, delete_lsn);
+    assert_eq!(records[3].txt_id, txn_id);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_table_heap_update_tuple_wal_record_and_chaining() {
+    let dir = env::temp_dir().join("osirisdb_txn_test_update");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let storage = Storage::new_or_create(&dir).unwrap();
+    std::fs::create_dir_all(storage.schema_path("shop_db", "public")).unwrap();
+
+    let log_path = dir.join("wal.log");
+    let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
+    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+
+    let mut th = TableHeap::open_with_log_manager(
+        &storage,
+        "shop_db",
+        "public",
+        "products",
+        Arc::clone(&log_manager),
+    )
+    .unwrap();
+
+    let mut interner = Interner::new();
+    let schema = vec![
+        col(&mut interner, "id", DataType::Int, false),
+        col(&mut interner, "title", DataType::VarChar(Some(50)), false),
+    ];
+
+    // 1. BEGIN txn
+    let mut txn = tm.begin().unwrap();
+    let txn_id = txn.txn_id;
+    let begin_lsn = txn.last_lsn;
+
+    // 2. INSERT original row: (10, "Original Title")
+    let orig_title = interner.intern("Original Title");
+    let orig_row = vec![Value::Int(10), Value::String(orig_title)];
+    let (page_id, slot_id) = th
+        .insert_tuple(&schema, &orig_row, &interner, Some(&mut txn))
+        .unwrap();
+    let insert_lsn = txn.last_lsn;
+    assert!(insert_lsn > begin_lsn);
+
+    let rid = RecordId { page_id, slot_id };
+
+    // 3. UPDATE row to: (10, "Updated Title")
+    let new_title = interner.intern("Updated Title");
+    let new_row = vec![Value::Int(10), Value::String(new_title)];
+    let updated = th
+        .update_tuple(&schema, &new_row, &interner, rid, Some(&mut txn))
+        .unwrap();
+    assert!(updated);
+    let update_lsn = txn.last_lsn;
+    assert!(update_lsn > insert_lsn);
+
+    // Verify row reflects the updated values
+    let fetched = th.get_tuple(rid, &schema, &interner).unwrap();
+    assert_eq!(fetched, Some(new_row));
+
+    // 4. COMMIT txn
+    tm.commit(&mut txn).unwrap();
+    let commit_lsn = txn.last_lsn;
+    assert!(commit_lsn > update_lsn);
+
+    drop(th);
+    drop(tm);
+    drop(log_manager);
+
+    // 5. Read physical WAL file
+    let records = read_all_log_records(&log_path);
+    assert_eq!(records.len(), 4);
+
+    // Record 0: BEGIN
+    assert_eq!(records[0].record_type, RecordType::Begin);
+    assert_eq!(records[0].lsn, begin_lsn);
+
+    // Record 1: INSERT
+    assert_eq!(records[1].record_type, RecordType::Insert);
+    assert_eq!(records[1].lsn, insert_lsn);
+    assert_eq!(records[1].prev_lsn, begin_lsn);
+
+    // Record 2: UPDATE (with both before_image and after_image present)
+    assert_eq!(records[2].record_type, RecordType::Update);
+    assert_eq!(records[2].lsn, update_lsn);
+    assert_eq!(records[2].prev_lsn, insert_lsn);
+    assert_eq!(records[2].txt_id, txn_id);
+    assert_eq!(records[2].page_id, page_id);
+    assert_eq!(records[2].offset, slot_id);
+    assert!(!records[2].before_image.is_empty());
+    assert!(!records[2].after_image.is_empty());
+    assert_ne!(records[2].before_image, records[2].after_image);
+
+    // Record 3: COMMIT
+    assert_eq!(records[3].record_type, RecordType::Commit);
+    assert_eq!(records[3].lsn, commit_lsn);
+    assert_eq!(records[3].prev_lsn, update_lsn);
+    assert_eq!(records[3].txt_id, txn_id);
+
     let _ = std::fs::remove_dir_all(&dir);
 }
