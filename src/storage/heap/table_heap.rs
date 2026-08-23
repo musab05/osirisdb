@@ -28,6 +28,7 @@ pub struct TableHeap {
     buffer_pool: Arc<Mutex<BufferPool>>,
     toast_file: Option<HeapFile>, // Lazily opened on demand
     log_manager: Option<Arc<LogManager>>,
+    file_id: u32,
 }
 
 impl TableHeap {
@@ -47,7 +48,17 @@ impl TableHeap {
             buffer_pool,
             toast_file: None,
             log_manager: None,
+            file_id: 0,
         })
+    }
+
+    pub fn from_buffer_pool(bp: Arc<Mutex<BufferPool>>) -> Self {
+        Self {
+            buffer_pool: bp,
+            toast_file: None,
+            log_manager: None,
+            file_id: 0,
+        }
     }
 
     /// Opens or lazily initializes the toast file for this table heap.
@@ -87,6 +98,7 @@ impl TableHeap {
             buffer_pool,
             toast_file: None,
             log_manager: Some(log_manager),
+            file_id: 0,
         })
     }
 
@@ -142,7 +154,7 @@ impl TableHeap {
                     prev_lsn,
                     txt_id,
                     record_type: RecordType::Insert,
-                    file_id: 0,
+                    file_id: self.file_id,
                     page_id,
                     offset: slot_id,
                     length: bytes.len() as u16,
@@ -188,7 +200,7 @@ impl TableHeap {
                     prev_lsn,
                     txt_id,
                     record_type: RecordType::Insert,
-                    file_id: 0,
+                    file_id: self.file_id,
                     page_id: new_page_id,
                     offset: slot_id,
                     length: bytes.len() as u16,
@@ -241,14 +253,6 @@ impl TableHeap {
         }
 
         Ok(all_rows)
-    }
-
-    pub fn from_buffer_pool(bp: Arc<Mutex<BufferPool>>) -> Self {
-        Self {
-            buffer_pool: bp,
-            toast_file: None,
-            log_manager: None,
-        }
     }
 
     pub fn get_tuple(
@@ -304,7 +308,7 @@ impl TableHeap {
                 prev_lsn,
                 txt_id,
                 record_type: RecordType::Delete,
-                file_id: 0,
+                file_id: self.file_id,
                 page_id: rid.page_id,
                 offset: rid.slot_id,
                 length: before_image.len() as u16,
@@ -370,7 +374,7 @@ impl TableHeap {
                 prev_lsn,
                 txt_id,
                 record_type: RecordType::Update,
-                file_id: 0,
+                file_id: self.file_id,
                 page_id: rid.page_id,
                 offset: rid.slot_id,
                 length: bytes.len() as u16,
@@ -422,5 +426,13 @@ impl TableHeap {
         }
 
         Ok(total_reclaimed)
+    }
+
+    pub fn set_file_id(&mut self, file_id: u32) {
+        self.file_id = file_id;
+    }
+
+    pub fn file_id(&self) -> u32 {
+        self.file_id
     }
 }

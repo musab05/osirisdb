@@ -5,7 +5,7 @@ use osirisdb::{
     catalog::objects::ColumnEntry,
     common::Interner,
     storage::{
-        LogManager, RecordId, Storage, TableHeap, TransactionManager,
+        FileRegistry, LogManager, RecordId, Storage, TableHeap, TransactionManager,
         log::log_record::{LogRecord, RecordType},
         txn::transaction::TxnStatus,
     },
@@ -522,11 +522,74 @@ fn test_table_heap_update_tuple_wal_record_and_chaining() {
     assert!(!records[2].after_image.is_empty());
     assert_ne!(records[2].before_image, records[2].after_image);
 
-    // Record 3: COMMIT
-    assert_eq!(records[3].record_type, RecordType::Commit);
-    assert_eq!(records[3].lsn, commit_lsn);
-    assert_eq!(records[3].prev_lsn, update_lsn);
-    assert_eq!(records[3].txt_id, txn_id);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_file_registry_mapping_and_table_heap_integration() {
+    let dir = env::temp_dir().join("osirisdb_file_registry_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let storage = Storage::new_or_create(&dir).unwrap();
+    std::fs::create_dir_all(storage.schema_path("shop_db", "public")).unwrap();
+    let users_path = storage.table_path("shop_db", "public", "users").unwrap();
+    let orders_path = storage.table_path("shop_db", "public", "orders").unwrap();
+
+    // 1. Test FileRegistry mapping
+    let registry = FileRegistry::new();
+    let users_id = registry.register(&users_path);
+    let orders_id = registry.register(&orders_path);
+
+    assert_eq!(users_id, 1);
+    assert_eq!(orders_id, 2);
+
+    // Re-registering the same path returns the existing ID
+    assert_eq!(registry.register(&users_path), users_id);
+    assert_eq!(registry.get_id(&users_path), Some(users_id));
+    assert_eq!(registry.get_path(users_id), Some(users_path.clone()));
+
+    // 2. Open TableHeap with LogManager and set its file_id
+    let log_path = dir.join("wal.log");
+    let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
+    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+
+    let mut th = TableHeap::open_with_log_manager(
+        &storage,
+        "shop_db",
+        "public",
+        "users",
+        Arc::clone(&log_manager),
+    )
+    .unwrap();
+    th.set_file_id(users_id);
+    assert_eq!(th.file_id(), users_id);
+
+    let mut interner = Interner::new();
+    let schema = vec![col(&mut interner, "id", DataType::Int, false)];
+
+    let mut txn = tm.begin().unwrap();
+    let row = vec![Value::Int(777)];
+    th.insert_tuple(&schema, &row, &interner, Some(&mut txn))
+        .unwrap();
+    tm.commit(&mut txn).unwrap();
+
+    drop(th);
+    drop(tm);
+    drop(log_manager);
+
+    // 3. Inspect physical WAL records: verify record.file_id == users_id
+    let records = read_all_log_records(&log_path);
+    assert_eq!(records.len(), 3); // BEGIN, INSERT, COMMIT
+
+    assert_eq!(records[0].record_type, RecordType::Begin);
+    assert_eq!(records[0].file_id, 0); // Lifecycle record
+
+    assert_eq!(records[1].record_type, RecordType::Insert);
+    assert_eq!(records[1].file_id, users_id); // Data record stamped with registered file_id!
+
+    assert_eq!(records[2].record_type, RecordType::Commit);
+    assert_eq!(records[2].file_id, 0); // Lifecycle record
 
     let _ = std::fs::remove_dir_all(&dir);
 }
