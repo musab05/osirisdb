@@ -126,4 +126,19 @@ impl TransactionManager {
 
         Ok(())
     }
+
+    /// Returns a copy of the active transaction state for `txn_id`, if it is currently in flight.
+    pub fn get_active_txn(&self, txn_id: u64) -> Option<Transaction> {
+        self.active_txns.lock().unwrap().get(&txn_id).cloned()
+    }
+
+    /// Returns the number of currently active in-flight transactions.
+    pub fn active_txn_count(&self) -> usize {
+        self.active_txns.lock().unwrap().len()
+    }
+
+    /// Returns a reference to the shared [`LogManager`].
+    pub fn log_manager(&self) -> &Arc<LogManager> {
+        &self.log_manager
+    }
 }

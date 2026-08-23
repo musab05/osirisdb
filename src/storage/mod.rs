@@ -39,4 +39,9 @@ pub use btree::BPlusTreeIndex;
 pub use error::StorageError;
 pub use file::{HeapFile, Storage};
 pub use heap::TableHeap;
+pub use log::log_manager::LogManager;
 pub use pool::BufferPool;
+pub use txn::{
+    transaction::{Transaction, TxnStatus},
+    transaction_manager::TransactionManager,
+};
