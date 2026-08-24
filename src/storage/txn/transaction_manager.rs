@@ -141,4 +141,14 @@ impl TransactionManager {
     pub fn log_manager(&self) -> &Arc<LogManager> {
         &self.log_manager
     }
+
+    /// Returns a snapshot of all active transactions as (txn_id, last_lsn) pairs.
+    pub fn get_active_transactions(&self) -> Vec<(u64, u64)> {
+        self.active_txns
+            .lock()
+            .unwrap()
+            .values()
+            .map(|txn| (txn.txn_id, txn.last_lsn))
+            .collect()
+    }
 }
