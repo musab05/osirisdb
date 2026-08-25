@@ -40,7 +40,8 @@ pub use error::StorageError;
 pub use file::{FileRegistry, HeapFile, Storage};
 pub use heap::TableHeap;
 pub use log::{
-    checkpoint_data::CheckpointData, checkpoint_manager::CheckpointManager, log_manager::LogManager,
+    checkpoint_data::CheckpointData, checkpoint_manager::CheckpointManager,
+    log_manager::LogManager, recovery::RecoveryEngine,
 };
 pub use pool::BufferPool;
 pub use tuple::record_id::RecordId;
