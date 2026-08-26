@@ -1,5 +1,7 @@
-use osirisdb::sql;
+// use osirisdb::sql;
+use osirisdb::execution;
 
 fn main() {
-    sql::sql();
+    // sql::sql();?
+    execution::run_benchmarks();
 }

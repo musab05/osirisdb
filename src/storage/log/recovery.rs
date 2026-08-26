@@ -57,7 +57,7 @@ impl RecoveryEngine {
             }
 
             let after_len = u32::from_le_bytes(
-                bytes[cursor + 41..cursor + 45 + before_len]
+                bytes[cursor + 41 + before_len..cursor + 45 + before_len]
                     .try_into()
                     .unwrap(),
             ) as usize;
