@@ -1,7 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use crate::storage::{
-    BufferPool, HeapFile, Storage, StorageError, page::IndexPage, tuple::record_id::RecordId,
+    BufferPool, HeapFile, Storage, StorageError,
+    page::{IndexPage, raw_page::PAGE_SIZE},
+    pool::calculate_capacity,
+    tuple::record_id::RecordId,
 };
 
 /// Page 0 of every index file — never used as a tree node.
@@ -75,7 +78,32 @@ impl BPlusTreeIndex {
             .schema_path(db, schema)
             .join(format!("{}.idx", index_name));
         let heap_file = HeapFile::open(path)?;
-        let buffer_pool = Arc::new(Mutex::new(BufferPool::new(heap_file, 16)));
+        let capacity = calculate_capacity(PAGE_SIZE, None);
+        // let capacity = default_pool_memory_budget();
+        let buffer_pool = Arc::new(Mutex::new(BufferPool::new(heap_file, capacity)));
+        Self::open(is_unique, buffer_pool)
+    }
+
+    /// Opens a standalone index but here with capacity
+    /// sharing a pool with a table's other indexes.
+    pub fn open_standalone_with_capacity(
+        storage: &Storage,
+        db: &str,
+        schema: &str,
+        index_name: &str,
+        is_unique: bool,
+    ) -> Result<Self, StorageError> {
+        if !storage.schema_dir_exists(db, schema) {
+            return Err(StorageError::DirectoryNotFound(
+                storage.schema_path(db, schema),
+            ));
+        }
+        let path = storage
+            .schema_path(db, schema)
+            .join(format!("{}.idx", index_name));
+        let heap_file = HeapFile::open(path)?;
+        let capacity = calculate_capacity(PAGE_SIZE, None);
+        let buffer_pool = Arc::new(Mutex::new(BufferPool::new(heap_file, capacity)));
         Self::open(is_unique, buffer_pool)
     }
 
