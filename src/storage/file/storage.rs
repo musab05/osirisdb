@@ -1,5 +1,11 @@
-use crate::storage::error::StorageError;
-use std::path::{Path, PathBuf};
+use crate::storage::{
+    BufferPool, FileRegistry, error::StorageError, page::raw_page::PAGE_SIZE,
+    pool::calculate_capacity,
+};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
 /// The storage engine — manages the on-disk layout for all database objects.
 ///
@@ -29,6 +35,9 @@ pub struct Storage {
     /// Every database directory lives directly under this path.
     /// Must exist before `Storage::new` is called.
     data_dir: PathBuf,
+
+    file_registry: Arc<FileRegistry>,
+    buffer_pool: Arc<Mutex<BufferPool>>,
 }
 
 impl Storage {
@@ -39,12 +48,21 @@ impl Storage {
     /// Returns [`StorageError::DirectoryNotFound`] if `data_dir`
     /// does not exist. The data directory must be created by the
     /// caller before initializing storage.
+    fn build(data_dir: PathBuf) -> Self {
+        let capacity = calculate_capacity(PAGE_SIZE, None);
+        Self {
+            data_dir,
+            file_registry: Arc::new(FileRegistry::new()),
+            buffer_pool: Arc::new(Mutex::new(BufferPool::new(capacity))),
+        }
+    }
+
     pub fn new(data_dir: impl Into<PathBuf>) -> Result<Self, StorageError> {
         let data_dir = data_dir.into();
         if !data_dir.exists() {
             return Err(StorageError::DirectoryNotFound(data_dir));
         }
-        Ok(Self { data_dir })
+        Ok(Self::build(data_dir))
     }
 
     /// Creates a `Storage` instance and creates `data_dir` if it
@@ -56,7 +74,7 @@ impl Storage {
         if !data_dir.exists() {
             std::fs::create_dir_all(&data_dir).map_err(|e| StorageError::io(&data_dir, e))?;
         }
-        Ok(Self { data_dir })
+        Ok(Self::build(data_dir))
     }
 
     /// Returns the root data directory path.
@@ -116,5 +134,13 @@ impl Storage {
         let mut log_path = db_path;
         log_path.set_extension("log");
         Ok(log_path)
+    }
+
+    pub fn buffer_pool(&self) -> Arc<Mutex<BufferPool>> {
+        Arc::clone(&self.buffer_pool)
+    }
+
+    pub fn file_registry(&self) -> Arc<FileRegistry> {
+        Arc::clone(&self.file_registry)
     }
 }

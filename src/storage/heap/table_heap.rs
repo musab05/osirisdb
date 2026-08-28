@@ -40,10 +40,9 @@ impl TableHeap {
     ) -> Result<Self, StorageError> {
         let path = storage.table_path(db_name, schema_name, table_name)?;
         let heap_file = HeapFile::open(path)?;
-        let buffer_pool = Arc::new(Mutex::new(BufferPool::new(
-            heap_file,
-            DEFAULT_POOL_CAPACITY,
-        )));
+        let mut pool = BufferPool::new(DEFAULT_POOL_CAPACITY);
+        pool.register_file(0, heap_file);
+        let buffer_pool = Arc::new(Mutex::new(pool));
         Ok(Self {
             buffer_pool,
             toast_file: None,
@@ -88,11 +87,10 @@ impl TableHeap {
     ) -> Result<Self, StorageError> {
         let path = storage.table_path(db_name, schema_name, table_name)?;
         let heap_file = HeapFile::open(path)?;
-        let buffer_pool = Arc::new(Mutex::new(BufferPool::with_log_manager(
-            heap_file,
-            DEFAULT_POOL_CAPACITY,
-            Arc::clone(&log_manager),
-        )));
+        let mut pool =
+            BufferPool::with_log_manager(DEFAULT_POOL_CAPACITY, Arc::clone(&log_manager));
+        pool.register_file(0, heap_file);
+        let buffer_pool = Arc::new(Mutex::new(pool));
 
         Ok(Self {
             buffer_pool,
@@ -123,11 +121,11 @@ impl TableHeap {
             .lock()
             .unwrap_or_else(|err| err.into_inner());
 
-        let (page_id, frame_id) = if bp.num_pages() == 0 {
-            bp.new_page()?
+        let (page_id, frame_id) = if bp.num_pages(self.file_id)? == 0 {
+            bp.new_page(self.file_id)?
         } else {
-            let last_page_id = bp.num_pages() - 1;
-            let frame_id = bp.pin_page(last_page_id)?;
+            let last_page_id = bp.num_pages(self.file_id)? - 1;
+            let frame_id = bp.pin_page(self.file_id, last_page_id)?;
             (last_page_id, frame_id)
         };
 
@@ -177,7 +175,7 @@ impl TableHeap {
         // Current page was full allocate new page
         bp.unpin_page(frame_id, false);
 
-        let (new_page_id, new_frame_id) = bp.new_page()?;
+        let (new_page_id, new_frame_id) = bp.new_page(self.file_id)?;
 
         let inserted = {
             let page = bp.get_page_mut(new_frame_id);
@@ -237,8 +235,8 @@ impl TableHeap {
             .lock()
             .unwrap_or_else(|err| err.into_inner());
 
-        for page_id in 0..bp.num_pages() {
-            let frame_id = bp.pin_page(page_id)?;
+        for page_id in 0..bp.num_pages(self.file_id)? {
+            let frame_id = bp.pin_page(self.file_id, page_id)?;
 
             let page = bp.get_page(frame_id);
 
@@ -265,7 +263,7 @@ impl TableHeap {
             .buffer_pool
             .lock()
             .unwrap_or_else(|err| err.into_inner());
-        let frame_id = bp.pin_page(rid.page_id)?;
+        let frame_id = bp.pin_page(self.file_id, rid.page_id)?;
         let page = bp.get_page(frame_id);
         let result = match page.get_tuple(rid.slot_id) {
             Some(bytes) => Some(deserialize_tuple(schema, bytes, interner)?),
@@ -284,7 +282,7 @@ impl TableHeap {
             .buffer_pool
             .lock()
             .unwrap_or_else(|err| err.into_inner());
-        let frame_id = bp.pin_page(rid.page_id)?;
+        let frame_id = bp.pin_page(self.file_id, rid.page_id)?;
 
         let before_image = match bp.get_page(frame_id).get_tuple(rid.slot_id) {
             Some(bytes) => bytes.to_vec(),
@@ -345,7 +343,7 @@ impl TableHeap {
             .lock()
             .unwrap_or_else(|err| err.into_inner());
 
-        let frame_id = bp.pin_page(rid.page_id)?;
+        let frame_id = bp.pin_page(self.file_id, rid.page_id)?;
 
         let before_image = match bp.get_page(frame_id).get_tuple(rid.slot_id) {
             Some(old_bytes) => old_bytes.to_vec(),
@@ -404,11 +402,11 @@ impl TableHeap {
             .lock()
             .unwrap_or_else(|err| err.into_inner());
 
-        let num_pages = bp.num_pages();
+        let num_pages = bp.num_pages(self.file_id)?;
         let mut total_reclaimed = 0;
 
         for page_id in 0..num_pages {
-            let frame_id = bp.pin_page(page_id)?;
+            let frame_id = bp.pin_page(self.file_id, page_id)?;
 
             let (fragmented, dirty) = {
                 let page = bp.get_page(frame_id);
@@ -429,7 +427,12 @@ impl TableHeap {
     }
 
     pub fn set_file_id(&mut self, file_id: u32) {
+        let old = self.file_id;
         self.file_id = file_id;
+        self.buffer_pool
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .rename_file_id(old, file_id);
     }
 
     pub fn file_id(&self) -> u32 {

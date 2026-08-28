@@ -1,4 +1,9 @@
-use std::{collections::HashMap, format, sync::Arc, vec};
+use std::{
+    collections::{HashMap, HashSet},
+    format,
+    sync::Arc,
+    vec,
+};
 
 use crate::storage::{
     error::StorageError, file::HeapFile, log::log_manager::LogManager, page::TablePage,
@@ -46,16 +51,16 @@ use crate::storage::{
 /// layers (tuple scanner, `INSERT` executor) go through the buffer pool.
 pub struct BufferPool {
     /// The backing file — all disk reads and writes go through here.
-    heap_file: HeapFile,
+    heap_files: HashMap<u32, HeapFile>, // Instead of separtely opening file for each here we have shared buffer all
 
     /// The frame array — each slot holds one cached page or is empty.
     frames: Vec<Option<TablePage>>,
 
     /// Maps `page_id → frame_index` for O(1) cache-hit detection.
-    page_table: HashMap<u32, usize>,
+    page_table: HashMap<(u32, u32), usize>, // (file_id, page_id) -> frame_index
 
     /// Maps frame_index -> page_id.
-    frame_to_page: Vec<Option<u32>>,
+    frame_to_page: Vec<Option<(u32, u32)>>, // frame_index -> (file_id, page_id)
 
     /// Number of active pinners per frame.
     ///
@@ -88,9 +93,9 @@ impl BufferPool {
     ///
     /// All frames start empty. No pages are loaded from disk until the first
     /// call to [`Self::pin_page`] or [`Self::new_page`].
-    pub fn new(heap_file: HeapFile, capacity: usize) -> Self {
+    pub fn new(capacity: usize) -> Self {
         Self {
-            heap_file,
+            heap_files: HashMap::new(),
             frames: (0..capacity).map(|_| None).collect(),
             page_table: HashMap::new(),
             frame_to_page: vec![None; capacity],
@@ -104,23 +109,10 @@ impl BufferPool {
     }
 
     /// `BufferPool` with a shared WAL LogManager.
-    pub fn with_log_manager(
-        heap_file: HeapFile,
-        capacity: usize,
-        log_manager: Arc<LogManager>,
-    ) -> Self {
-        Self {
-            heap_file,
-            frames: (0..capacity).map(|_| None).collect(),
-            page_table: HashMap::new(),
-            frame_to_page: vec![None; capacity],
-            pin_count: vec![0; capacity],
-            dirty_flag: vec![false; capacity],
-            referenced: vec![false; capacity],
-            clock_hand: 0,
-            capacity,
-            log_manager: Some(log_manager),
-        }
+    pub fn with_log_manager(capacity: usize, log_manager: Arc<LogManager>) -> Self {
+        let mut pool = Self::new(capacity);
+        pool.log_manager = Some(log_manager);
+        pool
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -145,11 +137,11 @@ impl BufferPool {
     /// - [`StorageError::BufferPoolFull`] if all frames are pinned and no
     ///   victim can be found.
     /// - [`StorageError::Io`] if the disk read or dirty-page write-back fails.
-    pub fn pin_page(&mut self, page_id: u32) -> Result<usize, StorageError> {
+    pub fn pin_page(&mut self, file_id: u32, page_id: u32) -> Result<usize, StorageError> {
         // ── Cache hit ────────────────────────────────────────────────
         // The page is already in a frame — just bump its pin count and
         // update the LRU timestamp; no disk access needed.
-        if let Some(&frame_id) = self.page_table.get(&page_id) {
+        if let Some(&frame_id) = self.page_table.get(&(file_id, page_id)) {
             self.referenced[frame_id] = true;
             self.pin_count[frame_id] += 1;
             return Ok(frame_id);
@@ -158,9 +150,13 @@ impl BufferPool {
         // ── Cache miss ───────────────────────────────────────────────
         // Find a frame to load the page into.
         let frame_id = self.find_or_evict()?;
+        let heap_file = self
+            .heap_files
+            .get_mut(&file_id)
+            .ok_or(StorageError::UnknownFile(file_id))?;
 
         // Load the page from disk into the chosen frame.
-        let mut page = self.heap_file.read_page(page_id)?;
+        let mut page = heap_file.read_page(page_id)?;
 
         // Verify page integrity — a failed checksum means on-disk corruption.
         // Skip verification for fresh pages (checksum == 0 means never written with checksums).
@@ -173,8 +169,8 @@ impl BufferPool {
         self.frames[frame_id] = Some(page);
 
         // Register in the page table and mark as pinned.
-        self.page_table.insert(page_id, frame_id);
-        self.frame_to_page[frame_id] = Some(page_id);
+        self.page_table.insert((file_id, page_id), frame_id);
+        self.frame_to_page[frame_id] = Some((file_id, page_id));
         self.referenced[frame_id] = true;
         self.pin_count[frame_id] = 1;
         self.dirty_flag[frame_id] = false;
@@ -194,20 +190,23 @@ impl BufferPool {
     ///
     /// - [`StorageError::BufferPoolFull`] if all frames are pinned.
     /// - [`StorageError::Io`] if the page cannot be written to disk.
-    pub fn new_page(&mut self) -> Result<(u32, usize), StorageError> {
+    pub fn new_page(&mut self, file_id: u32) -> Result<(u32, usize), StorageError> {
         // Find frame first
         let frame_id = self.find_or_evict()?;
 
         // Allocate the page on disk first so `num_pages` is up to date
         // before `pin_page` checks bounds.
-        let page_id = self.heap_file.allocate_page()?;
+        let heap_file = self
+            .heap_files
+            .get_mut(&file_id)
+            .ok_or(StorageError::UnknownFile(file_id))?;
 
-        // Get page from heap file using page id
-        let page = self.heap_file.read_page(page_id)?;
+        let page_id = heap_file.allocate_page()?;
+        let page = heap_file.read_page(page_id)?;
 
         self.frames[frame_id] = Some(page);
-        self.page_table.insert(page_id, frame_id);
-        self.frame_to_page[frame_id] = Some(page_id);
+        self.page_table.insert((file_id, page_id), frame_id);
+        self.frame_to_page[frame_id] = Some((file_id, page_id));
         self.referenced[frame_id] = true;
         self.pin_count[frame_id] = 1;
         self.dirty_flag[frame_id] = false;
@@ -280,32 +279,51 @@ impl BufferPool {
     /// frames are still flushed even after an error (best-effort).
     pub fn flush_all(&mut self) -> Result<(), StorageError> {
         let mut last_err: Option<StorageError> = None;
+        let mut files_written: HashSet<u32> = HashSet::new();
 
         for frame_id in 0..self.capacity {
-            if self.dirty_flag[frame_id] {
-                if let Some(page) = &mut self.frames[frame_id] {
-                    let page_id = self.frame_to_page[frame_id].expect("frame not found");
+            if !self.dirty_flag[frame_id] {
+                continue;
+            }
+            let Some((file_id, page_id)) = self.frame_to_page[frame_id] else {
+                continue;
+            };
 
-                    // Enforce the WAL Rule, flush wal records before writing to disk
-                    if let Some(lm) = &self.log_manager {
-                        if page.page_lsn() > lm.get_flushed_lsn() {
-                            lm.flush()?;
+            if let Some(page) = &self.frames[frame_id] {
+                if let Some(lm) = &self.log_manager {
+                    if page.page_lsn() > lm.get_flushed_lsn() {
+                        if let Err(e) = lm.flush() {
+                            last_err = Some(e);
+                            continue;
                         }
                     }
-                    page.compute_checksum();
-                    match self.heap_file.write_page(page_id, page) {
-                        Ok(_) => self.dirty_flag[frame_id] = false,
-                        Err(e) => last_err = Some(e),
-                    }
                 }
+            }
+
+            let write_result = {
+                let page = self.frames[frame_id].as_mut().expect("frame not found");
+                page.compute_checksum();
+                match self.heap_files.get_mut(&file_id) {
+                    Some(heap_file) => heap_file.write_page(page_id, page),
+                    None => Err(StorageError::UnknownFile(file_id)),
+                }
+            };
+
+            match write_result {
+                Ok(_) => {
+                    self.dirty_flag[frame_id] = false;
+                    files_written.insert(file_id);
+                }
+                Err(e) => last_err = Some(e),
             }
         }
 
         if last_err.is_none() {
-            // Every dirty page just written is now WAL-logged + written to
-            // the real file. Checkpoint clears the WAL since none of those
-            // records are needed for recovery anymore.
-            self.heap_file.checkpoint()?;
+            for file_id in files_written {
+                if let Some(heap_file) = self.heap_files.get_mut(&file_id) {
+                    heap_file.checkpoint()?;
+                }
+            }
         }
 
         match last_err {
@@ -369,11 +387,15 @@ impl BufferPool {
     /// `pin_count[frame_id]` must be 0. This is enforced by
     /// [`Self::find_or_evict`] before calling here.
     fn evict(&mut self, frame_id: usize) -> Result<(), StorageError> {
-        let page_id = self.frame_to_page[frame_id].expect("frame not found");
+        let (file_id, page_id) = self.frame_to_page[frame_id].expect("frame not found");
 
         if self.dirty_flag[frame_id] {
             // Write the dirty page back to disk before discarding it.
             if let Some(page) = &mut self.frames[frame_id] {
+                let heap_file = self
+                    .heap_files
+                    .get_mut(&file_id)
+                    .expect("file not registered");
                 // Enforcing the WAL Rule: flush log records before eviction write
                 if let Some(lm) = &self.log_manager {
                     if page.page_lsn() > lm.get_flushed_lsn() {
@@ -382,12 +404,12 @@ impl BufferPool {
                 }
 
                 page.compute_checksum();
-                self.heap_file.write_page(page_id, page)?;
+                heap_file.write_page(page_id, page)?;
             }
         }
 
         // Remove this frame's page_id from the page table.
-        self.page_table.remove(&page_id);
+        self.page_table.remove(&(file_id, page_id));
 
         // Clear the frame.
         self.frames[frame_id] = None;
@@ -400,8 +422,11 @@ impl BufferPool {
     }
 
     /// Returns the number of pages in the backing heap file.
-    pub fn num_pages(&self) -> u32 {
-        self.heap_file.num_pages
+    pub fn num_pages(&self, file_id: u32) -> Result<u32, StorageError> {
+        self.heap_files
+            .get(&file_id)
+            .map(|hf| hf.num_pages)
+            .ok_or(StorageError::UnknownFile(file_id))
     }
 
     /// Safely returns mutable references to two distinct frames simultaneously.
@@ -432,6 +457,117 @@ impl BufferPool {
                 .as_mut()
                 .expect("frame_b is empty — did you forget to pin the page?");
             (ref_a, ref_b)
+        }
+    }
+
+    /// Registers an already-opened HeapFile under `file_id` so its pages
+    /// can be pinned. Must be called once per file, before any pin_page
+    /// call references that file_id.
+    pub fn register_file(&mut self, file_id: u32, heap_file: HeapFile) {
+        self.heap_files.insert(file_id, heap_file);
+    }
+
+    /// Re-maps all internal state that referenced `old_id` to `new_id`.
+    /// Use this when a `TableHeap` (which registers its file as `0`) is
+    /// later assigned its "real" registry ID via `set_file_id`.
+    pub fn rename_file_id(&mut self, old_id: u32, new_id: u32) {
+        if old_id == new_id {
+            return;
+        }
+        // Move the HeapFile entry
+        if let Some(hf) = self.heap_files.remove(&old_id) {
+            self.heap_files.insert(new_id, hf);
+        }
+        // Re-key every page_table entry for old_id
+        let old_keys: Vec<(u32, u32)> = self
+            .page_table
+            .keys()
+            .filter(|(fid, _)| *fid == old_id)
+            .copied()
+            .collect();
+        for (_, page_id) in old_keys {
+            if let Some(frame) = self.page_table.remove(&(old_id, page_id)) {
+                self.page_table.insert((new_id, page_id), frame);
+                if let Some(slot) = self.frame_to_page[frame].as_mut() {
+                    slot.0 = new_id;
+                }
+            }
+        }
+    }
+
+    /// Removes a file from the pool — flushes its dirty pages first.
+    /// Call when a table/index is dropped or closed.
+    pub fn unregister_file(&mut self, file_id: u32) -> Result<(), StorageError> {
+        self.flush_file(file_id)?;
+        self.heap_files.remove(&file_id);
+        Ok(())
+    }
+
+    /// Writes all dirty frames belonging to `file_id` back to disk and
+    /// checkpoints that file's WAL. Frames belonging to other files are
+    /// left untouched.
+    ///
+    /// Call this when closing a table/index, or as a periodic per-file
+    /// checkpoint instead of flushing the entire shared pool.
+    pub fn flush_file(&mut self, file_id: u32) -> Result<(), StorageError> {
+        let mut last_err: Option<StorageError> = None;
+        let mut any_written = false;
+
+        for frame_id in 0..self.capacity {
+            // Only touch frames that (a) hold a page and (b) belong to this file.
+            let matches = match self.frame_to_page[frame_id] {
+                Some((fid, _)) if fid == file_id => true,
+                _ => false,
+            };
+
+            if !matches || !self.dirty_flag[frame_id] {
+                continue;
+            }
+
+            let (_, page_id) = self.frame_to_page[frame_id].expect("checked above");
+
+            // Enforce the WAL rule before the real write, same as evict()/flush_all().
+            if let Some(page) = &self.frames[frame_id] {
+                if let Some(lm) = &self.log_manager {
+                    if page.page_lsn() > lm.get_flushed_lsn() {
+                        if let Err(e) = lm.flush() {
+                            last_err = Some(e);
+                            continue; // don't write this page if its WAL cover isn't durable
+                        }
+                    }
+                }
+            }
+
+            // Compute checksum, then write via the CORRECT file ( not a single shared heap_file)
+            let write_result = {
+                let page = self.frames[frame_id].as_mut().expect("frame not found");
+                page.compute_checksum();
+                match self.heap_files.get_mut(&file_id) {
+                    Some(heap_file) => heap_file.write_page(page_id, page),
+                    None => Err(StorageError::UnknownFile(file_id)),
+                }
+            };
+
+            match write_result {
+                Ok(_) => {
+                    self.dirty_flag[frame_id] = false;
+                    any_written = true;
+                }
+                Err(e) => last_err = Some(e),
+            }
+        }
+
+        // Only checkpoint (truncate WAL) if nothing failed — a failed write
+        // means the WAL is still the only durable record of that page.
+        if last_err.is_none() && any_written {
+            if let Some(heap_file) = self.heap_files.get_mut(&file_id) {
+                heap_file.checkpoint()?;
+            }
+        }
+
+        match last_err {
+            Some(e) => Err(e),
+            None => Ok(()),
         }
     }
 }

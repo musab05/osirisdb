@@ -58,6 +58,9 @@ pub enum StorageError {
 
     /// Invalid log record type
     InvalidRecordType,
+
+    /// Unknown File
+    UnknownFile(u32),
 }
 
 impl StorageError {
@@ -118,6 +121,9 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::InvalidRecordType => {
                 write!(f, "invalid record type encountered")
+            }
+            StorageError::UnknownFile(file_id) => {
+                write!(f, "Unknown file provided {file_id}")
             }
         }
     }

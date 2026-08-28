@@ -60,9 +60,9 @@ impl SystemCatalog {
             .join(SYSTEM_DIR)
             .join(format!("{}.dat", table));
         let hf = HeapFile::open(path)?;
-        Ok(TableHeap::from_buffer_pool(Arc::new(Mutex::new(
-            BufferPool::new(hf, POOL_CAPACITY),
-        ))))
+        let mut pool = BufferPool::new(POOL_CAPACITY);
+        pool.register_file(0, hf);
+        Ok(TableHeap::from_buffer_pool(Arc::new(Mutex::new(pool))))
     }
 
     // ── Writers ──────────────────────────────────────────────────────────────

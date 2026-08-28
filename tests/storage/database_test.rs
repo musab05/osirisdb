@@ -127,14 +127,16 @@ mod tests {
         let path = tmp(name);
         rm(&path);
         let hf = HeapFile::open(&path).unwrap();
-        (BufferPool::new(hf, capacity), path)
+        let mut bp = BufferPool::new(capacity);
+        bp.register_file(0, hf);
+        (bp, path)
     }
 
     #[test]
     fn new_page_and_pin_unpin() {
         let (mut bp, path) = make_pool("new_page", 4);
 
-        let (page_id, frame_id) = bp.new_page().unwrap();
+        let (page_id, frame_id) = bp.new_page(0).unwrap();
         assert_eq!(page_id, 0);
 
         // Insert a tuple while the page is pinned.
@@ -142,7 +144,7 @@ mod tests {
         bp.unpin_page(frame_id, true);
 
         // Pin again and verify the tuple is still there (still in cache).
-        let frame_id2 = bp.pin_page(page_id).unwrap();
+        let frame_id2 = bp.pin_page(0, page_id).unwrap();
         assert_eq!(bp.get_page(frame_id2).get_tuple(slot), Some(&b"hello"[..]));
         bp.unpin_page(frame_id2, false);
 
@@ -153,12 +155,12 @@ mod tests {
     fn cache_hit_no_extra_disk_read() {
         let (mut bp, path) = make_pool("cache_hit", 4);
 
-        let (page_id, frame_id) = bp.new_page().unwrap();
+        let (page_id, frame_id) = bp.new_page(0).unwrap();
         bp.unpin_page(frame_id, false);
 
         // Pin the same page twice — both should return the same frame.
-        let f1 = bp.pin_page(page_id).unwrap();
-        let f2 = bp.pin_page(page_id).unwrap();
+        let f1 = bp.pin_page(0, page_id).unwrap();
+        let f2 = bp.pin_page(0, page_id).unwrap();
         assert_eq!(f1, f2);
         bp.unpin_page(f1, false);
         bp.unpin_page(f2, false);
@@ -172,16 +174,16 @@ mod tests {
         let (mut bp, path) = make_pool("evict", 1);
 
         // Allocate two pages but we only have 1 frame.
-        let (p0, f0) = bp.new_page().unwrap();
+        let (p0, f0) = bp.new_page(0).unwrap();
         let slot = bp.get_page_mut(f0).insert_tuple(b"evict me").unwrap();
         bp.unpin_page(f0, true); // dirty — must be written on eviction
 
         // Pinning p1 forces eviction of p0 (the only unpinned frame).
-        let (_p1, f1) = bp.new_page().unwrap();
+        let (_p1, f1) = bp.new_page(0).unwrap();
         bp.unpin_page(f1, false);
 
         // Now pin p0 again — it must be reloaded from disk.
-        let f0b = bp.pin_page(p0).unwrap();
+        let f0b = bp.pin_page(0, p0).unwrap();
         assert_eq!(
             bp.get_page(f0b).get_tuple(slot),
             Some(&b"evict me"[..]),
@@ -196,7 +198,7 @@ mod tests {
     fn flush_all_writes_dirty_frames() {
         let (mut bp, path) = make_pool("flush", 4);
 
-        let (page_id, frame_id) = bp.new_page().unwrap();
+        let (page_id, frame_id) = bp.new_page(0).unwrap();
         let slot = bp
             .get_page_mut(frame_id)
             .insert_tuple(b"flush test")
@@ -218,11 +220,11 @@ mod tests {
         // Pool with 2 frames; pin both without unpinning.
         let (mut bp, path) = make_pool("full", 2);
 
-        let (_p0, _f0) = bp.new_page().unwrap(); // frame 0 pinned, not unpinned
-        let (_p1, _f1) = bp.new_page().unwrap(); // frame 1 pinned, not unpinned
+        let (_p0, _f0) = bp.new_page(0).unwrap(); // frame 0 pinned, not unpinned
+        let (_p1, _f1) = bp.new_page(0).unwrap(); // frame 1 pinned, not unpinned
 
         // Trying to allocate a third page should fail — pool is full.
-        assert!(matches!(bp.new_page(), Err(StorageError::BufferPoolFull)));
+        assert!(matches!(bp.new_page(0), Err(StorageError::BufferPoolFull)));
 
         rm(&path);
     }
@@ -566,7 +568,7 @@ mod tests {
         // Access the buffer pool to verify page_lsn was updated
         let bp_handle = th.buffer_pool_handle();
         let mut bp = bp_handle.lock().unwrap();
-        let frame_id = bp.pin_page(page_id).unwrap();
+        let frame_id = bp.pin_page(0, page_id).unwrap();
         let page = bp.get_page(frame_id);
 
         // page_lsn must be 1 (first assigned LSN)
@@ -594,10 +596,11 @@ mod tests {
         let hf = HeapFile::open(&p1).unwrap();
 
         // Buffer pool with capacity 1
-        let mut bp = BufferPool::with_log_manager(hf, 1, Arc::clone(&log_manager));
+        let mut bp = BufferPool::with_log_manager(1, Arc::clone(&log_manager));
+        bp.register_file(0, hf);
 
         // Allocate and pin page 0
-        let (page_0_id, frame_0) = bp.new_page().unwrap();
+        let (page_0_id, frame_0) = bp.new_page(0).unwrap();
         assert_eq!(page_0_id, 0);
 
         // Mutate page 0 and assign a higher LSN
@@ -623,7 +626,7 @@ mod tests {
         bp.unpin_page(frame_0, true);
 
         // Now allocate page 1 — since capacity is 1, this FORCES eviction of page 0
-        let (page_1_id, _) = bp.new_page().unwrap();
+        let (page_1_id, _) = bp.new_page(0).unwrap();
         assert_eq!(page_1_id, 1);
 
         // The WAL Rule must have forced LogManager to flush page 0's LSN before writing it to disk
@@ -648,9 +651,10 @@ mod tests {
         let log_manager = Arc::new(LogManager::new(&log_p).unwrap());
         let hf = HeapFile::open(&p).unwrap();
 
-        let mut bp = BufferPool::with_log_manager(hf, 4, Arc::clone(&log_manager));
+        let mut bp = BufferPool::with_log_manager(4, Arc::clone(&log_manager));
+        bp.register_file(0, hf);
 
-        let (page_id, frame_id) = bp.new_page().unwrap();
+        let (page_id, frame_id) = bp.new_page(0).unwrap();
 
         let mut dummy = LogRecord {
             lsn: 0,
