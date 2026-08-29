@@ -9,7 +9,7 @@ use crate::{
 };
 use std::time::Instant;
 
-const ROW_COUNTS: &[usize] = &[100, 1_000, 10_000, 100_000];
+const ROW_COUNTS: &[usize] = &[100, 1_000, 10_000, 100_000, 10_00_000];
 
 pub fn run_benchmarks() {
     for &n in ROW_COUNTS {

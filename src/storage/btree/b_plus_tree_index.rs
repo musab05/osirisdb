@@ -154,9 +154,6 @@ impl BPlusTreeIndex {
     }
 
     pub fn insert(&mut self, key: &[u8], record_id: RecordId) -> Result<(), StorageError> {
-        if self.is_unique_constraint && self.lookup(key)?.is_some() {
-            return Err(StorageError::DuplicateKey);
-        }
         let val_bytes = record_id.to_bytes();
 
         // ── Case 1: empty index — allocate first leaf as root ──
@@ -223,7 +220,14 @@ impl BPlusTreeIndex {
             let mut index_page = IndexPage::from_page_mut(bp.get_page_mut(frame_id));
 
             let slot_idx = match index_page.binary_search_key(key, |b| b) {
-                Ok(idx) | Err(idx) => idx,
+                Ok(idx) => {
+                    if self.is_unique_constraint {
+                        bp.unpin_page(frame_id, false);
+                        return Err(StorageError::DuplicateKey);
+                    }
+                    idx
+                }
+                Err(idx) => idx,
             };
 
             if index_page.insert_at(slot_idx, key, value) {

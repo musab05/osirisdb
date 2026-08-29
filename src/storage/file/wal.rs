@@ -18,6 +18,8 @@ const WAL_MAGIC: u32 = 0x57414C31; // "WAL1"
 /// magic(4) + page_id(4) + page data(PAGE_SIZE) + checksum(4)
 const RECORD_SIZE: usize = 4 + 4 + PAGE_SIZE + 4;
 
+const FSYNC_EVERY: usize = 32;
+
 /// A minimal physical (redo-only) write-ahead log for a single data file.
 ///
 /// One `Wal` lives alongside one `HeapFile` — every `.dat`/`.idx` file
@@ -38,6 +40,7 @@ const RECORD_SIZE: usize = 4 + 4 + PAGE_SIZE + 4;
 pub struct Wal {
     file: File,
     path: PathBuf,
+    pending_records: usize,
 }
 
 impl Wal {
@@ -58,7 +61,11 @@ impl Wal {
             .create(true)
             .open(&path)
             .map_err(|e| StorageError::io(&path, e))?;
-        Ok(Self { file, path })
+        Ok(Self {
+            file,
+            path,
+            pending_records: 0,
+        })
     }
 
     /// Appends a full-page-image record and fsyncs it before returning.
@@ -86,13 +93,21 @@ impl Wal {
         self.file
             .write_all(&buf)
             .map_err(|e| StorageError::io(&self.path, e))?;
+        self.pending_records += 1;
 
-        // Real fsync — not the no-op flush() used elsewhere in this
-        // engine. This is the one place durability actually matters.
+        if self.pending_records >= FSYNC_EVERY {
+            self.sync()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn sync(&mut self) -> Result<(), StorageError> {
         self.file
             .sync_data()
             .map_err(|e| StorageError::io(&self.path, e))?;
 
+        self.pending_records = 0;
         Ok(())
     }
 
