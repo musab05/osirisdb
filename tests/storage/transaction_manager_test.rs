@@ -105,13 +105,7 @@ fn test_transaction_prev_lsn_chain_begin_insert_commit() {
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
     let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
 
-    let mut th = TableHeap::open(
-        &storage,
-        "shop_db",
-        "public",
-        "orders",
-    )
-    .unwrap();
+    let mut th = TableHeap::open(&storage, "shop_db", "public", "orders").unwrap();
 
     let mut interner = Interner::new();
     let schema = vec![
@@ -135,7 +129,13 @@ fn test_transaction_prev_lsn_chain_begin_insert_commit() {
     let cust1 = interner.intern("Alice");
     let row1 = vec![Value::Int(101), Value::String(cust1)];
     let (p1, s1) = th
-        .insert_tuple(&schema, &row1, &interner, Some(&mut txn), Some(&log_manager))
+        .insert_tuple(
+            &schema,
+            &row1,
+            &interner,
+            Some(&mut txn),
+            Some(&log_manager),
+        )
         .unwrap();
     let insert1_lsn = txn.last_lsn;
     assert_eq!(insert1_lsn, 2);
@@ -146,7 +146,13 @@ fn test_transaction_prev_lsn_chain_begin_insert_commit() {
     let cust2 = interner.intern("Bob");
     let row2 = vec![Value::Int(102), Value::String(cust2)];
     let (p2, s2) = th
-        .insert_tuple(&schema, &row2, &interner, Some(&mut txn), Some(&log_manager))
+        .insert_tuple(
+            &schema,
+            &row2,
+            &interner,
+            Some(&mut txn),
+            Some(&log_manager),
+        )
         .unwrap();
     let insert2_lsn = txn.last_lsn;
     assert_eq!(insert2_lsn, 3);
@@ -220,13 +226,7 @@ fn test_transaction_abort_records_abort_and_removes_from_att() {
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
     let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
 
-    let mut th = TableHeap::open(
-        &storage,
-        "shop_db",
-        "public",
-        "orders",
-    )
-    .unwrap();
+    let mut th = TableHeap::open(&storage, "shop_db", "public", "orders").unwrap();
 
     let mut interner = Interner::new();
     let schema = vec![col(&mut interner, "id", DataType::Int, false)];
@@ -339,13 +339,7 @@ fn test_table_heap_delete_tuple_wal_record_and_chaining() {
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
     let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
 
-    let mut th = TableHeap::open(
-        &storage,
-        "shop_db",
-        "public",
-        "items",
-    )
-    .unwrap();
+    let mut th = TableHeap::open(&storage, "shop_db", "public", "items").unwrap();
 
     let mut interner = Interner::new();
     let schema = vec![
@@ -374,7 +368,9 @@ fn test_table_heap_delete_tuple_wal_record_and_chaining() {
     assert_eq!(fetched, Some(row));
 
     // 3. DELETE tuple
-    let deleted = th.delete_tuple(rid, Some(&mut txn), Some(&log_manager)).unwrap();
+    let deleted = th
+        .delete_tuple(rid, Some(&mut txn), Some(&log_manager))
+        .unwrap();
     assert!(deleted);
     let delete_lsn = txn.last_lsn;
     assert!(delete_lsn > insert_lsn);
@@ -441,13 +437,7 @@ fn test_table_heap_update_tuple_wal_record_and_chaining() {
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
     let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
 
-    let mut th = TableHeap::open(
-        &storage,
-        "shop_db",
-        "public",
-        "products",
-    )
-    .unwrap();
+    let mut th = TableHeap::open(&storage, "shop_db", "public", "products").unwrap();
 
     let mut interner = Interner::new();
     let schema = vec![
@@ -464,7 +454,13 @@ fn test_table_heap_update_tuple_wal_record_and_chaining() {
     let orig_title = interner.intern("Original Title");
     let orig_row = vec![Value::Int(10), Value::String(orig_title)];
     let (page_id, slot_id) = th
-        .insert_tuple(&schema, &orig_row, &interner, Some(&mut txn), Some(&log_manager))
+        .insert_tuple(
+            &schema,
+            &orig_row,
+            &interner,
+            Some(&mut txn),
+            Some(&log_manager),
+        )
         .unwrap();
     let insert_lsn = txn.last_lsn;
     assert!(insert_lsn > begin_lsn);
@@ -475,7 +471,14 @@ fn test_table_heap_update_tuple_wal_record_and_chaining() {
     let new_title = interner.intern("Updated Title");
     let new_row = vec![Value::Int(10), Value::String(new_title)];
     let updated = th
-        .update_tuple(&schema, &new_row, &interner, rid, Some(&mut txn), Some(&log_manager))
+        .update_tuple(
+            &schema,
+            &new_row,
+            &interner,
+            rid,
+            Some(&mut txn),
+            Some(&log_manager),
+        )
         .unwrap();
     assert!(updated);
     let update_lsn = txn.last_lsn;
@@ -550,13 +553,7 @@ fn test_file_registry_mapping_and_table_heap_integration() {
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
     let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
 
-    let mut th = TableHeap::open(
-        &storage,
-        "shop_db",
-        "public",
-        "users",
-    )
-    .unwrap();
+    let mut th = TableHeap::open(&storage, "shop_db", "public", "users").unwrap();
     th.set_file_id(users_id);
     assert_eq!(th.file_id(), users_id);
 

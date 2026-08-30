@@ -381,9 +381,12 @@ mod tests {
         let name3 = interner.intern("charlie");
         let row3 = vec![Value::Int(3), Value::String(name3)];
 
-        th.insert_tuple(&schema, &row1, &interner, None, None).unwrap();
-        th.insert_tuple(&schema, &row2, &interner, None, None).unwrap();
-        th.insert_tuple(&schema, &row3, &interner, None, None).unwrap();
+        th.insert_tuple(&schema, &row1, &interner, None, None)
+            .unwrap();
+        th.insert_tuple(&schema, &row2, &interner, None, None)
+            .unwrap();
+        th.insert_tuple(&schema, &row3, &interner, None, None)
+            .unwrap();
 
         let scanned = th.scan(&schema, &interner).unwrap();
 
@@ -462,8 +465,10 @@ mod tests {
         let row = vec![Value::Int(1), Value::String(str_sym)];
 
         // Insert tuples
-        th.insert_tuple(&schema, &row, &interner, None, None).unwrap();
-        th.insert_tuple(&schema, &row, &interner, None, None).unwrap();
+        th.insert_tuple(&schema, &row, &interner, None, None)
+            .unwrap();
+        th.insert_tuple(&schema, &row, &interner, None, None)
+            .unwrap();
 
         // Vacuum on a page with no deleted tuples reclaims 0 bytes
         let reclaimed = th.vacuum().unwrap();
@@ -543,13 +548,7 @@ mod tests {
         let log_path = path.join("test_wal.log");
         let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
 
-        let mut th = TableHeap::open(
-            &storage,
-            "test_db",
-            "test_schema",
-            "users",
-        )
-        .unwrap();
+        let mut th = TableHeap::open(&storage, "test_db", "test_schema", "users").unwrap();
 
         let mut interner = Interner::new();
         let schema = vec![

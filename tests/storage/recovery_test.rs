@@ -151,25 +151,31 @@ fn test_recovery_redo_committed_transaction_when_disk_is_blank() {
     ];
 
     // 1. Run a transaction and commit
-    let mut th = TableHeap::open(
-        &storage,
-        "shop_db",
-        "public",
-        "users",
-    )
-    .unwrap();
+    let mut th = TableHeap::open(&storage, "shop_db", "public", "users").unwrap();
     th.set_file_id(file_id);
 
     let mut txn = tm.begin().unwrap();
     let name1 = interner.intern("Alice");
     let row1 = vec![Value::Int(1), Value::String(name1)];
-    th.insert_tuple(&schema, &row1, &interner, Some(&mut txn), Some(&log_manager))
-        .unwrap();
+    th.insert_tuple(
+        &schema,
+        &row1,
+        &interner,
+        Some(&mut txn),
+        Some(&log_manager),
+    )
+    .unwrap();
 
     let name2 = interner.intern("Bob");
     let row2 = vec![Value::Int(2), Value::String(name2)];
-    th.insert_tuple(&schema, &row2, &interner, Some(&mut txn), Some(&log_manager))
-        .unwrap();
+    th.insert_tuple(
+        &schema,
+        &row2,
+        &interner,
+        Some(&mut txn),
+        Some(&log_manager),
+    )
+    .unwrap();
 
     tm.commit(&mut txn).unwrap();
 
@@ -225,13 +231,7 @@ fn test_recovery_undo_uncommitted_loser_transaction() {
         col(&mut interner, "title", DataType::VarChar(Some(50)), false),
     ];
 
-    let mut th = TableHeap::open(
-        &storage,
-        "shop_db",
-        "public",
-        "products",
-    )
-    .unwrap();
+    let mut th = TableHeap::open(&storage, "shop_db", "public", "products").unwrap();
     th.set_file_id(file_id);
 
     // 1. Transaction 1 (Committed): Inserts Item 1
@@ -239,7 +239,13 @@ fn test_recovery_undo_uncommitted_loser_transaction() {
     let title1 = interner.intern("Phone");
     let row1 = vec![Value::Int(1), Value::String(title1)];
     let (p1, s1) = th
-        .insert_tuple(&schema, &row1, &interner, Some(&mut txn1), Some(&log_manager))
+        .insert_tuple(
+            &schema,
+            &row1,
+            &interner,
+            Some(&mut txn1),
+            Some(&log_manager),
+        )
         .unwrap();
     let rid1 = RecordId {
         page_id: p1,
@@ -252,13 +258,26 @@ fn test_recovery_undo_uncommitted_loser_transaction() {
     let mut txn2 = tm.begin().unwrap();
     let title2 = interner.intern("Laptop");
     let row2 = vec![Value::Int(2), Value::String(title2)];
-    th.insert_tuple(&schema, &row2, &interner, Some(&mut txn2), Some(&log_manager))
-        .unwrap();
+    th.insert_tuple(
+        &schema,
+        &row2,
+        &interner,
+        Some(&mut txn2),
+        Some(&log_manager),
+    )
+    .unwrap();
 
     let title1_updated = interner.intern("Phone Pro Max");
     let row1_updated = vec![Value::Int(1), Value::String(title1_updated)];
-    th.update_tuple(&schema, &row1_updated, &interner, rid1, Some(&mut txn2), Some(&log_manager))
-        .unwrap();
+    th.update_tuple(
+        &schema,
+        &row1_updated,
+        &interner,
+        rid1,
+        Some(&mut txn2),
+        Some(&log_manager),
+    )
+    .unwrap();
 
     // Flush WAL to simulate log records reaching disk before sudden power loss
     log_manager.flush().unwrap();
@@ -327,21 +346,21 @@ fn test_recovery_with_checkpoint_redo_and_undo() {
         col(&mut interner, "tag", DataType::VarChar(Some(30)), false),
     ];
 
-    let mut th = TableHeap::open(
-        &storage,
-        "shop_db",
-        "public",
-        "inventory",
-    )
-    .unwrap();
+    let mut th = TableHeap::open(&storage, "shop_db", "public", "inventory").unwrap();
     th.set_file_id(file_id);
 
     // 1. Txn 1: Inserts Row 1 and commits
     let mut txn1 = tm.begin().unwrap();
     let tag1 = interner.intern("Alpha");
     let row1 = vec![Value::Int(1), Value::String(tag1)];
-    th.insert_tuple(&schema, &row1, &interner, Some(&mut txn1), Some(&log_manager))
-        .unwrap();
+    th.insert_tuple(
+        &schema,
+        &row1,
+        &interner,
+        Some(&mut txn1),
+        Some(&log_manager),
+    )
+    .unwrap();
     tm.commit(&mut txn1).unwrap();
 
     // 2. Run Fuzzy Checkpoint
@@ -352,16 +371,28 @@ fn test_recovery_with_checkpoint_redo_and_undo() {
     let mut txn2 = tm.begin().unwrap();
     let tag2 = interner.intern("Beta");
     let row2 = vec![Value::Int(2), Value::String(tag2)];
-    th.insert_tuple(&schema, &row2, &interner, Some(&mut txn2), Some(&log_manager))
-        .unwrap();
+    th.insert_tuple(
+        &schema,
+        &row2,
+        &interner,
+        Some(&mut txn2),
+        Some(&log_manager),
+    )
+    .unwrap();
     tm.commit(&mut txn2).unwrap();
 
     // 4. Txn 3 (Loser): Inserts Row 3 and crashes without committing
     let mut txn3 = tm.begin().unwrap();
     let tag3 = interner.intern("Gamma");
     let row3 = vec![Value::Int(3), Value::String(tag3)];
-    th.insert_tuple(&schema, &row3, &interner, Some(&mut txn3), Some(&log_manager))
-        .unwrap();
+    th.insert_tuple(
+        &schema,
+        &row3,
+        &interner,
+        Some(&mut txn3),
+        Some(&log_manager),
+    )
+    .unwrap();
 
     // Crash simulation
     log_manager.flush().unwrap();
