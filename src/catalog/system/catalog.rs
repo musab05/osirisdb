@@ -99,7 +99,7 @@ impl SystemCatalog {
         ];
 
         self.heap("osiris_database")?
-            .insert_tuple(&schema, &row, interner, None)
+            .insert_tuple(&schema, &row, interner, None, None)
     }
 
     pub fn write_schema(
@@ -115,7 +115,7 @@ impl SystemCatalog {
             Value::String(entry.database),
         ];
         self.heap("osiris_namespace")?
-            .insert_tuple(&schema, &row, interner, None)
+            .insert_tuple(&schema, &row, interner, None, None)
     }
 
     pub fn write_table(
@@ -133,7 +133,7 @@ impl SystemCatalog {
             Value::String(interner.intern(db)),
         ];
         self.heap("osiris_class")?
-            .insert_tuple(&class_schema, &class_row, interner, None)?;
+            .insert_tuple(&class_schema, &class_row, interner, None, None)?;
 
         let attr_schema = osiris_attribute_schema(interner);
         let mut attr_heap = self.heap("osiris_attribute")?;
@@ -149,7 +149,7 @@ impl SystemCatalog {
                 Value::Boolean(col.is_unique),
                 Value::Boolean(col.is_primary_key),
             ];
-            attr_heap.insert_tuple(&attr_schema, &attr_row, interner, None)?;
+            attr_heap.insert_tuple(&attr_schema, &attr_row, interner, None, None)?;
         }
         Ok(())
     }

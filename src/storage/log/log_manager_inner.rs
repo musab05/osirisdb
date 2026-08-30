@@ -12,6 +12,14 @@ use std::{
     },
 };
 
+/// Ping-pong double buffer for non-blocking concurrent WAL appending.
+pub struct DoubleBuffer {
+    /// Active buffer that worker threads append into.
+    pub active: Vec<u8>,
+    /// Flush buffer currently being drained to disk by the flusher thread.
+    pub flush: Vec<u8>,
+}
+
 /// Internal state shared between [`LogManager`] and the background flusher thread.
 ///
 /// Wrapped in an [`std::sync::Arc`] to permit concurrent lock-free LSN generation,
@@ -20,8 +28,8 @@ pub struct LogManagerInner {
     /// The physical log file handle where WAL records are persisted.
     pub file: Mutex<File>,
 
-    /// In-memory buffer storing serialized log records pending an `fsync`.
-    pub log_buffer: Mutex<Vec<u8>>,
+    /// In-memory ping-pong double buffers.
+    pub buffers: Mutex<DoubleBuffer>,
 
     /// Maximum capacity of `log_buffer` in bytes before forcing a flush.
     pub buffer_capacity: usize,
@@ -35,4 +43,10 @@ pub struct LogManagerInner {
 
     /// Atomic flag indicating whether the background flusher thread should continue running.
     pub is_running: AtomicBool,
+}
+
+impl DoubleBuffer {
+    pub fn swap(&mut self) {
+        std::mem::swap(&mut self.active, &mut self.flush);
+    }
 }

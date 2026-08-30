@@ -86,7 +86,7 @@ fn bench_table_heap_insert(c: &mut Criterion) {
     c.bench_function("table_heap_insert_without_wal", |b| {
         b.iter(|| {
             th_no_wal
-                .insert_tuple(black_box(&schema), black_box(&row), &interner, None)
+                .insert_tuple(black_box(&schema), black_box(&row), &interner, None, None)
                 .unwrap();
         })
     });
@@ -94,13 +94,17 @@ fn bench_table_heap_insert(c: &mut Criterion) {
     // Benchmark 2: Insert with WAL
     let log_path = tmp.join("bench_wal.log");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let mut th_wal =
-        TableHeap::open_with_log_manager(&storage, "bench_db", "public", "table_wal", log_manager)
-            .unwrap();
+    let mut th_wal = TableHeap::open(&storage, "bench_db", "public", "table_wal").unwrap();
     c.bench_function("table_heap_insert_with_wal", |b| {
         b.iter(|| {
             th_wal
-                .insert_tuple(black_box(&schema), black_box(&row), &interner, None)
+                .insert_tuple(
+                    black_box(&schema),
+                    black_box(&row),
+                    &interner,
+                    None,
+                    Some(&log_manager),
+                )
                 .unwrap();
         })
     });
@@ -181,27 +185,26 @@ fn bench_aries_recovery(c: &mut Criterion) {
 
     let row = vec![Value::Int(1), Value::String(val_sym)];
 
-    let mut th = TableHeap::open_with_log_manager(
-        &storage,
-        "bench_db",
-        "public",
-        "users",
-        Arc::clone(&log_manager),
-    )
-    .unwrap();
+    let mut th = TableHeap::open(&storage, "bench_db", "public", "users").unwrap();
     th.set_file_id(file_id);
 
     // Populate WAL with 100 logged transactions
     for _ in 0..50 {
         let mut txn = tm.begin().unwrap();
-        th.insert_tuple(&schema, &row, &interner, Some(&mut txn))
+        th.insert_tuple(&schema, &row, &interner, Some(&mut txn), Some(&log_manager))
             .unwrap();
         tm.commit(&mut txn).unwrap();
     }
     // And 1 uncommitted loser transaction
     let mut loser = tm.begin().unwrap();
-    th.insert_tuple(&schema, &row, &interner, Some(&mut loser))
-        .unwrap();
+    th.insert_tuple(
+        &schema,
+        &row,
+        &interner,
+        Some(&mut loser),
+        Some(&log_manager),
+    )
+    .unwrap();
 
     log_manager.flush().unwrap();
     drop(th);

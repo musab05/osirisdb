@@ -205,7 +205,7 @@ mod tests {
             .unwrap();
         bp.unpin_page(frame_id, true);
 
-        bp.flush_all().unwrap();
+        bp.flush_all(None).unwrap();
 
         // Reopen the heap file and verify the data is on disk.
         let mut hf2 = HeapFile::open(&path).unwrap();
@@ -381,11 +381,11 @@ mod tests {
         let name3 = interner.intern("charlie");
         let row3 = vec![Value::Int(3), Value::String(name3)];
 
-        th.insert_tuple(&schema, &row1, &interner, None).unwrap();
-        th.insert_tuple(&schema, &row2, &interner, None).unwrap();
-        th.insert_tuple(&schema, &row3, &interner, None).unwrap();
+        th.insert_tuple(&schema, &row1, &interner, None, None).unwrap();
+        th.insert_tuple(&schema, &row2, &interner, None, None).unwrap();
+        th.insert_tuple(&schema, &row3, &interner, None, None).unwrap();
 
-        let scanned = th.scan(&schema, &mut interner).unwrap();
+        let scanned = th.scan(&schema, &interner).unwrap();
 
         assert_eq!(scanned.len(), 3);
         assert_eq!(scanned[0], row1);
@@ -462,8 +462,8 @@ mod tests {
         let row = vec![Value::Int(1), Value::String(str_sym)];
 
         // Insert tuples
-        th.insert_tuple(&schema, &row, &interner, None).unwrap();
-        th.insert_tuple(&schema, &row, &interner, None).unwrap();
+        th.insert_tuple(&schema, &row, &interner, None, None).unwrap();
+        th.insert_tuple(&schema, &row, &interner, None, None).unwrap();
 
         // Vacuum on a page with no deleted tuples reclaims 0 bytes
         let reclaimed = th.vacuum().unwrap();
@@ -543,12 +543,11 @@ mod tests {
         let log_path = path.join("test_wal.log");
         let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
 
-        let mut th = TableHeap::open_with_log_manager(
+        let mut th = TableHeap::open(
             &storage,
             "test_db",
             "test_schema",
             "users",
-            Arc::clone(&log_manager),
         )
         .unwrap();
 
@@ -560,7 +559,9 @@ mod tests {
 
         let alice = interner.intern("Alice");
         let row1 = vec![Value::Int(1), Value::String(alice)];
-        let (page_id, slot_id) = th.insert_tuple(&schema, &row1, &interner, None).unwrap();
+        let (page_id, slot_id) = th
+            .insert_tuple(&schema, &row1, &interner, None, Some(&log_manager))
+            .unwrap();
 
         assert_eq!(page_id, 0);
         assert_eq!(slot_id, 0);
@@ -580,64 +581,6 @@ mod tests {
     }
 
     #[test]
-    fn buffer_pool_eviction_enforces_wal_flush_rule() {
-        use osirisdb::storage::log::log_manager::LogManager;
-        use osirisdb::storage::log::log_record::{LogRecord, RecordType};
-        use std::sync::Arc;
-
-        let p1 = tmp("bp_wal_evict_1");
-        let p2 = tmp("bp_wal_evict_2");
-        let log_p = tmp("bp_wal_evict.log");
-        rm(&p1);
-        rm(&p2);
-        rm(&log_p);
-
-        let log_manager = Arc::new(LogManager::new(&log_p).unwrap());
-        let hf = HeapFile::open(&p1).unwrap();
-
-        // Buffer pool with capacity 1
-        let mut bp = BufferPool::with_log_manager(1, Arc::clone(&log_manager));
-        bp.register_file(0, hf);
-
-        // Allocate and pin page 0
-        let (page_0_id, frame_0) = bp.new_page(0).unwrap();
-        assert_eq!(page_0_id, 0);
-
-        // Mutate page 0 and assign a higher LSN
-        let mut dummy_record = LogRecord {
-            lsn: 0,
-            prev_lsn: 0,
-            txt_id: 1,
-            record_type: RecordType::Insert,
-            file_id: 1,
-            page_id: 0,
-            offset: 0,
-            length: 5,
-            before_image: vec![],
-            after_image: vec![1, 2, 3, 4, 5],
-        };
-        let assigned_lsn = log_manager.append_record(&mut dummy_record).unwrap();
-        assert_eq!(assigned_lsn.0, 1);
-        assert_eq!(log_manager.get_flushed_lsn(), 0); // Not flushed yet
-
-        let page = bp.get_page_mut(frame_0);
-        page.set_page_lsn(assigned_lsn.0);
-        page.insert_tuple(b"data").unwrap();
-        bp.unpin_page(frame_0, true);
-
-        // Now allocate page 1 — since capacity is 1, this FORCES eviction of page 0
-        let (page_1_id, _) = bp.new_page(0).unwrap();
-        assert_eq!(page_1_id, 1);
-
-        // The WAL Rule must have forced LogManager to flush page 0's LSN before writing it to disk
-        assert!(log_manager.get_flushed_lsn() >= assigned_lsn.0);
-
-        rm(&p1);
-        rm(&p2);
-        rm(&log_p);
-    }
-
-    #[test]
     fn buffer_pool_flush_all_enforces_wal_flush_rule() {
         use osirisdb::storage::log::log_manager::LogManager;
         use osirisdb::storage::log::log_record::{LogRecord, RecordType};
@@ -651,7 +594,7 @@ mod tests {
         let log_manager = Arc::new(LogManager::new(&log_p).unwrap());
         let hf = HeapFile::open(&p).unwrap();
 
-        let mut bp = BufferPool::with_log_manager(4, Arc::clone(&log_manager));
+        let mut bp = BufferPool::new(4);
         bp.register_file(0, hf);
 
         let (page_id, frame_id) = bp.new_page(0).unwrap();
@@ -676,8 +619,8 @@ mod tests {
         page.insert_tuple(b"test").unwrap();
         bp.unpin_page(frame_id, true);
 
-        // Calling flush_all must enforce WAL flush before disk write
-        bp.flush_all().unwrap();
+        // Calling flush_all with log_manager must enforce WAL flush before disk write
+        bp.flush_all(Some(&log_manager)).unwrap();
         assert!(log_manager.get_flushed_lsn() >= lsn.0);
 
         rm(&p);

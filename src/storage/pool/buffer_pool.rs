@@ -1,8 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    format,
-    sync::Arc,
-    vec,
+    format, vec,
 };
 
 use crate::storage::{
@@ -83,9 +81,6 @@ pub struct BufferPool {
 
     /// Maximum number of frames this pool can hold simultaneously.
     capacity: usize,
-
-    /// Reference to the WAL Log Manager
-    log_manager: Option<Arc<LogManager>>,
 }
 
 impl BufferPool {
@@ -104,15 +99,7 @@ impl BufferPool {
             referenced: vec![false; capacity],
             clock_hand: 0,
             capacity,
-            log_manager: None,
         }
-    }
-
-    /// `BufferPool` with a shared WAL LogManager.
-    pub fn with_log_manager(capacity: usize, log_manager: Arc<LogManager>) -> Self {
-        let mut pool = Self::new(capacity);
-        pool.log_manager = Some(log_manager);
-        pool
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -277,7 +264,7 @@ impl BufferPool {
     ///
     /// Returns [`StorageError::Io`] if any write fails. Remaining dirty
     /// frames are still flushed even after an error (best-effort).
-    pub fn flush_all(&mut self) -> Result<(), StorageError> {
+    pub fn flush_all(&mut self, log_manager: Option<&LogManager>) -> Result<(), StorageError> {
         let mut last_err: Option<StorageError> = None;
         let mut files_written: HashSet<u32> = HashSet::new();
 
@@ -290,7 +277,7 @@ impl BufferPool {
             };
 
             if let Some(page) = &self.frames[frame_id] {
-                if let Some(lm) = &self.log_manager {
+                if let Some(lm) = log_manager {
                     if page.page_lsn() > lm.get_flushed_lsn() {
                         if let Err(e) = lm.flush() {
                             last_err = Some(e);
@@ -321,7 +308,7 @@ impl BufferPool {
         if last_err.is_none() {
             for file_id in files_written {
                 if let Some(heap_file) = self.heap_files.get_mut(&file_id) {
-                    heap_file.checkpoint()?;
+                    heap_file.sync()?;
                 }
             }
         }
@@ -396,12 +383,6 @@ impl BufferPool {
                     .heap_files
                     .get_mut(&file_id)
                     .expect("file not registered");
-                // Enforcing the WAL Rule: flush log records before eviction write
-                if let Some(lm) = &self.log_manager {
-                    if page.page_lsn() > lm.get_flushed_lsn() {
-                        lm.flush()?;
-                    }
-                }
 
                 page.compute_checksum();
                 heap_file.write_page(page_id, page)?;
@@ -497,8 +478,12 @@ impl BufferPool {
 
     /// Removes a file from the pool — flushes its dirty pages first.
     /// Call when a table/index is dropped or closed.
-    pub fn unregister_file(&mut self, file_id: u32) -> Result<(), StorageError> {
-        self.flush_file(file_id)?;
+    pub fn unregister_file(
+        &mut self,
+        file_id: u32,
+        log_manager: Option<&LogManager>,
+    ) -> Result<(), StorageError> {
+        self.flush_file(file_id, log_manager)?;
         self.heap_files.remove(&file_id);
         Ok(())
     }
@@ -509,7 +494,11 @@ impl BufferPool {
     ///
     /// Call this when closing a table/index, or as a periodic per-file
     /// checkpoint instead of flushing the entire shared pool.
-    pub fn flush_file(&mut self, file_id: u32) -> Result<(), StorageError> {
+    pub fn flush_file(
+        &mut self,
+        file_id: u32,
+        log_manager: Option<&LogManager>,
+    ) -> Result<(), StorageError> {
         let mut last_err: Option<StorageError> = None;
         let mut any_written = false;
 
@@ -528,7 +517,7 @@ impl BufferPool {
 
             // Enforce the WAL rule before the real write, same as evict()/flush_all().
             if let Some(page) = &self.frames[frame_id] {
-                if let Some(lm) = &self.log_manager {
+                if let Some(lm) = log_manager {
                     if page.page_lsn() > lm.get_flushed_lsn() {
                         if let Err(e) = lm.flush() {
                             last_err = Some(e);
@@ -561,7 +550,7 @@ impl BufferPool {
         // means the WAL is still the only durable record of that page.
         if last_err.is_none() && any_written {
             if let Some(heap_file) = self.heap_files.get_mut(&file_id) {
-                heap_file.checkpoint()?;
+                heap_file.sync()?;
             }
         }
 
@@ -575,6 +564,6 @@ impl BufferPool {
 impl Drop for BufferPool {
     fn drop(&mut self) {
         // Flush all dirty pages to the heap file on disk before dropping
-        let _ = self.flush_all();
+        let _ = self.flush_all(None);
     }
 }

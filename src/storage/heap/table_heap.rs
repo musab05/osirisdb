@@ -27,7 +27,6 @@ const DEFAULT_POOL_CAPACITY: usize = 16;
 pub struct TableHeap {
     buffer_pool: Arc<Mutex<BufferPool>>,
     toast_file: Option<HeapFile>, // Lazily opened on demand
-    log_manager: Option<Arc<LogManager>>,
     file_id: u32,
 }
 
@@ -46,7 +45,6 @@ impl TableHeap {
         Ok(Self {
             buffer_pool,
             toast_file: None,
-            log_manager: None,
             file_id: 0,
         })
     }
@@ -55,7 +53,6 @@ impl TableHeap {
         Self {
             buffer_pool: bp,
             toast_file: None,
-            log_manager: None,
             file_id: 0,
         }
     }
@@ -77,29 +74,6 @@ impl TableHeap {
         Ok(self.toast_file.as_mut().unwrap())
     }
 
-    /// Open with log manager
-    pub fn open_with_log_manager(
-        storage: &Storage,
-        db_name: &str,
-        schema_name: &str,
-        table_name: &str,
-        log_manager: Arc<LogManager>,
-    ) -> Result<Self, StorageError> {
-        let path = storage.table_path(db_name, schema_name, table_name)?;
-        let heap_file = HeapFile::open(path)?;
-        let mut pool =
-            BufferPool::with_log_manager(DEFAULT_POOL_CAPACITY, Arc::clone(&log_manager));
-        pool.register_file(0, heap_file);
-        let buffer_pool = Arc::new(Mutex::new(pool));
-
-        Ok(Self {
-            buffer_pool,
-            toast_file: None,
-            log_manager: Some(log_manager),
-            file_id: 0,
-        })
-    }
-
     /// Returns a clone of this table's shared buffer pool handle, so its
     /// indexes can be opened against the same pool.
     pub fn buffer_pool_handle(&self) -> Arc<Mutex<BufferPool>> {
@@ -112,6 +86,7 @@ impl TableHeap {
         values: &[Value],
         interner: &Interner,
         mut txn: Option<&mut Transaction>,
+        log_manager: Option<&LogManager>,
     ) -> Result<(u32, u16), StorageError> {
         let (bytes, has_toast) =
             serialize_tuple_with_toast(schema, values, interner, self.toast_file.as_mut())?;
@@ -141,7 +116,7 @@ impl TableHeap {
 
         if let Some(slot_id) = inserted {
             // WAL Logging: if log_manager is enabled log the insert and update page_lsn
-            if let Some(lm) = &self.log_manager {
+            if let Some(lm) = log_manager {
                 // Pulling txn_id and prev_lsn from the transaction or suing defaults
                 let (txt_id, prev_lsn) = match txn.as_ref().map(|t| (t.txn_id, t.last_lsn)) {
                     Some(pair) => pair,
@@ -188,7 +163,7 @@ impl TableHeap {
 
         if let Some(slot_id) = inserted {
             // WAL logging for new page
-            if let Some(lm) = &self.log_manager {
+            if let Some(lm) = log_manager {
                 let (txt_id, prev_lsn) = match txn.as_ref().map(|t| (t.txn_id, t.last_lsn)) {
                     Some(pair) => pair,
                     None => (0, 0),
@@ -277,6 +252,7 @@ impl TableHeap {
         &mut self,
         rid: RecordId,
         mut txn: Option<&mut Transaction>,
+        log_manager: Option<&LogManager>,
     ) -> Result<bool, StorageError> {
         let mut bp = self
             .buffer_pool
@@ -295,7 +271,7 @@ impl TableHeap {
         bp.get_page_mut(frame_id).delete_tuple(rid.slot_id);
 
         // WAL logging for delete page
-        if let Some(lm) = &self.log_manager {
+        if let Some(lm) = log_manager {
             let (txt_id, prev_lsn) = match txn.as_ref().map(|t| (t.txn_id, t.last_lsn)) {
                 Some(pair) => pair,
                 None => (0, 0),
@@ -334,6 +310,7 @@ impl TableHeap {
         interner: &Interner,
         rid: RecordId,
         mut txn: Option<&mut Transaction>,
+        log_manager: Option<&LogManager>,
     ) -> Result<bool, StorageError> {
         let (bytes, has_toast) =
             serialize_tuple_with_toast(schema, new_values, interner, self.toast_file.as_mut())?;
@@ -361,7 +338,7 @@ impl TableHeap {
         }
         page.insert_tuple(&bytes);
 
-        if let Some(lm) = &self.log_manager {
+        if let Some(lm) = log_manager {
             let (txt_id, prev_lsn) = match txn.as_ref().map(|t| (t.txn_id, t.last_lsn)) {
                 Some(pair) => pair,
                 None => (0, 0),

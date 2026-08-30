@@ -1,5 +1,5 @@
 use crate::storage::{
-    BufferPool, FileRegistry, error::StorageError, page::raw_page::PAGE_SIZE,
+    BufferPool, FileRegistry, LogManager, error::StorageError, page::raw_page::PAGE_SIZE,
     pool::calculate_capacity,
 };
 use std::{
@@ -38,6 +38,7 @@ pub struct Storage {
 
     file_registry: Arc<FileRegistry>,
     buffer_pool: Arc<Mutex<BufferPool>>,
+    log_manager: Option<Arc<LogManager>>,
 }
 
 impl Storage {
@@ -48,12 +49,13 @@ impl Storage {
     /// Returns [`StorageError::DirectoryNotFound`] if `data_dir`
     /// does not exist. The data directory must be created by the
     /// caller before initializing storage.
-    fn build(data_dir: PathBuf) -> Self {
+    fn build(data_dir: PathBuf, log_manager: Option<Arc<LogManager>>) -> Self {
         let capacity = calculate_capacity(PAGE_SIZE, None);
         Self {
             data_dir,
             file_registry: Arc::new(FileRegistry::new()),
             buffer_pool: Arc::new(Mutex::new(BufferPool::new(capacity))),
+            log_manager,
         }
     }
 
@@ -62,7 +64,7 @@ impl Storage {
         if !data_dir.exists() {
             return Err(StorageError::DirectoryNotFound(data_dir));
         }
-        Ok(Self::build(data_dir))
+        Ok(Self::build(data_dir, None))
     }
 
     /// Creates a `Storage` instance and creates `data_dir` if it
@@ -74,7 +76,20 @@ impl Storage {
         if !data_dir.exists() {
             std::fs::create_dir_all(&data_dir).map_err(|e| StorageError::io(&data_dir, e))?;
         }
-        Ok(Self::build(data_dir))
+        Ok(Self::build(data_dir, None))
+    }
+
+    /// Creates a Storage instance with an attached global LogManager for WAL durability.
+    pub fn with_log_manager(
+        data_dir: impl Into<PathBuf>,
+        log_manager: Arc<LogManager>,
+    ) -> Result<Self, StorageError> {
+        let data_dir = data_dir.into();
+        if !data_dir.exists() {
+            return Err(StorageError::DirectoryNotFound(data_dir));
+        }
+
+        Ok(Self::build(data_dir, Some(log_manager)))
     }
 
     /// Returns the root data directory path.
@@ -142,5 +157,9 @@ impl Storage {
 
     pub fn file_registry(&self) -> Arc<FileRegistry> {
         Arc::clone(&self.file_registry)
+    }
+
+    pub fn log_manager(&self) -> Option<Arc<LogManager>> {
+        self.log_manager.as_ref().map(Arc::clone)
     }
 }

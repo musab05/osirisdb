@@ -6,7 +6,6 @@
 use std::{
     fs::OpenOptions,
     io::Write,
-    mem::take,
     path::Path,
     sync::{
         Arc, Condvar, Mutex,
@@ -18,7 +17,10 @@ use std::{
 
 use crate::storage::{
     StorageError,
-    log::{log_manager_inner::LogManagerInner, log_record::LogRecord},
+    log::{
+        log_manager_inner::{DoubleBuffer, LogManagerInner},
+        log_record::LogRecord,
+    },
 };
 
 /// Strongly typed wrapper around a 64-bit Log Sequence Number (LSN).
@@ -54,7 +56,10 @@ impl LogManager {
 
         let inner = Arc::new(LogManagerInner {
             file: Mutex::new(file),
-            log_buffer: Mutex::new(Vec::with_capacity(4096)),
+            buffers: Mutex::new(DoubleBuffer {
+                active: Vec::with_capacity(4096),
+                flush: Vec::with_capacity(4096),
+            }),
             buffer_capacity: 4096,
             next_lsn: AtomicU64::new(1),
             flushed_state: (Mutex::new(0), Condvar::new()),
@@ -88,14 +93,16 @@ impl LogManager {
         // Serialize the record
         let bytes = record.serialize();
 
-        // Append to inner buffer under lock
-        let mut buffer = self.inner.log_buffer.lock().unwrap();
-        buffer.extend_from_slice(&bytes);
+        // Append to active buffer under brief lock
+        let should_flush = {
+            let mut bufs = self.inner.buffers.lock().unwrap();
+            bufs.active.extend_from_slice(&bytes);
+            bufs.active.len() >= self.inner.buffer_capacity
+        };
 
-        // If buffer capacity is exceeded, flush immediately
-        if buffer.len() >= self.inner.buffer_capacity {
-            drop(buffer); // Unlock before flushing
-            self.flush()?;
+        // If active buffer capacity is exceeded, trigger flush
+        if should_flush {
+            self.flush()?
         }
 
         Ok(Lsn(assigned_lsn))
@@ -114,33 +121,44 @@ impl LogManager {
 
     /// Internal helper that drains the in-memory buffer, syncs to disk, and notifies waiting threads.
     fn flush_internal(inner: &LogManagerInner) -> Result<(), StorageError> {
-        // 1. Swap/drain the buffer under lock
-        let mut buffer_guard = inner.log_buffer.lock().unwrap();
-        if buffer_guard.is_empty() {
-            return Ok(());
+        // 1. Swap active <-> flush under lock
+        {
+            let mut bufs = inner.buffers.lock().unwrap();
+            if bufs.active.is_empty() && bufs.flush.is_empty() {
+                return Ok(());
+            }
+            if bufs.flush.is_empty() {
+                bufs.swap();
+            }
         }
 
-        let pending_bytes = take(&mut *buffer_guard);
-        // Compute the highest LSN covered by this batch
+        // Buffer lock is RELEASED here — writers can append to `active` immediately!
+        // 2. Compute the highest LSN covered by this batch
         let current_next = inner.next_lsn.load(Ordering::SeqCst);
         let current_flushing_lsn = current_next.saturating_sub(1);
-        drop(buffer_guard); // Release buffer lock early
 
-        // 2. Write to disk and fsync
-        let mut file_guard = inner.file.lock().unwrap();
-        file_guard
-            .write_all(&pending_bytes)
-            .map_err(|e| StorageError::io("log_file", e))?;
-        file_guard
+        // 3. Write `flush` buffer to disk and fsync
+        let mut file_gaurd = inner.file.lock().unwrap();
+        {
+            let mut bufs = inner.buffers.lock().unwrap();
+            if !bufs.flush.is_empty() {
+                file_gaurd
+                    .write_all(&bufs.flush)
+                    .map_err(|e| StorageError::io("log_file", e))?;
+                bufs.flush.clear();
+            }
+        }
+
+        file_gaurd
             .sync_data()
             .map_err(|e| StorageError::io("log_file", e))?;
-        drop(file_guard);
+        drop(file_gaurd);
 
-        // 3. Update flushed_lsn and wake up all waiting transactions (Group Commit)
+        // 4. Update flushed_lsn and wake up all waiting transactions (Group Commit)
         let (lock, cvar) = &inner.flushed_state;
         let mut flushed_lsn = lock.lock().unwrap();
         *flushed_lsn = current_flushing_lsn;
-        cvar.notify_all(); // Wakes up any thread blocked in wait_for_flush
+        cvar.notify_all();
 
         Ok(())
     }
