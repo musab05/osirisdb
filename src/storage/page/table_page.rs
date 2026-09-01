@@ -298,7 +298,7 @@ impl<T: AsRef<[u8]> + AsMut<[u8]>> TablePage<T> {
         // Checking if contiguous free space is available right now
         if self.free_space() < needed {
             // If contiguous space is lacking, check if compacting will free up enough space
-            if self.total_free_spcace() >= needed {
+            if self.total_free_space() >= needed {
                 self.compact();
             } else {
                 // Not enough space even after compaction
@@ -476,7 +476,7 @@ impl<T: AsRef<[u8]>> TablePage<T> {
     /// Returns total free space if the page were to be compacted.
     ///
     /// `contiguous free space + fragmented space from deleted slots`
-    pub fn total_free_spcace(&self) -> usize {
+    pub fn total_free_space(&self) -> usize {
         self.free_space() + self.fragmented_space()
     }
 }
