@@ -484,11 +484,7 @@ impl BPlusTreeIndex {
                 IndexPage::from_page_ref(bp.get_page(right_frame)).key_count() > MIN_KEYS;
 
             if right_has_extra {
-                let (raw_c, raw_r) = unsafe {
-                    let c = bp.get_page_mut(child_frame) as *mut _;
-                    let r = bp.get_page_mut(right_frame) as *mut _;
-                    (&mut *c, &mut *r)
-                };
+                let (raw_c, raw_r) = bp.get_two_pages_mut(child_frame, right_frame);
                 let mut child = IndexPage::from_page_mut(raw_c);
                 let mut rsib = IndexPage::from_page_mut(raw_r);
 
