@@ -49,14 +49,19 @@ impl Storage {
     /// Returns [`StorageError::DirectoryNotFound`] if `data_dir`
     /// does not exist. The data directory must be created by the
     /// caller before initializing storage.
-    fn build(data_dir: PathBuf, log_manager: Option<Arc<LogManager>>) -> Self {
+    fn build(
+        data_dir: PathBuf,
+        log_manager: Option<Arc<LogManager>>,
+    ) -> Result<Self, StorageError> {
         let capacity = calculate_capacity(PAGE_SIZE, None);
-        Self {
+        let file_registry =
+            FileRegistry::open_or_create(&data_dir).map_err(|e| StorageError::io(&data_dir, e))?;
+        Ok(Self {
             data_dir,
-            file_registry: Arc::new(FileRegistry::new()),
+            file_registry: Arc::new(file_registry),
             buffer_pool: Arc::new(Mutex::new(BufferPool::new(capacity))),
             log_manager,
-        }
+        })
     }
 
     pub fn new(data_dir: impl Into<PathBuf>) -> Result<Self, StorageError> {
@@ -64,7 +69,7 @@ impl Storage {
         if !data_dir.exists() {
             return Err(StorageError::DirectoryNotFound(data_dir));
         }
-        Ok(Self::build(data_dir, None))
+        Self::build(data_dir, None)
     }
 
     /// Creates a `Storage` instance and creates `data_dir` if it
@@ -76,7 +81,7 @@ impl Storage {
         if !data_dir.exists() {
             std::fs::create_dir_all(&data_dir).map_err(|e| StorageError::io(&data_dir, e))?;
         }
-        Ok(Self::build(data_dir, None))
+        Self::build(data_dir, None)
     }
 
     /// Creates a Storage instance with an attached global LogManager for WAL durability.
@@ -89,7 +94,7 @@ impl Storage {
             return Err(StorageError::DirectoryNotFound(data_dir));
         }
 
-        Ok(Self::build(data_dir, Some(log_manager)))
+        Self::build(data_dir, Some(log_manager))
     }
 
     /// Returns the root data directory path.
