@@ -531,8 +531,14 @@ fn test_storage_crash_triggers_recovery_on_startup() {
     let mut txn1 = tm.begin().unwrap();
     let item1 = interner.intern("Monitor");
     let row1 = vec![Value::Int(10), Value::String(item1)];
-    th.insert_tuple(&schema, &row1, &interner, Some(&mut txn1), Some(&log_manager))
-        .unwrap();
+    th.insert_tuple(
+        &schema,
+        &row1,
+        &interner,
+        Some(&mut txn1),
+        Some(&log_manager),
+    )
+    .unwrap();
     tm.commit(&mut txn1).unwrap();
 
     // Flush WAL but crash WITHOUT calling storage.shutdown() (so no clean shutdown marker)
@@ -567,4 +573,3 @@ fn test_storage_crash_triggers_recovery_on_startup() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
-
