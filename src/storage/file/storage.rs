@@ -1,11 +1,14 @@
 use crate::storage::{
-    BufferPool, FileRegistry, LogManager, error::StorageError, page::raw_page::PAGE_SIZE,
-    pool::calculate_capacity,
+    BufferPool, CheckpointManager, FileRegistry, LogManager, RecoveryEngine, error::StorageError,
+    page::raw_page::PAGE_SIZE, pool::calculate_capacity,
 };
 use std::{
+    fs::{remove_file, write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
+
+const SHUTDOWN_MARKER_FILE: &str = "clean_shutdown.marker";
 
 /// The storage engine — manages the on-disk layout for all database objects.
 ///
@@ -39,6 +42,7 @@ pub struct Storage {
     file_registry: Arc<FileRegistry>,
     buffer_pool: Arc<Mutex<BufferPool>>,
     log_manager: Option<Arc<LogManager>>,
+    checkpoint_manager: Option<Arc<CheckpointManager>>,
 }
 
 impl Storage {
@@ -61,6 +65,7 @@ impl Storage {
             file_registry: Arc::new(file_registry),
             buffer_pool: Arc::new(Mutex::new(BufferPool::new(capacity))),
             log_manager,
+            checkpoint_manager: None,
         })
     }
 
@@ -95,6 +100,10 @@ impl Storage {
         }
 
         Self::build(data_dir, Some(log_manager))
+    }
+
+    pub fn with_checkpoint_manager(&mut self, checkpoint_manager: Arc<CheckpointManager>) {
+        self.checkpoint_manager = Some(checkpoint_manager);
     }
 
     /// Returns the root data directory path.
@@ -166,5 +175,72 @@ impl Storage {
 
     pub fn log_manager(&self) -> Option<Arc<LogManager>> {
         self.log_manager.as_ref().map(Arc::clone)
+    }
+
+    pub fn shutdown(&mut self) -> Result<(), StorageError> {
+        // Flushing all the dirty pages from buffer pool to disk
+        {
+            let mut bp = self.buffer_pool.lock().unwrap();
+            bp.flush_all(self.log_manager.as_deref())?;
+        }
+
+        // Writing final checkpoint to WAL and checkpoint.meta
+        if let Some(ref ckpt_mgr) = self.checkpoint_manager {
+            ckpt_mgr.checkpoint()?;
+        }
+
+        // Flush WAL to stable storage
+        if let Some(ref lm) = self.log_manager {
+            lm.flush()?;
+        }
+
+        // Write clean-shutdown marker
+        let marker_path = self.shutdown_marker_path();
+        write(&marker_path, b"CLEAN_SHUTDOWN").map_err(|e| StorageError::io(&marker_path, e))?;
+
+        Ok(())
+    }
+
+    pub fn shutdown_marker_path(&self) -> PathBuf {
+        self.data_dir.join(SHUTDOWN_MARKER_FILE)
+    }
+
+    pub fn checkpoint_meta_path(&self) -> PathBuf {
+        self.data_dir.join("checkpoint.meta")
+    }
+
+    pub fn has_clean_shutdown_marker(&self) -> bool {
+        self.shutdown_marker_path().exists()
+    }
+
+    /// Checks for a clean-shutdown marker on startup:
+    /// - If marker exists: removes marker and skips recovery (returns `Ok(false)`).
+    /// - If marker does not exist: runs ARIES recovery (returns `Ok(true)`).
+    pub fn recover_if_needed(
+        &self,
+        log_path: &Path,
+        meta_path: &Path,
+    ) -> Result<bool, StorageError> {
+        let marker_path = self.shutdown_marker_path();
+
+        if marker_path.exists() {
+            // Clean shutdown delete marker so that future crashes are detected
+            let _ = remove_file(&marker_path);
+            return Ok(false);
+        }
+
+        // Unclean shutdown crash run ARIES recovery if WAL log exist
+        if let Some(ref lm) = self.log_manager {
+            if log_path.exists() {
+                let recovery_engien = RecoveryEngine::new(
+                    log_path,
+                    meta_path,
+                    Arc::clone(&self.file_registry),
+                    Arc::clone(lm),
+                );
+                recovery_engien.recover()?;
+            }
+        }
+        Ok(true)
     }
 }

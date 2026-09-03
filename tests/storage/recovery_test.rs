@@ -423,3 +423,148 @@ fn test_recovery_with_checkpoint_redo_and_undo() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_storage_clean_shutdown_and_restart_skips_recovery() {
+    let dir = env::temp_dir().join("osirisdb_clean_shutdown_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let log_path = dir.join("wal.log");
+    let meta_path = dir.join("checkpoint.meta");
+
+    let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
+    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let ckpt_mgr = Arc::new(CheckpointManager::new(
+        Arc::clone(&log_manager),
+        Arc::clone(&tm),
+        &meta_path,
+    ));
+
+    let mut storage = Storage::with_log_manager(&dir, Arc::clone(&log_manager)).unwrap();
+    storage.with_checkpoint_manager(Arc::clone(&ckpt_mgr));
+
+    std::fs::create_dir_all(storage.schema_path("shop_db", "public")).unwrap();
+    let table_path = storage.table_path("shop_db", "public", "items").unwrap();
+    let file_id = storage.file_registry().register(&table_path);
+
+    let mut interner = Interner::new();
+    let schema = vec![
+        col(&mut interner, "id", DataType::Int, false),
+        col(&mut interner, "name", DataType::VarChar(Some(30)), false),
+    ];
+
+    // Insert row and commit
+    let mut th = TableHeap::open(&storage, "shop_db", "public", "items").unwrap();
+    th.set_file_id(file_id);
+
+    let mut txn = tm.begin().unwrap();
+    let name = interner.intern("Keyboard");
+    let row = vec![Value::Int(1), Value::String(name)];
+    th.insert_tuple(&schema, &row, &interner, Some(&mut txn), Some(&log_manager))
+        .unwrap();
+    tm.commit(&mut txn).unwrap();
+
+    // Perform clean shutdown
+    storage.shutdown().unwrap();
+
+    // Verify marker and meta file exist
+    assert!(storage.has_clean_shutdown_marker());
+    assert!(meta_path.exists());
+
+    drop(th);
+    drop(storage);
+    drop(ckpt_mgr);
+    drop(tm);
+    drop(log_manager);
+
+    // On restart: initialize new Storage and run recover_if_needed
+    let log_manager_restart = Arc::new(LogManager::new(&log_path).unwrap());
+    let storage_restart =
+        Storage::with_log_manager(&dir, Arc::clone(&log_manager_restart)).unwrap();
+
+    // recover_if_needed should return Ok(false) (recovery skipped because of clean shutdown marker)
+    let recovered = storage_restart
+        .recover_if_needed(&log_path, &meta_path)
+        .unwrap();
+    assert!(!recovered, "Clean shutdown should bypass ARIES recovery");
+
+    // The marker should have been consumed / removed for future crash detection
+    assert!(!storage_restart.has_clean_shutdown_marker());
+
+    // Verify data is intact
+    let mut th_reopened = TableHeap::open(&storage_restart, "shop_db", "public", "items").unwrap();
+    let rows = th_reopened.scan(&schema, &interner).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0], row);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_storage_crash_triggers_recovery_on_startup() {
+    let dir = env::temp_dir().join("osirisdb_crash_recovery_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let log_path = dir.join("wal.log");
+    let meta_path = dir.join("checkpoint.meta");
+
+    let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
+    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+
+    let storage = Storage::with_log_manager(&dir, Arc::clone(&log_manager)).unwrap();
+    std::fs::create_dir_all(storage.schema_path("shop_db", "public")).unwrap();
+    let table_path = storage.table_path("shop_db", "public", "orders").unwrap();
+    let file_id = storage.file_registry().register(&table_path);
+
+    let mut interner = Interner::new();
+    let schema = vec![
+        col(&mut interner, "id", DataType::Int, false),
+        col(&mut interner, "item", DataType::VarChar(Some(30)), false),
+    ];
+
+    // Txn 1 committed
+    let mut th = TableHeap::open(&storage, "shop_db", "public", "orders").unwrap();
+    th.set_file_id(file_id);
+
+    let mut txn1 = tm.begin().unwrap();
+    let item1 = interner.intern("Monitor");
+    let row1 = vec![Value::Int(10), Value::String(item1)];
+    th.insert_tuple(&schema, &row1, &interner, Some(&mut txn1), Some(&log_manager))
+        .unwrap();
+    tm.commit(&mut txn1).unwrap();
+
+    // Flush WAL but crash WITHOUT calling storage.shutdown() (so no clean shutdown marker)
+    log_manager.flush().unwrap();
+    drop(th);
+    drop(storage);
+    drop(tm);
+    drop(log_manager);
+
+    // Overwrite table file to 0 bytes to simulate unwritten dirty pages on crash
+    std::fs::write(&table_path, b"").unwrap();
+
+    // Restart: No clean shutdown marker exists!
+    let log_manager_restart = Arc::new(LogManager::new(&log_path).unwrap());
+    let storage_restart =
+        Storage::with_log_manager(&dir, Arc::clone(&log_manager_restart)).unwrap();
+
+    assert!(!storage_restart.has_clean_shutdown_marker());
+
+    // recover_if_needed runs ARIES recovery and returns Ok(true)
+    let recovered = storage_restart
+        .recover_if_needed(&log_path, &meta_path)
+        .unwrap();
+    assert!(recovered, "Unclean crash must execute ARIES recovery");
+
+    // Verify committed data was restored by recovery Redo phase
+    let mut th_recovered =
+        TableHeap::open(&storage_restart, "shop_db", "public", "orders").unwrap();
+    let rows = th_recovered.scan(&schema, &interner).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0], row1);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
