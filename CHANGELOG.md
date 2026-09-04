@@ -9,23 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Phase 3: Write-Ahead Logging (WAL) & Recovery Infrastructure**:
-  - **Physiological LogRecord**:
-    - Implemented `LogRecord` supporting physiological record types (`Insert`, `Delete`, `Update`, `Begin`, `Commit`, `Abort`, `CheckpointBegin`, `CheckpointEnd`, `Compensation`).
-    - Added binary serialization and deserialization with CRC32C integrity checksum verification.
-    - Added before/after image byte slices, slot offset, and tuple length tracking.
-  - **Thread-Safe LogManager & Group Commit**:
-    - Created `LogManager` and `LogManagerInner` with atomic, lock-free LSN generation using `AtomicU64`.
-    - Implemented background flusher thread (`flusher_loop`) batching pending records with periodic 5ms `fsync` intervals.
-    - Implemented Group Commit condition variable signaling via `wait_for_flush(target_lsn)` to wake up committing transaction threads simultaneously without redundant `fsync` calls.
-  - **Buffer Pool & TableHeap WAL Protocol Integration**:
-    - Connected `BufferPool` to `LogManager` via `BufferPool::with_log_manager`.
-    - Enforced the fundamental Write-Ahead Logging invariant in `BufferPool::evict` and `BufferPool::flush_all`: dirty pages are prevented from writing to disk until `page.page_lsn() <= log_manager.get_flushed_lsn()`.
-    - Updated `TableHeap` (`TableHeap::open_with_log_manager`) to emit `Insert` `LogRecord`s and update `page.set_page_lsn(lsn.0)` on tuple insertion.
-  - **Test Suite & Benchmarks**:
-    - Added comprehensive unit and concurrency test suite in `tests/storage/log_manager_test.rs` (concurrent appenders across 8 threads, parallel group commit waiters, capacity auto-flush).
-    - Added WAL protocol enforcement tests in `tests/storage/database_test.rs` (`table_heap_with_log_manager_assigns_page_lsn`, `buffer_pool_eviction_enforces_wal_flush_rule`, `buffer_pool_flush_all_enforces_wal_flush_rule`).
-    - Added Criterion benchmarks in `benches/storage/log_manager_bench.rs` and `benches/storage/database_bench.rs` comparing tuple insertion throughput with and without WAL logging.
+- **Transaction Management & Lifecycle (`Transaction` & `TransactionManager`)**:
+  - Implemented `Transaction` tracking transaction state (`Active`, `Committed`, `Aborted`), transaction ID (`TxnId`), and `prev_lsn` chain.
+  - Implemented thread-safe `TransactionManager` coordinating `begin()`, `commit()`, and `abort()` workflows, emitting corresponding `Begin`, `Commit`, and `Abort` log records.
+  - Added active transaction retrieval (`get_active_transactions()`) to support snapshotting and checkpointing.
+  - Updated `TableHeap` DML operations (`insert_tuple`, `update_tuple`, `delete_tuple`) to accept optional transaction handles and link log record LSN chains (`txn.set_prev_lsn(lsn)`).
+- **Comprehensive DML Logging**:
+  - Added physiological WAL record logging for `update_tuple` and `delete_tuple` in `TableHeap` with before/after byte image tracking.
+- **Checkpointing Infrastructure (`CheckpointData` & `CheckpointManager`)**:
+  - Implemented `CheckpointData` capturing the Active Transaction Table (ATT) with `last_lsn` and Dirty Page Table (DPT) with `rec_lsn`.
+  - Implemented `CheckpointManager` coordinating non-fuzzy/fuzzy checkpoints by writing `CheckpointBegin` and `CheckpointEnd` records and capturing dirty page metadata.
+- **ARIES-Based Crash Recovery Engine (`RecoveryEngine`)**:
+  - Implemented full three-phase ARIES recovery algorithm:
+    - **Analysis Phase**: Scans forward from the last checkpoint record to reconstruct the Active Transaction Table and Dirty Page Table.
+    - **Redo Phase**: Repeats history by scanning from the minimum `rec_lsn` in the DPT and reapplying logged modifications (`Insert`, `Update`, `Delete`, `Compensation`).
+    - **Undo Phase**: Rolls back all active/uncommitted transactions backwards along `prev_lsn` chains, writing Compensation Log Records (CLRs) with `undo_next_lsn` to guarantee idempotency across multiple crashes.
+- **Multi-File Storage & Dynamic Buffer Pool Management**:
+  - Implemented `FileRegistry` mapping `file_id` (`u32`) to file paths and `HeapFile` instances with `load_from_disk` and `persist_to_disk` metadata persistence.
+  - Refactored `BufferPool` to support multi-file operations (`register_file`, `unregister_file`, page indexing by `(file_id, page_id)`).
+  - Implemented `BufferPoolCapacity` utilizing `sysinfo` for host memory auto-detection and dynamic buffer pool allocation.
+- **Storage Lifecycle & Engine Recovery**:
+  - Added `Storage::shutdown` for graceful teardown (flushing dirty buffers, flushing log manager, persisting file registry).
+  - Added `Storage::recover` integrating automatic ARIES recovery on engine startup.
+- **Test Suite & Benchmarks**:
+  - Added ARIES recovery integration tests in `tests/storage/recovery_test.rs` (testing committed, aborted, uncommitted transactions, crash during undo, and recovery idempotency).
+  - Added comprehensive transaction tests in `tests/storage/transaction_manager_test.rs`.
+  - Added `bench_checkpoint_manager` and `bench_aries_recovery` Criterion benchmarks in `benches/storage/database_bench.rs`.
+
+### Changed & Refactored
+
+- **Storage Layer WAL Integration**:
+  - Deprecated and removed legacy `wal.rs` module in favor of the double-buffered `LogManager` and `RecoveryEngine`.
+  - Updated `Storage`, `BufferPool`, and `TableHeap` to integrate `LogManager` and enforce Write-Ahead Logging constraints before page flushes.
+  - Refactored `BPlusTreeIndex` multi-page borrowing with `get_two_pages_mut` for borrow-checker safety during page splits/merges.
+  - Enhanced `BPlusTreeIndex` insert logic for unique constraint verification.
+
+### Fixed
+
+- Corrected method name spelling to `total_free_space` in `TablePage`.
+- Corrected index page header size and byte offset alignments in `index_page.rs`.
+- Fixed log record deserialization payload parsing in `recovery.rs`.
 
 ## [0.8.0] - 2026-08-07
 
