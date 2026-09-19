@@ -78,6 +78,9 @@ impl CheckpointManager {
         fs::write(&self.meta_path, begin_lsn.0.to_le_bytes())
             .map_err(|e| StorageError::io(&self.meta_path, e))?;
 
+        // truncate WAL: discard records before this checkpoint
+        self.log_manager.truncate_before(begin_lsn.0)?;
+
         Ok(begin_lsn.0)
     }
 }

@@ -4,7 +4,7 @@
 //! asynchronous group commits, and disk synchronization for the OsirisDB storage engine.
 
 use std::{
-    fs::OpenOptions,
+    fs::{self, OpenOptions},
     io::Write,
     path::Path,
     sync::{
@@ -64,6 +64,7 @@ impl LogManager {
             next_lsn: AtomicU64::new(1),
             flushed_state: (Mutex::new(0), Condvar::new()),
             is_running: AtomicBool::new(true),
+            log_path: log_path.as_ref().to_path_buf(),
         });
 
         let inner_clone = Arc::clone(&inner);
@@ -196,6 +197,83 @@ impl LogManager {
         }
         // Final flush on database shutdown
         let _ = Self::flush_internal(&inner);
+    }
+
+    pub fn truncate_before(&self, min_lsn: u64) -> Result<(), StorageError> {
+        self.flush()?;
+
+        let wal_bytes = fs::read(&self.inner.log_path)
+            .map_err(|e| StorageError::io(&self.inner.log_path, e))?;
+
+        let mut kept = Vec::new();
+        let mut cursor = 0;
+
+        while cursor + 45 <= wal_bytes.len() {
+            // Parse before_image length (at byte offset 37)
+            let before_len =
+                u32::from_le_bytes(wal_bytes[cursor + 37..cursor + 41].try_into().unwrap())
+                    as usize;
+            if cursor + 45 + before_len > wal_bytes.len() {
+                break;
+            }
+
+            // Parse after_image length
+            let after_len = u32::from_le_bytes(
+                wal_bytes[cursor + 41 + before_len..cursor + 45 + before_len]
+                    .try_into()
+                    .unwrap(),
+            ) as usize;
+
+            let record_size = 49 + before_len + after_len;
+
+            if cursor + record_size > wal_bytes.len() {
+                break;
+            }
+
+            let rec_slice = &wal_bytes[cursor..cursor + record_size];
+            let record = LogRecord::deserialize(rec_slice)?;
+
+            if record.lsn >= min_lsn {
+                kept.push(record);
+            }
+
+            cursor += record_size;
+        }
+
+        let mut new_bytes = Vec::new();
+        for record in &kept {
+            new_bytes.extend_from_slice(&record.serialize());
+        }
+
+        {
+            let mut file_gaurd = self.inner.file.lock().unwrap();
+
+            // Truncate and write
+            let mut trunc_file = OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(&self.inner.log_path)
+                .map_err(|e| StorageError::io(&self.inner.log_path, e))?;
+
+            trunc_file
+                .write_all(&new_bytes)
+                .map_err(|e| StorageError::io(&self.inner.log_path, e))?;
+
+            trunc_file
+                .sync_data()
+                .map_err(|e| StorageError::io(&self.inner.log_path, e))?;
+
+            // Reopen in append mode for future writes
+            let append_file = OpenOptions::new()
+                .append(true)
+                .open(&self.inner.log_path)
+                .map_err(|e| StorageError::io(&self.inner.log_path, e))?;
+
+            // Swap the file handle
+            *file_gaurd = append_file;
+        }
+
+        Ok(())
     }
 }
 

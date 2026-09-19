@@ -6,6 +6,7 @@
 
 use std::{
     fs::File,
+    path::PathBuf,
     sync::{
         Condvar, Mutex,
         atomic::{AtomicBool, AtomicU64},
@@ -43,6 +44,9 @@ pub struct LogManagerInner {
 
     /// Atomic flag indicating whether the background flusher thread should continue running.
     pub is_running: AtomicBool,
+
+    /// Path for wal file
+    pub log_path: PathBuf,
 }
 
 impl DoubleBuffer {
