@@ -559,6 +559,21 @@ impl BufferPool {
             None => Ok(()),
         }
     }
+
+    /// Returns a list of (file_id, page_id) for every frame currently marked dirty.
+    /// Used by CheckpointManager to capture the Dirty Page Table.
+    pub fn get_dirty_pages(&self) -> Vec<(u32, u32)> {
+        let mut result: Vec<(u32, u32)> = Vec::new();
+        for frame_id in 0..self.capacity {
+            if self.dirty_flag[frame_id] {
+                if let Some((file_id, page_id)) = self.frame_to_page[frame_id] {
+                    result.push((file_id, page_id));
+                }
+            }
+        }
+
+        result
+    }
 }
 
 impl Drop for BufferPool {

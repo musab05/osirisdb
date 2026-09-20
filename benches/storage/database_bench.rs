@@ -3,9 +3,12 @@ use osirisdb::{
     ast::{DataType, Value},
     catalog::objects::ColumnEntry,
     common::Interner,
-    storage::{Storage, TableHeap, log::log_manager::LogManager},
+    storage::{BufferPool, Storage, TableHeap, log::log_manager::LogManager},
 };
-use std::{hint::black_box, sync::Arc};
+use std::{
+    hint::black_box,
+    sync::{Arc, Mutex},
+};
 
 fn bench_create_database_dir(c: &mut Criterion) {
     let tmp = std::env::temp_dir().join("osirisdb_bench_storage");
@@ -123,7 +126,13 @@ fn bench_checkpoint_manager(c: &mut Criterion) {
     let meta_path = tmp.join("checkpoint.meta");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
     let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
-    let ckpt_mgr = CheckpointManager::new(Arc::clone(&log_manager), Arc::clone(&tm), &meta_path);
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(10)));
+    let ckpt_mgr = CheckpointManager::new(
+        Arc::clone(&log_manager),
+        Arc::clone(&tm),
+        &meta_path,
+        Arc::clone(&buffer_pool),
+    );
 
     // Keep some transactions active in ATT
     let _txn1 = tm.begin().unwrap();

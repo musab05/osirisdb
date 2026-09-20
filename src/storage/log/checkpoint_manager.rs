@@ -1,12 +1,12 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     vec,
 };
 
 use crate::storage::{
-    LogManager, StorageError, TransactionManager,
+    BufferPool, LogManager, StorageError, TransactionManager,
     log::{
         checkpoint_data::CheckpointData,
         log_record::{LogRecord, RecordType},
@@ -17,6 +17,7 @@ pub struct CheckpointManager {
     log_manager: Arc<LogManager>,
     txn_manager: Arc<TransactionManager>,
     meta_path: PathBuf,
+    buffer_pool: Arc<Mutex<BufferPool>>,
 }
 
 impl CheckpointManager {
@@ -24,11 +25,13 @@ impl CheckpointManager {
         log_manager: Arc<LogManager>,
         txn_manager: Arc<TransactionManager>,
         meta_path: impl AsRef<Path>,
+        buffer_pool: Arc<Mutex<BufferPool>>,
     ) -> Self {
         Self {
             log_manager,
             txn_manager,
             meta_path: meta_path.as_ref().to_path_buf(),
+            buffer_pool,
         }
     }
 
@@ -51,9 +54,20 @@ impl CheckpointManager {
 
         // Snapshot active transactions from txn_manager
         let active_txns = self.txn_manager.get_active_transactions();
+
+        // Snapshot dirt pages from the buffer pool
+        let bp = self.buffer_pool.lock().unwrap();
+        let dirty_page_keys = bp.get_dirty_pages();
+        drop(bp); // release lock quickly
+
+        let dirty_pages: Vec<((u32, u32), u64)> = dirty_page_keys
+            .into_iter()
+            .map(|(fid, pid)| ((fid, pid), begin_lsn.0))
+            .collect();
+
         let data = CheckpointData {
             active_txns,
-            dirty_pages: vec![],
+            dirty_pages,
         };
 
         // Write checkpoint with serialized data after_iamge

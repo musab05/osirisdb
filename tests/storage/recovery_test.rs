@@ -1,12 +1,17 @@
-use std::{env, fs::File, io::Read, sync::Arc};
+use std::{
+    env,
+    fs::File,
+    io::Read,
+    sync::{Arc, Mutex},
+};
 
 use osirisdb::{
     ast::{DataType, Value},
     catalog::objects::ColumnEntry,
     common::Interner,
     storage::{
-        CheckpointData, CheckpointManager, FileRegistry, LogManager, RecordId, RecoveryEngine,
-        Storage, TableHeap, TransactionManager,
+        BufferPool, CheckpointData, CheckpointManager, FileRegistry, LogManager, RecordId,
+        RecoveryEngine, Storage, TableHeap, TransactionManager,
         log::log_record::{LogRecord, RecordType},
     },
 };
@@ -90,8 +95,14 @@ fn test_checkpoint_manager_writes_begin_end_and_meta() {
     // Commit txn 1. Txn 2 remains active in the ATT.
     tm.commit(&mut txn1).unwrap();
 
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(10)));
     // Run Checkpoint
-    let ckpt_mgr = CheckpointManager::new(Arc::clone(&log_manager), Arc::clone(&tm), &meta_path);
+    let ckpt_mgr = CheckpointManager::new(
+        Arc::clone(&log_manager),
+        Arc::clone(&tm),
+        &meta_path,
+        Arc::clone(&buffer_pool),
+    );
     let ckpt_begin_lsn = ckpt_mgr.checkpoint().unwrap();
 
     // Verify checkpoint.meta exists on disk and contains begin_lsn
@@ -364,7 +375,12 @@ fn test_recovery_with_checkpoint_redo_and_undo() {
     tm.commit(&mut txn1).unwrap();
 
     // 2. Run Fuzzy Checkpoint
-    let ckpt_mgr = CheckpointManager::new(Arc::clone(&log_manager), Arc::clone(&tm), &meta_path);
+    let ckpt_mgr = CheckpointManager::new(
+        Arc::clone(&log_manager),
+        Arc::clone(&tm),
+        &meta_path,
+        storage.buffer_pool(),
+    );
     ckpt_mgr.checkpoint().unwrap();
 
     // 3. Txn 2 (Committed): Inserts Row 2 after checkpoint
@@ -435,13 +451,15 @@ fn test_storage_clean_shutdown_and_restart_skips_recovery() {
 
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
     let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+
+    let mut storage = Storage::with_log_manager(&dir, Arc::clone(&log_manager)).unwrap();
     let ckpt_mgr = Arc::new(CheckpointManager::new(
         Arc::clone(&log_manager),
         Arc::clone(&tm),
         &meta_path,
+        storage.buffer_pool(),
     ));
 
-    let mut storage = Storage::with_log_manager(&dir, Arc::clone(&log_manager)).unwrap();
     storage.with_checkpoint_manager(Arc::clone(&ckpt_mgr));
 
     std::fs::create_dir_all(storage.schema_path("shop_db", "public")).unwrap();
