@@ -37,6 +37,7 @@ pub mod txn;
 pub mod util;
 
 pub use btree::BPlusTreeIndex;
+pub use config::{AutoVacuumConfig, BgWriterConfig, CheckpointConfig, StorageConfig};
 pub use error::StorageError;
 pub use file::{FileRegistry, HeapFile, Storage};
 pub use heap::TableHeap;

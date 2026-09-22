@@ -625,4 +625,52 @@ mod tests {
         rm(&p);
         rm(&log_p);
     }
+
+    #[test]
+    fn storage_loads_config_from_osirisdb_conf() {
+        use osirisdb::storage::Storage;
+        use std::fs;
+
+        let dir = tmp("storage_conf_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let conf_content = r#"
+            shared_buffers = 16MB
+            wal_buffers = 8MB
+            checkpoint_timeout = 15min
+            checkpoint_completion_target = 0.8
+            autovacuum = off
+        "#;
+        fs::write(dir.join("osirisdb.conf"), conf_content).unwrap();
+
+        let storage = Storage::new(&dir).unwrap();
+        assert_eq!(storage.config().shared_buffers, 16 * 1024 * 1024);
+        assert_eq!(storage.config().wal_buffers, 8 * 1024 * 1024);
+        assert_eq!(storage.config().checkpoint.timeout.as_secs(), 900);
+        assert_eq!(storage.config().checkpoint.completion_target, 0.8);
+        assert!(!storage.config().autovacuum.enabled);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn storage_with_explicit_config() {
+        use osirisdb::storage::{Storage, StorageConfig};
+        use std::fs;
+
+        let dir = tmp("storage_explicit_conf");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let mut config = StorageConfig::default();
+        config.shared_buffers = 64 * 1024 * 1024;
+        config.bgwriter.lru_maxpages = 500;
+
+        let storage = Storage::with_config(&dir, config).unwrap();
+        assert_eq!(storage.config().shared_buffers, 64 * 1024 * 1024);
+        assert_eq!(storage.config().bgwriter.lru_maxpages, 500);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

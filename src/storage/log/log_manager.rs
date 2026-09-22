@@ -48,19 +48,33 @@ impl LogManager {
     ///
     /// Returns [`StorageError::Io`] if the log file cannot be opened or created.
     pub fn new(log_path: impl AsRef<Path>) -> Result<Self, StorageError> {
+        Self::with_capacity(log_path, 4096)
+    }
+
+    /// Opens or creates a WAL file at `log_path` with a custom buffer capacity (wal_buffers)
+    /// and spawns the background flusher thread.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Io`] if the log file cannot be opened or created.
+    pub fn with_capacity(
+        log_path: impl AsRef<Path>,
+        wal_buffers: usize,
+    ) -> Result<Self, StorageError> {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(log_path.as_ref())
             .map_err(|e| StorageError::io(log_path.as_ref(), e))?;
 
+        let capacity = wal_buffers.max(1024);
         let inner = Arc::new(LogManagerInner {
             file: Mutex::new(file),
             buffers: Mutex::new(DoubleBuffer {
-                active: Vec::with_capacity(4096),
-                flush: Vec::with_capacity(4096),
+                active: Vec::with_capacity(capacity),
+                flush: Vec::with_capacity(capacity),
             }),
-            buffer_capacity: 4096,
+            buffer_capacity: capacity,
             next_lsn: AtomicU64::new(1),
             flushed_state: (Mutex::new(0), Condvar::new()),
             is_running: AtomicBool::new(true),

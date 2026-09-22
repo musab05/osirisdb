@@ -1,6 +1,6 @@
 use crate::storage::{
-    BufferPool, CheckpointManager, FileRegistry, LogManager, RecoveryEngine, error::StorageError,
-    page::raw_page::PAGE_SIZE, pool::calculate_capacity,
+    BufferPool, CheckpointManager, FileRegistry, LogManager, RecoveryEngine, StorageConfig,
+    error::StorageError,
 };
 use std::{
     fs::{remove_file, write},
@@ -39,6 +39,8 @@ pub struct Storage {
     /// Must exist before `Storage::new` is called.
     data_dir: PathBuf,
 
+    config: StorageConfig,
+
     file_registry: Arc<FileRegistry>,
     buffer_pool: Arc<Mutex<BufferPool>>,
     log_manager: Option<Arc<LogManager>>,
@@ -55,15 +57,22 @@ impl Storage {
     /// caller before initializing storage.
     fn build(
         data_dir: PathBuf,
+        config: Option<StorageConfig>,
         log_manager: Option<Arc<LogManager>>,
     ) -> Result<Self, StorageError> {
-        let capacity = calculate_capacity(PAGE_SIZE, None);
+        let conf_path = data_dir.join("osirisdb.conf");
+        let config = match config {
+            Some(c) => c,
+            None => StorageConfig::load_or_default(&conf_path)?,
+        };
+        let frames = config.buffer_pool_frames();
         let file_registry =
             FileRegistry::open_or_create(&data_dir).map_err(|e| StorageError::io(&data_dir, e))?;
         Ok(Self {
             data_dir,
+            config,
             file_registry: Arc::new(file_registry),
-            buffer_pool: Arc::new(Mutex::new(BufferPool::new(capacity))),
+            buffer_pool: Arc::new(Mutex::new(BufferPool::new(frames))),
             log_manager,
             checkpoint_manager: None,
         })
@@ -74,7 +83,7 @@ impl Storage {
         if !data_dir.exists() {
             return Err(StorageError::DirectoryNotFound(data_dir));
         }
-        Self::build(data_dir, None)
+        Self::build(data_dir, None, None)
     }
 
     /// Creates a `Storage` instance and creates `data_dir` if it
@@ -86,7 +95,7 @@ impl Storage {
         if !data_dir.exists() {
             std::fs::create_dir_all(&data_dir).map_err(|e| StorageError::io(&data_dir, e))?;
         }
-        Self::build(data_dir, None)
+        Self::build(data_dir, None, None)
     }
 
     /// Creates a Storage instance with an attached global LogManager for WAL durability.
@@ -99,7 +108,39 @@ impl Storage {
             return Err(StorageError::DirectoryNotFound(data_dir));
         }
 
-        Self::build(data_dir, Some(log_manager))
+        Self::build(data_dir, None, Some(log_manager))
+    }
+
+    /// Creates a Storage instance with an explicit StorageConfig.
+    pub fn with_config(
+        data_dir: impl Into<PathBuf>,
+        config: StorageConfig,
+    ) -> Result<Self, StorageError> {
+        let data_dir = data_dir.into();
+        if !data_dir.exists() {
+            return Err(StorageError::DirectoryNotFound(data_dir));
+        }
+
+        Self::build(data_dir, Some(config), None)
+    }
+
+    /// Creates a Storage instance with explicit StorageConfig and LogManager.
+    pub fn with_config_and_log_manager(
+        data_dir: impl Into<PathBuf>,
+        config: StorageConfig,
+        log_manager: Arc<LogManager>,
+    ) -> Result<Self, StorageError> {
+        let data_dir = data_dir.into();
+        if !data_dir.exists() {
+            return Err(StorageError::DirectoryNotFound(data_dir));
+        }
+
+        Self::build(data_dir, Some(config), Some(log_manager))
+    }
+
+    /// Returns a reference to the active storage configuration.
+    pub fn config(&self) -> &StorageConfig {
+        &self.config
     }
 
     pub fn with_checkpoint_manager(&mut self, checkpoint_manager: Arc<CheckpointManager>) {
