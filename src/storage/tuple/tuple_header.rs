@@ -1,4 +1,4 @@
-use crate::storage::RecordId;
+use crate::storage::{RecordId, StorageError};
 
 /// Total fixed byte size of a serialized TupleHeader on disk.
 pub const TUPLE_HEADER_SIZE: usize = 28;
@@ -49,4 +49,80 @@ pub struct TupleHeader {
     pub ctid: RecordId,
     /// Status flags and commit/abort hint bits.
     pub infomask: u16,
+}
+
+impl TupleHeader {
+    /// Creates a new `TupleHeader` for an inserted tuple.
+    ///
+    /// By default
+    /// - `xmax = 0` (liev tuple)
+    /// 0 `ctid` points to the tuple's own `RecordId`
+    /// - `infomask = 0` (no hints set yet)
+    pub fn new(xmin: u64, cid: u32, ctid: RecordId) -> Self {
+        Self {
+            xmin,
+            xmax: 0,
+            cid,
+            ctid,
+            infomask: 0,
+        }
+    }
+
+    /// Returns `true` if this tuple is still active (not deleted or superseded by an update)
+    #[inline]
+    pub fn is_active(&self) -> bool {
+        self.xmax == 0
+    }
+
+    /// Returns `true` if this tuple has deleted or superseded by an update
+    #[inline]
+    pub fn is_deleted(&self) -> bool {
+        self.xmax != 0
+    }
+
+    /// Mark this tuple to a newer versin upon update
+    pub fn mark_deleted(&mut self, xmax: u64) {
+        self.xmax = xmax;
+    }
+
+    /// Chains this tuple to newer version upon update
+    pub fn mark_update(&mut self, xmax: u64, new_cid: RecordId) {
+        self.xmax = xmax;
+        self.ctid = new_cid;
+        self.infomask |= TupleInfoMask::UPDATED;
+    }
+
+    /// Serializes the header into a fixed 28-byte array.
+    pub fn to_bytes(&self) -> [u8; TUPLE_HEADER_SIZE] {
+        let mut bytes = [0u8; TUPLE_HEADER_SIZE];
+        bytes[0..8].copy_from_slice(&self.xmin.to_le_bytes());
+        bytes[8..16].copy_from_slice(&self.xmax.to_le_bytes());
+        bytes[16..20].copy_from_slice(&self.cid.to_le_bytes());
+        bytes[20..26].copy_from_slice(&self.ctid.to_bytes());
+        bytes[26..28].copy_from_slice(&self.infomask.to_le_bytes());
+        bytes
+    }
+
+    /// Deserializes a `TupleHeader` from a byte slice (must have at least 28 bytes).
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, StorageError> {
+        if bytes.len() < TUPLE_HEADER_SIZE {
+            return Err(StorageError::TupleError(format!(
+                "invalid TupleHeader length: expected at least {} bytes, found {}",
+                TUPLE_HEADER_SIZE,
+                bytes.len()
+            )));
+        }
+        let xmin = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+        let xmax = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
+        let cid = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
+        let ctid = RecordId::from_bytes(&bytes[20..26])?;
+        let infomask = u16::from_le_bytes(bytes[26..28].try_into().unwrap());
+        Ok(Self {
+            xmin,
+            xmax,
+            cid,
+            ctid,
+            infomask,
+        })
+    }
 }

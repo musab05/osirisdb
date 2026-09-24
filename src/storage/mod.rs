@@ -46,7 +46,7 @@ pub use log::{
     log_manager::LogManager, recovery::RecoveryEngine,
 };
 pub use pool::BufferPool;
-pub use tuple::record_id::RecordId;
+pub use tuple::{RecordId, TUPLE_HEADER_SIZE, TupleHeader, TupleInfoMask};
 pub use txn::{
     transaction::{Transaction, TxnStatus},
     transaction_manager::TransactionManager,
