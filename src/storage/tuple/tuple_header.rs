@@ -28,7 +28,7 @@ impl TupleInfoMask {
 
     /// Checks if a specific bit flag is active.
     #[inline]
-    pub fn is_seet(mask: u16, flag: u16) -> bool {
+    pub fn is_set(mask: u16, flag: u16) -> bool {
         (mask & flag) != 0
     }
 }
@@ -86,7 +86,7 @@ impl TupleHeader {
     }
 
     /// Chains this tuple to newer version upon update
-    pub fn mark_update(&mut self, xmax: u64, new_cid: RecordId) {
+    pub fn mark_updated(&mut self, xmax: u64, new_cid: RecordId) {
         self.xmax = xmax;
         self.ctid = new_cid;
         self.infomask |= TupleInfoMask::UPDATED;
