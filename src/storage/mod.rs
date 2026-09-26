@@ -48,6 +48,9 @@ pub use log::{
 pub use pool::BufferPool;
 pub use tuple::{RecordId, TUPLE_HEADER_SIZE, TupleHeader, TupleInfoMask};
 pub use txn::{
+    clog::{Clog, ClogStatus},
+    snapshot::Snapshot,
     transaction::{Transaction, TxnStatus},
     transaction_manager::TransactionManager,
+    visibility::is_tuple_visible,
 };

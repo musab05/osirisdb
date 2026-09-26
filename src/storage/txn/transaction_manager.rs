@@ -12,7 +12,11 @@ use crate::storage::{
         log_manager::LogManager,
         log_record::{LogRecord, RecordType},
     },
-    txn::transaction::{Transaction, TxnStatus},
+    txn::{
+        clog::{Clog, ClogStatus},
+        snapshot::Snapshot,
+        transaction::{Transaction, TxnStatus},
+    },
 };
 
 pub struct TransactionManager {
@@ -24,6 +28,9 @@ pub struct TransactionManager {
 
     /// Shared global WAL log manager.
     log_manager: Arc<LogManager>,
+
+    /// Clog
+    clog: Arc<Clog>,
 }
 
 impl TransactionManager {
@@ -32,6 +39,7 @@ impl TransactionManager {
             next_txn_id: AtomicU64::new(1), // start at 1 (0 = "no txn")
             active_txns: Mutex::new(HashMap::new()),
             log_manager,
+            clog: Arc::new(Clog::new()),
         }
     }
 
@@ -63,6 +71,9 @@ impl TransactionManager {
         // Insert into Active Transaction Table
         self.active_txns.lock().unwrap().insert(txn_id, txn.clone());
 
+        // mark as InProgress in CLOG
+        self.clog.set_status(txn_id, ClogStatus::InProgress);
+
         Ok(txn)
     }
 
@@ -93,6 +104,9 @@ impl TransactionManager {
         // Update transaction status
         txn.status = TxnStatus::Committed;
 
+        // Record committed status in CLOG
+        self.clog.set_status(txn.txn_id, ClogStatus::Committed);
+
         // Remove from Active Transaction Table
         self.active_txns.lock().unwrap().remove(&txn.txn_id);
 
@@ -120,6 +134,9 @@ impl TransactionManager {
 
         // Update transaction status
         txn.status = TxnStatus::Aborted;
+
+        // Record aborted status in CLOG
+        self.clog.set_status(txn.txn_id, ClogStatus::Aborted);
 
         // Remove from Active Transaction Table
         self.active_txns.lock().unwrap().remove(&txn.txn_id);
@@ -150,5 +167,28 @@ impl TransactionManager {
             .values()
             .map(|txn| (txn.txn_id, txn.last_lsn))
             .collect()
+    }
+
+    /// Capturing snapshot inside TransactionManager
+    pub fn take_snapshot(&self) -> Snapshot {
+        let active = self.active_txns.lock().unwrap();
+        let next_id = self.next_txn_id.load(Ordering::SeqCst);
+
+        let mut xip_list: Vec<u64> = active.keys().cloned().collect();
+        xip_list.sort_unstable();
+
+        let xmin = xip_list.first().cloned().unwrap_or(next_id);
+        let xmax = next_id;
+
+        Snapshot {
+            xmin,
+            xmax,
+            xip_list,
+        }
+    }
+
+    /// Returns a reference to the shared [`Clog`]
+    pub fn clog(&self) -> &Arc<Clog> {
+        &self.clog
     }
 }

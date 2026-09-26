@@ -8,7 +8,7 @@ use crate::{
     catalog::objects::ColumnEntry,
     common::interner::Interner,
     storage::{
-        BufferPool, HeapFile, Storage, StorageError,
+        BufferPool, HeapFile, Storage, StorageError, TUPLE_HEADER_SIZE, TupleHeader,
         log::{
             log_manager::LogManager,
             log_record::{LogRecord, RecordType},
@@ -88,8 +88,22 @@ impl TableHeap {
         mut txn: Option<&mut Transaction>,
         log_manager: Option<&LogManager>,
     ) -> Result<(u32, u16), StorageError> {
-        let (bytes, has_toast) =
+        let (payload_bytes, has_toast) =
             serialize_tuple_with_toast(schema, values, interner, self.toast_file.as_mut())?;
+
+        let txn_id = txn.as_ref().map(|t| t.txn_id).unwrap_or(0);
+        let header = TupleHeader::new(
+            txn_id,
+            0,
+            RecordId {
+                page_id: 0,
+                slot_id: 0,
+            },
+        );
+
+        let mut bytes = Vec::with_capacity(TUPLE_HEADER_SIZE + payload_bytes.len());
+        bytes.extend_from_slice(&header.to_bytes());
+        bytes.extend_from_slice(&payload_bytes);
 
         let mut bp = self
             .buffer_pool
@@ -217,8 +231,19 @@ impl TableHeap {
 
             for slot_id in 0..page.slot_count() {
                 if let Some(bytes) = page.get_tuple(slot_id) {
-                    let values = deserialize_tuple(schema, bytes, interner)?;
-                    all_rows.push(values);
+                    // If tuple contains TupleHeader (>= 28 bytes) read header & check
+                    if bytes.len() >= TUPLE_HEADER_SIZE {
+                        let header = TupleHeader::from_bytes(&bytes[..TUPLE_HEADER_SIZE])?;
+                        if header.is_active() {
+                            let values =
+                                deserialize_tuple(schema, &bytes[TUPLE_HEADER_SIZE..], interner)?;
+                            all_rows.push(values);
+                        }
+                    } else {
+                        // Fallback for legacy raw tuples
+                        let values = deserialize_tuple(schema, bytes, interner)?;
+                        all_rows.push(values);
+                    }
                 }
             }
 
@@ -241,7 +266,22 @@ impl TableHeap {
         let frame_id = bp.pin_page(self.file_id, rid.page_id)?;
         let page = bp.get_page(frame_id);
         let result = match page.get_tuple(rid.slot_id) {
-            Some(bytes) => Some(deserialize_tuple(schema, bytes, interner)?),
+            Some(bytes) => {
+                if bytes.len() >= TUPLE_HEADER_SIZE {
+                    let header = TupleHeader::from_bytes(&bytes[..TUPLE_HEADER_SIZE])?;
+                    if header.is_active() {
+                        Some(deserialize_tuple(
+                            schema,
+                            &bytes[TUPLE_HEADER_SIZE..],
+                            interner,
+                        )?)
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(deserialize_tuple(schema, bytes, interner)?)
+                }
+            }
             None => None,
         };
         bp.unpin_page(frame_id, false);
