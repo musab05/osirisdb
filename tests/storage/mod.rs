@@ -7,3 +7,5 @@ mod recovery_test;
 mod transaction_manager_test;
 
 mod tuple_header_test;
+
+mod mvcc_test;

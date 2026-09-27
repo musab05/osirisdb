@@ -17,8 +17,12 @@ pub fn is_tuple_visible(
     }
 
     // Rule 2 - Check xmin (Tuple Creation)
+    if is_tx_aborted(header.xmin, header, true, clog) {
+        return false; // Created transaction aborted
+    }
+
     if !is_tx_committed(header.xmin, header, true, clog) {
-        return false; // Created transaction aborted or still in progress
+        return false; // Created transaction still in progress
     }
 
     // is xmin visible in our snapshot

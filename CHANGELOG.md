@@ -7,23 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-09-27
+
 ### Added
 
+- **Multi-Version Concurrency Control (MVCC) & Visibility Architecture**:
+  - Implemented 28-byte on-disk `TupleHeader` layout storing `t_xmin` (creating TxnId), `t_xmax` (deleting/updating TxnId), `t_cid` (command ID), `t_ctid` (pointer to next version / `RecordId`), and `t_infomask` (hint bit flags).
+  - Implemented `TupleInfoMask` bit flags for caching transaction states directly in tuple headers: `XMIN_COMMITTED`, `XMIN_ABORTED`, `XMAX_COMMITTED`, `XMAX_ABORTED`, `XMAX_IS_LOCK`, `HAS_NULL`, `HAS_VARWIDTH`, and `IS_TOAST_POINTER`.
+  - Implemented dynamic bit-packed in-memory Commit Log (`Clog`) allocating 2 bits per transaction (`InProgress`, `Committed`, `Aborted`) for fast transaction status lookups.
+  - Implemented point-in-time `Snapshot` isolation tracking `xmin` (lowest active TxnId), `xmax` (next TxnId), and `xip_list` (active transaction list), exposed via `TransactionManager::take_snapshot()`.
+  - Implemented PostgreSQL-compliant MVCC tuple visibility evaluation (`is_tuple_visible`) checking `xmin`/`xmax` against snapshot and CLOG state with automatic hint-bit caching on the tuple header.
+  - Added comprehensive MVCC integration tests covering snapshot isolation, concurrent modifications, hint bit updates, and deleted/aborted tuple visibility (`tests/storage/mvcc_test.rs`).
+- **Storage Engine Configuration Management (`StorageConfig`)**:
+  - Implemented `StorageConfig` struct to externalize engine settings and tune database behavior:
+    - `shared_buffers` (buffer pool frame capacity)
+    - `wal_buffers` (double-buffer WAL page capacity)
+    - `checkpoint_timeout` and `checkpoint_completion_target`
+    - `bgwriter_delay` and `bgwriter_lru_maxpages`
+    - `autovacuum_vacuum_threshold` and `autovacuum_vacuum_scale_factor`
+  - Added `osirisdb.conf` configuration file loader and parser with fallback default parameters.
 - **Transaction Management & Lifecycle (`Transaction` & `TransactionManager`)**:
   - Implemented `Transaction` tracking transaction state (`Active`, `Committed`, `Aborted`), transaction ID (`TxnId`), and `prev_lsn` chain.
   - Implemented thread-safe `TransactionManager` coordinating `begin()`, `commit()`, and `abort()` workflows, emitting corresponding `Begin`, `Commit`, and `Abort` log records.
   - Added active transaction retrieval (`get_active_transactions()`) to support snapshotting and checkpointing.
   - Updated `TableHeap` DML operations (`insert_tuple`, `update_tuple`, `delete_tuple`) to accept optional transaction handles and link log record LSN chains (`txn.set_prev_lsn(lsn)`).
-- **Comprehensive DML Logging**:
-  - Added physiological WAL record logging for `update_tuple` and `delete_tuple` in `TableHeap` with before/after byte image tracking.
+  - Added comprehensive transaction tests in `tests/storage/transaction_manager_test.rs`.
+- **Comprehensive DML Logging & WAL Log Management**:
+  - Implemented physiological Write-Ahead Logging (`LogManager`) with double-buffered `LogManagerInner` for non-blocking concurrent log appending.
+  - Added atomic LSN generation (`AtomicU64`), group commit batching via condition variables (`Condvar`), and background flusher thread.
+  - Supported log record types: `Insert`, `Update`, `Delete`, `Begin`, `Commit`, `Abort`, `CheckpointBegin`, `CheckpointEnd`, and Compensation Log Records (`CLR`).
+  - Added CRC32C checksum validation and before/after byte image tracking on all log records.
+  - Added `truncate_before(lsn)` to `LogManager` for WAL log space reclamation after checkpoints.
 - **Checkpointing Infrastructure (`CheckpointData` & `CheckpointManager`)**:
   - Implemented `CheckpointData` capturing the Active Transaction Table (ATT) with `last_lsn` and Dirty Page Table (DPT) with `rec_lsn`.
-  - Implemented `CheckpointManager` coordinating non-fuzzy/fuzzy checkpoints by writing `CheckpointBegin` and `CheckpointEnd` records and capturing dirty page metadata.
+  - Implemented `CheckpointManager` coordinating non-fuzzy/fuzzy checkpoints by writing `CheckpointBegin` and `CheckpointEnd` records and capturing dirty page metadata from `BufferPool`.
+  - Persisted checkpoint master record metadata in `checkpoint.meta`.
 - **ARIES-Based Crash Recovery Engine (`RecoveryEngine`)**:
   - Implemented full three-phase ARIES recovery algorithm:
     - **Analysis Phase**: Scans forward from the last checkpoint record to reconstruct the Active Transaction Table and Dirty Page Table.
     - **Redo Phase**: Repeats history by scanning from the minimum `rec_lsn` in the DPT and reapplying logged modifications (`Insert`, `Update`, `Delete`, `Compensation`).
     - **Undo Phase**: Rolls back all active/uncommitted transactions backwards along `prev_lsn` chains, writing Compensation Log Records (CLRs) with `undo_next_lsn` to guarantee idempotency across multiple crashes.
+  - Added ARIES recovery integration tests in `tests/storage/recovery_test.rs` (testing committed, aborted, uncommitted transactions, crash during undo, and recovery idempotency).
 - **Multi-File Storage & Dynamic Buffer Pool Management**:
   - Implemented `FileRegistry` mapping `file_id` (`u32`) to file paths and `HeapFile` instances with `load_from_disk` and `persist_to_disk` metadata persistence.
   - Refactored `BufferPool` to support multi-file operations (`register_file`, `unregister_file`, page indexing by `(file_id, page_id)`).
@@ -31,17 +55,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Storage Lifecycle & Engine Recovery**:
   - Added `Storage::shutdown` for graceful teardown (flushing dirty buffers, flushing log manager, persisting file registry).
   - Added `Storage::recover` integrating automatic ARIES recovery on engine startup.
-- **Test Suite & Benchmarks**:
-  - Added ARIES recovery integration tests in `tests/storage/recovery_test.rs` (testing committed, aborted, uncommitted transactions, crash during undo, and recovery idempotency).
-  - Added comprehensive transaction tests in `tests/storage/transaction_manager_test.rs`.
+- **Benchmarks & Performance**:
   - Added `bench_checkpoint_manager` and `bench_aries_recovery` Criterion benchmarks in `benches/storage/database_bench.rs`.
+  - Added concurrent appending and group commit benchmarks for `LogManager`.
 
 ### Changed & Refactored
 
 - **Storage Layer WAL Integration**:
   - Deprecated and removed legacy `wal.rs` module in favor of the double-buffered `LogManager` and `RecoveryEngine`.
   - Updated `Storage`, `BufferPool`, and `TableHeap` to integrate `LogManager` and enforce Write-Ahead Logging constraints before page flushes.
-  - Refactored `BPlusTreeIndex` multi-page borrowing with `get_two_pages_mut` for borrow-checker safety during page splits/merges.
+  - Refactored `BPlusTreeIndex` multi-page borrowing with `get_two_pages_mut` for borrow-checker safety during page splits/merges and underflow handling (eliminating raw pointer casting).
   - Enhanced `BPlusTreeIndex` insert logic for unique constraint verification.
 
 ### Fixed
