@@ -1,11 +1,17 @@
-use std::{env, fs::File, io::Read, sync::Arc, thread};
+use std::{
+    env,
+    fs::File,
+    io::Read,
+    sync::{Arc, Mutex},
+    thread,
+};
 
 use osirisdb::{
     ast::{DataType, Value},
     catalog::objects::ColumnEntry,
     common::Interner,
     storage::{
-        FileRegistry, LogManager, RecordId, Storage, TableHeap, TransactionManager,
+        BufferPool, FileRegistry, LogManager, RecordId, Storage, TableHeap, TransactionManager,
         log::log_record::{LogRecord, RecordType},
         txn::transaction::TxnStatus,
     },
@@ -66,7 +72,9 @@ fn test_transaction_begin_assigns_lsn_and_registers_att() {
 
     let log_path = dir.join("wal.log");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = TransactionManager::new(Arc::clone(&log_manager));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&dir).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = TransactionManager::new(Arc::clone(&log_manager), file_registry, buffer_pool);
 
     // Initially, no transactions active
     assert_eq!(tm.active_txn_count(), 0);
@@ -103,7 +111,13 @@ fn test_transaction_prev_lsn_chain_begin_insert_commit() {
 
     let log_path = dir.join("wal.log");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&dir).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        buffer_pool,
+    ));
 
     let mut th = TableHeap::open(&storage, "shop_db", "public", "orders").unwrap();
 
@@ -224,7 +238,13 @@ fn test_transaction_abort_records_abort_and_removes_from_att() {
 
     let log_path = dir.join("wal.log");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&dir).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        buffer_pool,
+    ));
 
     let mut th = TableHeap::open(&storage, "shop_db", "public", "orders").unwrap();
 
@@ -290,7 +310,13 @@ fn test_transaction_concurrent_begin_commit() {
 
     let log_path = dir.join("wal.log");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&dir).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        buffer_pool,
+    ));
 
     let num_threads = 10;
     let txns_per_thread = 5;
@@ -337,7 +363,13 @@ fn test_table_heap_delete_tuple_wal_record_and_chaining() {
 
     let log_path = dir.join("wal.log");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&dir).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        buffer_pool,
+    ));
 
     let mut th = TableHeap::open(&storage, "shop_db", "public", "items").unwrap();
 
@@ -435,7 +467,13 @@ fn test_table_heap_update_tuple_wal_record_and_chaining() {
 
     let log_path = dir.join("wal.log");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&dir).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        buffer_pool,
+    ));
 
     let mut th = TableHeap::open(&storage, "shop_db", "public", "products").unwrap();
 
@@ -551,7 +589,13 @@ fn test_file_registry_mapping_and_table_heap_integration() {
     // 2. Open TableHeap with LogManager and set its file_id
     let log_path = dir.join("wal.log");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&dir).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        buffer_pool,
+    ));
 
     let mut th = TableHeap::open(&storage, "shop_db", "public", "users").unwrap();
     th.set_file_id(users_id);

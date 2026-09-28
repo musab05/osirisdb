@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::storage::{
-    StorageError,
+    BufferPool, FileRegistry, HeapFile, RecoveryEngine, StorageError,
     log::{
         log_manager::LogManager,
         log_record::{LogRecord, RecordType},
@@ -31,15 +31,25 @@ pub struct TransactionManager {
 
     /// Clog
     clog: Arc<Clog>,
+
+    file_registry: Arc<FileRegistry>,
+
+    buffer_pool: Arc<Mutex<BufferPool>>,
 }
 
 impl TransactionManager {
-    pub fn new(log_manager: Arc<LogManager>) -> Self {
+    pub fn new(
+        log_manager: Arc<LogManager>,
+        file_registry: Arc<FileRegistry>,
+        buffer_pool: Arc<Mutex<BufferPool>>,
+    ) -> Self {
         Self {
             next_txn_id: AtomicU64::new(1), // start at 1 (0 = "no txn")
             active_txns: Mutex::new(HashMap::new()),
             log_manager,
             clog: Arc::new(Clog::new()),
+            file_registry,
+            buffer_pool,
         }
     }
 
@@ -114,7 +124,157 @@ impl TransactionManager {
     }
 
     pub fn abort(&self, txn: &mut Transaction) -> Result<(), StorageError> {
-        // Create ABORT log record
+        // Read WAL records from disk to build the backward chain
+        let log_path = self.log_manager.log_path();
+        let records = RecoveryEngine::read_log_records(&log_path)?;
+        let lsn_map: HashMap<u64, &LogRecord> = records.iter().map(|r| (r.lsn, r)).collect();
+
+        // Start from txn.last_lsn and walk backward
+        let mut next_lsn = txn.last_lsn;
+        while next_lsn != 0 {
+            let Some(&record) = lsn_map.get(&next_lsn) else {
+                break; // reached beginning of chain or missing record
+            };
+
+            // Advance backward pointer immediately so any `continue` in branches advances safely
+            next_lsn = record.prev_lsn;
+
+            match record.record_type {
+                RecordType::Insert => {
+                    // Undo Insert: delete the inserted tuple from the buffer pool page
+                    let mut bp = self.buffer_pool.lock().unwrap();
+
+                    let frame_id = match bp.pin_page(record.file_id, record.page_id) {
+                        Ok(frame) => frame,
+                        Err(StorageError::UnknownFile(_)) => {
+                            if let Some(file_path) = self.file_registry.get_path(record.file_id) {
+                                if file_path.exists() {
+                                    let hf = HeapFile::open(&file_path)?;
+                                    bp.register_file(record.file_id, hf);
+                                    bp.pin_page(record.file_id, record.page_id)?
+                                } else {
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    };
+
+                    bp.get_page_mut(frame_id).delete_tuple(record.offset);
+
+                    let mut clr = LogRecord {
+                        lsn: 0,
+                        prev_lsn: record.prev_lsn,
+                        txt_id: txn.txn_id,
+                        record_type: RecordType::Compensation,
+                        file_id: record.file_id,
+                        page_id: record.page_id,
+                        offset: record.offset,
+                        length: 0,
+                        before_image: Vec::new(),
+                        after_image: Vec::new(),
+                    };
+                    let clr_lsn = self.log_manager.append_record(&mut clr)?;
+                    txn.last_lsn = clr_lsn.0;
+
+                    bp.get_page_mut(frame_id).set_page_lsn(clr_lsn.0);
+                    bp.unpin_page(frame_id, true);
+                }
+                RecordType::Delete => {
+                    // Undo Delete: re-insert before_image into the buffer pool page
+                    let mut bp = self.buffer_pool.lock().unwrap();
+
+                    let frame_id = match bp.pin_page(record.file_id, record.page_id) {
+                        Ok(frame) => frame,
+                        Err(StorageError::UnknownFile(_)) => {
+                            if let Some(file_path) = self.file_registry.get_path(record.file_id) {
+                                if file_path.exists() {
+                                    let hf = HeapFile::open(&file_path)?;
+                                    bp.register_file(record.file_id, hf);
+                                    bp.pin_page(record.file_id, record.page_id)?
+                                } else {
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    };
+
+                    bp.get_page_mut(frame_id).insert_tuple(&record.before_image);
+
+                    let mut clr = LogRecord {
+                        lsn: 0,
+                        prev_lsn: record.prev_lsn,
+                        txt_id: txn.txn_id,
+                        record_type: RecordType::Compensation,
+                        file_id: record.file_id,
+                        page_id: record.page_id,
+                        offset: record.offset,
+                        length: record.before_image.len() as u16,
+                        before_image: Vec::new(),
+                        after_image: record.before_image.clone(),
+                    };
+                    let clr_lsn = self.log_manager.append_record(&mut clr)?;
+                    txn.last_lsn = clr_lsn.0;
+
+                    bp.get_page_mut(frame_id).set_page_lsn(clr_lsn.0);
+                    bp.unpin_page(frame_id, true);
+                }
+                RecordType::Update => {
+                    // Undo Update: delete updated tuple, re-insert before_image
+                    let mut bp = self.buffer_pool.lock().unwrap();
+
+                    let frame_id = match bp.pin_page(record.file_id, record.page_id) {
+                        Ok(frame) => frame,
+                        Err(StorageError::UnknownFile(_)) => {
+                            if let Some(file_path) = self.file_registry.get_path(record.file_id) {
+                                if file_path.exists() {
+                                    let hf = HeapFile::open(&file_path)?;
+                                    bp.register_file(record.file_id, hf);
+                                    bp.pin_page(record.file_id, record.page_id)?
+                                } else {
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    };
+
+                    bp.get_page_mut(frame_id).delete_tuple(record.offset);
+                    bp.get_page_mut(frame_id).insert_tuple(&record.before_image);
+
+                    let mut clr = LogRecord {
+                        lsn: 0,
+                        prev_lsn: record.prev_lsn,
+                        txt_id: txn.txn_id,
+                        record_type: RecordType::Compensation,
+                        file_id: record.file_id,
+                        page_id: record.page_id,
+                        offset: record.offset,
+                        length: record.before_image.len() as u16,
+                        before_image: Vec::new(),
+                        after_image: record.before_image.clone(),
+                    };
+                    let clr_lsn = self.log_manager.append_record(&mut clr)?;
+                    txn.last_lsn = clr_lsn.0;
+
+                    bp.get_page_mut(frame_id).set_page_lsn(clr_lsn.0);
+                    bp.unpin_page(frame_id, true);
+                }
+                RecordType::Compensation => {
+                    // CLRs are never undone — follow prev_lsn to bypass already undone operations
+                }
+                _ => {} // Begin, Commit, Abort — skip
+            }
+        }
+
+        // Create ABORT log record (prev_lsn points to last CLR or operation)
         let mut record = LogRecord {
             lsn: 0,
             prev_lsn: txn.last_lsn,

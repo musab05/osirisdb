@@ -86,7 +86,12 @@ fn test_checkpoint_manager_writes_begin_end_and_meta() {
     let log_path = dir.join("wal.log");
     let meta_path = dir.join("checkpoint.meta");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        Arc::new(FileRegistry::new()),
+        Arc::clone(&buffer_pool),
+    ));
 
     // Begin 2 transactions: txn 1 and txn 2
     let mut txn1 = tm.begin().unwrap();
@@ -153,7 +158,13 @@ fn test_recovery_redo_committed_transaction_when_disk_is_blank() {
     let log_path = dir.join("wal.log");
     let meta_path = dir.join("checkpoint.meta");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::clone(&registry);
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        Arc::clone(&buffer_pool),
+    ));
 
     let mut interner = Interner::new();
     let schema = vec![
@@ -234,7 +245,13 @@ fn test_recovery_undo_uncommitted_loser_transaction() {
     let log_path = dir.join("wal.log");
     let meta_path = dir.join("checkpoint.meta");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::clone(&registry);
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        Arc::clone(&buffer_pool),
+    ));
 
     let mut interner = Interner::new();
     let schema = vec![
@@ -349,7 +366,13 @@ fn test_recovery_with_checkpoint_redo_and_undo() {
     let log_path = dir.join("wal.log");
     let meta_path = dir.join("checkpoint.meta");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::clone(&registry);
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        Arc::clone(&buffer_pool),
+    ));
 
     let mut interner = Interner::new();
     let schema = vec![
@@ -450,7 +473,13 @@ fn test_storage_clean_shutdown_and_restart_skips_recovery() {
     let meta_path = dir.join("checkpoint.meta");
 
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&dir).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        Arc::clone(&buffer_pool),
+    ));
 
     let mut storage = Storage::with_log_manager(&dir, Arc::clone(&log_manager)).unwrap();
     let ckpt_mgr = Arc::new(CheckpointManager::new(
@@ -529,7 +558,13 @@ fn test_storage_crash_triggers_recovery_on_startup() {
     let meta_path = dir.join("checkpoint.meta");
 
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&dir).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        Arc::clone(&buffer_pool),
+    ));
 
     let storage = Storage::with_log_manager(&dir, Arc::clone(&log_manager)).unwrap();
     std::fs::create_dir_all(storage.schema_path("shop_db", "public")).unwrap();

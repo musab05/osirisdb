@@ -289,6 +289,10 @@ impl LogManager {
 
         Ok(())
     }
+
+    pub fn log_path(&self) -> &Path {
+        &self.inner.log_path
+    }
 }
 
 impl Drop for LogManager {

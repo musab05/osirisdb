@@ -1,12 +1,16 @@
-use std::{env::temp_dir, fs, sync::Arc};
+use std::{
+    env::temp_dir,
+    fs,
+    sync::{Arc, Mutex},
+};
 
 use osirisdb::{
     ast::{DataType, Value},
     catalog::objects::ColumnEntry,
     common::interner::Interner,
     storage::{
-        Clog, ClogStatus, LogManager, RecordId, Snapshot, Storage, TableHeap, TransactionManager,
-        TupleHeader, TupleInfoMask, is_tuple_visible,
+        BufferPool, Clog, ClogStatus, FileRegistry, LogManager, RecordId, Snapshot, Storage,
+        TableHeap, TransactionManager, TupleHeader, TupleInfoMask, is_tuple_visible,
     },
 };
 
@@ -45,7 +49,9 @@ fn test_clog_status_transitions_and_bit_packing() {
 fn test_transaction_manager_clog_integration() {
     let log_path = temp_dir().join("test_clog_tm.log");
     let lm = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = TransactionManager::new(lm);
+    let file_registry = Arc::new(FileRegistry::open_or_create(&temp_dir()).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = TransactionManager::new(lm, file_registry, buffer_pool);
 
     let mut txn1 = tm.begin().unwrap();
     let mut txn2 = tm.begin().unwrap();
@@ -74,7 +80,9 @@ fn test_transaction_manager_clog_integration() {
 fn test_snapshot_active_and_future_checks() {
     let log_path = temp_dir().join("test_snapshot.log");
     let lm = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = TransactionManager::new(lm);
+    let file_registry = Arc::new(FileRegistry::open_or_create(&temp_dir()).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = TransactionManager::new(lm, file_registry, buffer_pool);
 
     let mut txn1 = tm.begin().unwrap(); // id = 1
     let mut txn2 = tm.begin().unwrap(); // id = 2
@@ -370,7 +378,9 @@ fn test_deletion_visibility_rules() {
 fn test_snapshot_boundaries_and_empty_active() {
     let log_path = temp_dir().join("test_snap_empty.log");
     let lm = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = TransactionManager::new(lm);
+    let file_registry = Arc::new(FileRegistry::open_or_create(&temp_dir()).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = TransactionManager::new(lm, file_registry, buffer_pool);
 
     // No active transactions -> xmin == xmax == next_txn_id (1)
     let snap_empty = tm.take_snapshot();
@@ -416,7 +426,9 @@ fn test_mvcc_table_heap_end_to_end_visibility() {
 
     let log_path = dir.join("wal.log");
     let lm = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = TransactionManager::new(Arc::clone(&lm));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&dir).unwrap());
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
+    let tm = TransactionManager::new(Arc::clone(&lm), file_registry, Arc::clone(&buffer_pool));
 
     let mut th = TableHeap::open(&storage, "mydb", "public", "items").unwrap();
 

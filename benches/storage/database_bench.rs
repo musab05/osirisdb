@@ -116,7 +116,7 @@ fn bench_table_heap_insert(c: &mut Criterion) {
 }
 
 fn bench_checkpoint_manager(c: &mut Criterion) {
-    use osirisdb::storage::{CheckpointManager, TransactionManager};
+    use osirisdb::storage::{CheckpointManager, FileRegistry, TransactionManager};
 
     let tmp = std::env::temp_dir().join("osirisdb_bench_checkpoint");
     let _ = std::fs::remove_dir_all(&tmp);
@@ -125,8 +125,13 @@ fn bench_checkpoint_manager(c: &mut Criterion) {
     let log_path = tmp.join("bench_ckpt.log");
     let meta_path = tmp.join("checkpoint.meta");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
     let buffer_pool = Arc::new(Mutex::new(BufferPool::new(10)));
+    let file_registry = Arc::new(FileRegistry::open_or_create(&tmp).unwrap());
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        file_registry,
+        Arc::clone(&buffer_pool),
+    ));
     let ckpt_mgr = CheckpointManager::new(
         Arc::clone(&log_manager),
         Arc::clone(&tm),
@@ -166,7 +171,12 @@ fn bench_aries_recovery(c: &mut Criterion) {
     let log_path = tmp.join("wal.log");
     let meta_path = tmp.join("checkpoint.meta");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
-    let tm = Arc::new(TransactionManager::new(Arc::clone(&log_manager)));
+    let buffer_pool = Arc::new(Mutex::new(BufferPool::new(10)));
+    let tm = Arc::new(TransactionManager::new(
+        Arc::clone(&log_manager),
+        Arc::clone(&registry),
+        buffer_pool,
+    ));
 
     let mut interner = Interner::new();
     let id_sym = interner.intern("id");
