@@ -1,4 +1,5 @@
 pub mod clog;
+pub mod lock;
 pub mod snapshot;
 pub mod transaction;
 pub mod transaction_manager;
