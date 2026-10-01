@@ -23,3 +23,4 @@ phase2_audit_and_guide.md
 storage_master_guide.md
 /bench_data
 storage_implementation_guide.md
+row_level_locking_audit.md

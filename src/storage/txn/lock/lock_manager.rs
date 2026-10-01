@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Condvar, Mutex},
+};
 
 use crate::storage::{
     StorageError,
@@ -36,7 +39,7 @@ impl LockManager {
 
         let lock_head = table.entry(resource).or_insert_with(LockHead::new);
 
-        // ── Check if this txn already holds a lock on this resource ──
+        // Check if this txn already holds a lock on this resource
         if let Some(existing) = lock_head
             .granted
             .iter_mut()
@@ -51,7 +54,7 @@ impl LockManager {
             return Ok(());
         }
 
-        // ── Fresh lock request ──
+        // Fresh lock request
         if lock_head.is_compatible(mode, txn_id) {
             // Compatible with all currently granted locks → grant immediately
             lock_head.granted.push(LockRequest {
@@ -62,7 +65,7 @@ impl LockManager {
             return Ok(());
         }
 
-        // ── Incompatible — must wait ──
+        // Incompatible — must wait
         lock_head.waiting.push(LockRequest {
             txn_id,
             mode,
@@ -72,7 +75,7 @@ impl LockManager {
         // Save a pointer to the condvar so we can wait on it.
         // condvar.wait() atomically releases the mutex guard (unblocking other
         // resources) and sleeps. When woken, the guard is re-acquired automatically.
-        let condvar = &lock_head.condvar as *const std::sync::Condvar;
+        let condvar = &lock_head.condvar as *const Condvar;
 
         loop {
             // SAFETY: `condvar` is valid as long as the LockHead lives in the HashMap,
@@ -98,5 +101,36 @@ impl LockManager {
             }
             // Still incompatible — go back to sleep
         }
+    }
+
+    pub fn release(&self, txn_id: u64, resource: LockResource) -> Result<(), StorageError> {
+        let mut state = self.lock_table.lock().unwrap();
+        if let Some(lock_head) = state.get_mut(&resource) {
+            if let Some(pos) = lock_head
+                .granted
+                .iter()
+                .position(|req| req.txn_id == txn_id)
+            {
+                lock_head.granted.remove(pos);
+                lock_head.condvar.notify_all();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn release_all(&self, txn_id: u64) -> Result<(), StorageError> {
+        let mut state = self.lock_table.lock().unwrap();
+
+        for lock_head in state.values_mut() {
+            if let Some(pos) = lock_head
+                .granted
+                .iter()
+                .position(|req| req.txn_id == txn_id)
+            {
+                lock_head.granted.remove(pos);
+                lock_head.condvar.notify_all();
+            }
+        }
+        Ok(())
     }
 }
