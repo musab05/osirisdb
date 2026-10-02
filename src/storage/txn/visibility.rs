@@ -10,7 +10,9 @@ pub fn is_tuple_visible(
     // Rule 1 - Self - inserted tuples
     if header.xmin == current_tx {
         // Did we also delete it in this same transaction
-        if header.xmax == current_tx {
+        if header.xmax == current_tx
+            && !TupleInfoMask::is_set(header.infomask, TupleInfoMask::XMAX_IS_LOCK_ONLY)
+        {
             return false; // Created and deleted in current transaction
         }
         return true; // Created by current transaction and not deleted
@@ -31,7 +33,11 @@ pub fn is_tuple_visible(
     }
 
     // Rule 3 - Check xmax (Tuple Deletion / Update)
-    if header.xmax == 0 {
+    // If xmax is 0, the tuple was never deleted.
+    // If XMAX_IS_LOCK_ONLY is set, xmax holds a row lock (e.g., FOR UPDATE)
+    // rather than a delete/update operation, so the tuple remains live and visible.
+    if header.xmax == 0 || TupleInfoMask::is_set(header.infomask, TupleInfoMask::XMAX_IS_LOCK_ONLY)
+    {
         return true; // Still active/live, never deleted
     }
 

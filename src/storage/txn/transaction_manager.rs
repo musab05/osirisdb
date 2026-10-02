@@ -14,6 +14,7 @@ use crate::storage::{
     },
     txn::{
         clog::{Clog, ClogStatus},
+        lock::lock_manager::LockManager,
         snapshot::Snapshot,
         transaction::{Transaction, TxnStatus},
     },
@@ -29,12 +30,18 @@ pub struct TransactionManager {
     /// Shared global WAL log manager.
     log_manager: Arc<LogManager>,
 
-    /// Clog
+    /// Commit log (CLOG) tracking the final committed/aborted status of every transaction.
     clog: Arc<Clog>,
 
+    /// Registry mapping file_id → on-disk path, used during undo to re-open heap files.
     file_registry: Arc<FileRegistry>,
 
+    /// Shared buffer pool, pinned during undo to apply before-images to dirty pages.
     buffer_pool: Arc<Mutex<BufferPool>>,
+
+    /// 2PL lock manager; locks are held for the full lifetime of the transaction
+    /// and released only at commit or abort.
+    lock_manager: Arc<LockManager>,
 }
 
 impl TransactionManager {
@@ -50,6 +57,7 @@ impl TransactionManager {
             clog: Arc::new(Clog::new()),
             file_registry,
             buffer_pool,
+            lock_manager: Arc::new(LockManager::new()),
         }
     }
 
@@ -110,6 +118,8 @@ impl TransactionManager {
         //      This is where Group Commit kicks in - multiple committing txns
         //      will all block here and be woken by one fync from the flusher thread
         self.log_manager.wait_for_flush(lsn.0)?;
+
+        self.lock_manager.release_all(txn)?;
 
         // Update transaction status
         txn.status = TxnStatus::Committed;
@@ -292,6 +302,10 @@ impl TransactionManager {
         let lsn = self.log_manager.append_record(&mut record)?;
         txn.last_lsn = lsn.0;
 
+        // 2PL: release all locks only after the ABORT record is durably in the WAL,
+        // ensuring no other transaction sees a partially-aborted state.
+        self.lock_manager.release_all(txn)?;
+
         // Update transaction status
         txn.status = TxnStatus::Aborted;
 
@@ -347,8 +361,16 @@ impl TransactionManager {
         }
     }
 
-    /// Returns a reference to the shared [`Clog`]
+    /// Returns a reference to the shared [`Clog`].
     pub fn clog(&self) -> &Arc<Clog> {
         &self.clog
+    }
+
+    /// Returns a reference to the shared [`LockManager`].
+    ///
+    /// Callers (e.g., the executor) use this to acquire row/table locks
+    /// before performing any read or write operation on behalf of a transaction.
+    pub fn lock_manager(&self) -> &Arc<LockManager> {
+        &self.lock_manager
     }
 }

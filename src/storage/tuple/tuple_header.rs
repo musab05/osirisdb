@@ -25,6 +25,9 @@ impl TupleInfoMask {
     pub const XMAX_ABORTED: u16 = 1 << 6;
     /// Tuple has been updated and superseded by a newer version (ctid points to next version).
     pub const UPDATED: u16 = 1 << 7;
+    /// Hint bit: `xmax` represents a row-level lock (e.g., `SELECT ... FOR UPDATE`),
+    /// not a physical delete or update. The tuple remains live and visible.
+    pub const XMAX_IS_LOCK_ONLY: u16 = 1 << 8;
 
     /// Checks if a specific bit flag is active.
     #[inline]
@@ -71,13 +74,13 @@ impl TupleHeader {
     /// Returns `true` if this tuple is still active (not deleted or superseded by an update)
     #[inline]
     pub fn is_active(&self) -> bool {
-        self.xmax == 0
+        self.xmax == 0 || TupleInfoMask::is_set(self.infomask, TupleInfoMask::XMAX_IS_LOCK_ONLY)
     }
 
     /// Returns `true` if this tuple has deleted or superseded by an update
     #[inline]
     pub fn is_deleted(&self) -> bool {
-        self.xmax != 0
+        self.xmax != 0 && !TupleInfoMask::is_set(self.infomask, TupleInfoMask::XMAX_IS_LOCK_ONLY)
     }
 
     /// Mark this tuple to a newer versin upon update
