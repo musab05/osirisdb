@@ -33,6 +33,25 @@ pub struct SelectStmt {
     pub set_op: Option<Box<SetOperation>>,
 }
 
+pub enum LockStrength {
+    Update,
+    NoKeyUpdate,
+    Share,
+    KeyShare,
+}
+
+pub enum WaitPolicy {
+    Block,
+    NoWait,
+    SkipLocked,
+}
+
+pub struct ForLockingClause {
+    pub strength: LockStrength,
+    pub tables: Vec<Symbol>,
+    pub wait_policy: WaitPolicy,
+}
+
 /// Represents modifiers to the select projection list.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SelectModifier {
