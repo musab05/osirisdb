@@ -217,6 +217,8 @@ pub enum TokenKind {
     No,
     /// `WAIT`
     Wait,
+    /// `NOWAIT`
+    NoWait,
     /// `SKIP`
     Skip,
     /// `LOCKED`

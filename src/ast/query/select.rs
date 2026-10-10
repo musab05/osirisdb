@@ -31,24 +31,42 @@ pub struct SelectStmt {
     pub ctes: Vec<Cte>,
     /// Optional trailing set operation combining this query with another (e.g., `UNION [ALL]`).
     pub set_op: Option<Box<SetOperation>>,
+    /// Optional row-level locking clause (e.g., `FOR UPDATE`, `FOR SHARE`, `NOWAIT`, `SKIP LOCKED`).
+    pub for_locking: Option<ForLockingClause>,
 }
 
+/// The strength of row-level lock requested in a `FOR` locking clause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LockStrength {
+    /// Exclusive row lock preventing concurrent updates and locks (`FOR UPDATE`).
     Update,
+    /// Lock preventing concurrent updates and locks, but permitting key shares (`FOR NO KEY UPDATE`).
     NoKeyUpdate,
+    /// Shared lock permitting concurrent reads and shares but preventing updates (`FOR SHARE`).
     Share,
+    /// Shared lock for foreign key checks, permitting non-key updates (`FOR KEY SHARE`).
     KeyShare,
 }
 
+/// The policy when encountering rows already locked by concurrent transactions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WaitPolicy {
+    /// Wait until conflicting locks are released (default behavior).
     Block,
+    /// Fail immediately with an error if rows are locked (`NOWAIT`).
     NoWait,
+    /// Skip locked rows and do not return them (`SKIP LOCKED`).
     SkipLocked,
 }
 
+/// Represents a row-level locking clause (e.g. `FOR UPDATE OF users NOWAIT`).
+#[derive(Debug, Clone, PartialEq)]
 pub struct ForLockingClause {
+    /// The locking strength (e.g. `UPDATE`, `SHARE`).
     pub strength: LockStrength,
+    /// Optional specific table names to lock (`OF table_name, ...`).
     pub tables: Vec<Symbol>,
+    /// How to handle locked rows (`NOWAIT`, `SKIP LOCKED`, or block).
     pub wait_policy: WaitPolicy,
 }
 

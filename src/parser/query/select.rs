@@ -1,7 +1,7 @@
 use crate::{
     ast::{
-        Cte, Expr, JoinClause, JoinType, ObjectName, OrderItem, SelectItem, SelectModifier,
-        SelectStmt, SetOp, SetOperation, TableRef,
+        Cte, Expr, ForLockingClause, JoinClause, JoinType, LockStrength, ObjectName, OrderItem,
+        SelectItem, SelectModifier, SelectStmt, SetOp, SetOperation, TableRef, WaitPolicy,
     },
     lexer::TokenKind,
     parser::{parser::Parser, parser_error::ParserError},
@@ -71,6 +71,12 @@ impl<'a> Parser<'a> {
 
         let set_op = self.parse_set_op()?;
 
+        let for_locking = if self.consume(&TokenKind::For) {
+            Some(self.parse_for_locking()?)
+        } else {
+            None
+        };
+
         Ok(SelectStmt {
             modifier,
             columns,
@@ -84,6 +90,7 @@ impl<'a> Parser<'a> {
             offset,
             ctes,
             set_op,
+            for_locking,
         })
     }
 
@@ -397,5 +404,59 @@ impl<'a> Parser<'a> {
                 | TokenKind::Intersect
                 | TokenKind::Except
         )
+    }
+
+    fn parse_for_locking(&mut self) -> Result<ForLockingClause, ParserError> {
+        // 1. Lock Strength: UPDATE | NO KEY UPDATE | SHARE | KEY SHARE
+        let strength = if self.consume(&TokenKind::Update) {
+            LockStrength::Update
+        } else if self.consume(&TokenKind::No) {
+            self.expect(TokenKind::Key)?;
+            self.expect(TokenKind::Update)?;
+            LockStrength::NoKeyUpdate
+        } else if self.consume(&TokenKind::Share) {
+            LockStrength::Share
+        } else if self.consume(&TokenKind::Key) {
+            self.expect(TokenKind::Share)?;
+            LockStrength::KeyShare
+        } else {
+            return Err(ParserError::new(
+                format!(
+                    "Expected UPDATE, NO KEY UPDATE, SHARE, or KEY SHARE after FOR, found {:?}",
+                    self.current.kind
+                ),
+                self.current.span.clone(),
+            ));
+        };
+
+        // 2. Optional OF table_name [, ...]
+        let mut tables = vec![];
+        if self.consume(&TokenKind::Of) {
+            loop {
+                tables.push(self.expect_identifier()?);
+                if !self.consume(&TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+
+        // 3. Optional Wait Policy: NOWAIT / NO WAIT | SKIP LOCKED | Block (default)
+        let wait_policy = if self.consume(&TokenKind::NoWait) {
+            WaitPolicy::NoWait
+        } else if self.consume(&TokenKind::No) {
+            self.expect(TokenKind::Wait)?;
+            WaitPolicy::NoWait
+        } else if self.consume(&TokenKind::Skip) {
+            self.expect(TokenKind::Locked)?;
+            WaitPolicy::SkipLocked
+        } else {
+            WaitPolicy::Block
+        };
+
+        Ok(ForLockingClause {
+            strength,
+            tables,
+            wait_policy,
+        })
     }
 }

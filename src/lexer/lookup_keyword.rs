@@ -195,6 +195,7 @@ pub fn lookup_keyword(word: &str) -> TokenKind {
         "SHARE" => TokenKind::Share,
         "NO" => TokenKind::No,
         "WAIT" => TokenKind::Wait,
+        "NOWAIT" => TokenKind::NoWait,
         "SKIP" => TokenKind::Skip,
         "LOCKED" => TokenKind::Locked,
         "ONLY" => TokenKind::Only,
