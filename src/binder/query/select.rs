@@ -61,6 +61,7 @@ impl<'c> Binder<'c> {
             table,
             columns,
             predicate,
+            for_locking: stmt.for_locking,
         })
     }
 

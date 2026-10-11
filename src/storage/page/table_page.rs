@@ -219,6 +219,15 @@ impl<T: AsRef<[u8]>> TablePage<T> {
 }
 
 impl<T: AsRef<[u8]> + AsMut<[u8]>> TablePage<T> {
+    pub fn get_tuple_mut(&mut self, slot_id: u16) -> Option<&mut [u8]> {
+        let (offset, length) = self.read_slot(slot_id)?;
+        if length == 0 {
+            return None;
+        }
+        let offset = offset as usize;
+        let length = length as usize;
+        Some(&mut self.data.as_mut()[offset..offset + length])
+    }
     fn set_page_id(&mut self, page_id: u32) {
         self.data.as_mut()[0..4].copy_from_slice(&page_id.to_le_bytes());
     }

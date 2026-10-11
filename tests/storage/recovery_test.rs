@@ -13,6 +13,7 @@ use osirisdb::{
         BufferPool, CheckpointData, CheckpointManager, FileRegistry, LogManager, RecordId,
         RecoveryEngine, Storage, TableHeap, TransactionManager,
         log::log_record::{LogRecord, RecordType},
+        txn::lock::lock_manager::LockManager,
     },
 };
 
@@ -245,6 +246,7 @@ fn test_recovery_undo_uncommitted_loser_transaction() {
     let log_path = dir.join("wal.log");
     let meta_path = dir.join("checkpoint.meta");
     let log_manager = Arc::new(LogManager::new(&log_path).unwrap());
+    let lock_manager = Arc::new(LockManager::new());
     let file_registry = Arc::clone(&registry);
     let buffer_pool = Arc::new(Mutex::new(BufferPool::new(64)));
     let tm = Arc::new(TransactionManager::new(
@@ -303,6 +305,7 @@ fn test_recovery_undo_uncommitted_loser_transaction() {
         &interner,
         rid1,
         Some(&mut txn2),
+        Some(&lock_manager),
         Some(&log_manager),
     )
     .unwrap();

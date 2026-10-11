@@ -61,6 +61,9 @@ pub enum StorageError {
 
     /// Unknown File
     UnknownFile(u32),
+
+    /// Lock could not be aquired immediately (NOWAIT policy)
+    LockConflict { resource: String },
 }
 
 impl StorageError {
@@ -124,6 +127,13 @@ impl std::fmt::Display for StorageError {
             }
             StorageError::UnknownFile(file_id) => {
                 write!(f, "Unknown file provided {file_id}")
+            }
+            StorageError::LockConflict { resource } => {
+                write!(
+                    f,
+                    "could not obtain lock on row ({}); lock not available",
+                    resource
+                )
             }
         }
     }

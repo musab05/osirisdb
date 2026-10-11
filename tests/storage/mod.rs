@@ -9,3 +9,5 @@ mod transaction_manager_test;
 mod tuple_header_test;
 
 mod mvcc_test;
+
+mod row_locking_executor_test;

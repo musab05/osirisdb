@@ -1,4 +1,8 @@
-use crate::{ast::Value, catalog::objects::ColumnEntry, common::symbol::Symbol};
+use crate::{
+    ast::{ForLockingClause, Value},
+    catalog::objects::ColumnEntry,
+    common::symbol::Symbol,
+};
 
 /// Bound `SELECT` statement — resolved and validated, ready for the
 /// executor to scan from storage.
@@ -29,6 +33,9 @@ pub struct BoundSelectStmt {
     /// doesn't yet support post-filtering a non-indexable predicate — see
     /// `bind_select`, which currently rejects anything more complex).
     pub predicate: Option<BoundPredicate>,
+
+    /// Plumbing ForLockingClause from here to Executer
+    pub for_locking: Option<ForLockingClause>,
 }
 
 /// A WHERE clause the binder was able to resolve into something the

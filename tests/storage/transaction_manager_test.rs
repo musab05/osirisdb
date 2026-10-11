@@ -401,7 +401,12 @@ fn test_table_heap_delete_tuple_wal_record_and_chaining() {
 
     // 3. DELETE tuple
     let deleted = th
-        .delete_tuple(rid, Some(&mut txn), Some(&log_manager))
+        .delete_tuple(
+            rid,
+            Some(&mut txn),
+            Some(tm.lock_manager().as_ref()),
+            Some(&log_manager),
+        )
         .unwrap();
     assert!(deleted);
     let delete_lsn = txn.last_lsn;
@@ -515,6 +520,7 @@ fn test_table_heap_update_tuple_wal_record_and_chaining() {
             &interner,
             rid,
             Some(&mut txn),
+            Some(tm.lock_manager().as_ref()),
             Some(&log_manager),
         )
         .unwrap();

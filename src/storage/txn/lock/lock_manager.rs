@@ -143,4 +143,45 @@ impl LockManager {
         }
         Ok(())
     }
+
+    pub fn try_acquire(
+        &self,
+        txn: &mut Transaction,
+        resource: LockResource,
+        mode: RowLockMode,
+    ) -> Result<bool, StorageError> {
+        let txn_id = txn.txn_id;
+        let mut table = self.lock_table.lock().unwrap();
+
+        let lock_head = table.entry(resource).or_insert_with(LockHead::new);
+
+        // 1. Check if this txn already holds a lock on this resource
+        if let Some(existing) = lock_head
+            .granted
+            .iter_mut()
+            .find(|req| req.txn_id == txn_id)
+        {
+            if existing.mode >= mode {
+                return Ok(true); // Already held with equal or greater strength
+            }
+            // Lock upgrade requested: check if upgrade is compatible
+            // Note: For now, if upgrading in place, verify compatibility
+            existing.mode = mode;
+            return Ok(true);
+        }
+
+        // 2. Test comaptibility with existing granted locks
+        if lock_head.is_compatible(mode, txn_id) {
+            lock_head.granted.push(LockRequest {
+                txn_id,
+                mode,
+                status: LockStatus::Granted,
+            });
+            txn.held_locks.push(resource);
+            Ok(true)
+        } else {
+            // Incompatible: Do NOT push to waiting queue, do NOT block
+            Ok(false)
+        }
+    }
 }

@@ -8,7 +8,7 @@ use crate::{
     catalog::objects::ColumnEntry,
     common::interner::Interner,
     storage::{
-        BufferPool, HeapFile, Storage, StorageError, TUPLE_HEADER_SIZE, TupleHeader,
+        BufferPool, HeapFile, Storage, StorageError, TUPLE_HEADER_SIZE, TupleHeader, TupleInfoMask,
         log::{
             log_manager::LogManager,
             log_record::{LogRecord, RecordType},
@@ -18,7 +18,10 @@ use crate::{
             record_id::RecordId,
             tuple::{deserialize_tuple, serialize_tuple_with_toast},
         },
-        txn::transaction::Transaction,
+        txn::{
+            lock::{lock_manager::LockManager, lock_mode::RowLockMode, resource::LockResource},
+            transaction::Transaction,
+        },
     },
 };
 
@@ -213,11 +216,11 @@ impl TableHeap {
         }
     }
 
-    pub fn scan(
+    pub fn scan_records(
         &mut self,
         schema: &[ColumnEntry],
         interner: &Interner,
-    ) -> Result<Vec<Vec<Value>>, StorageError> {
+    ) -> Result<Vec<(RecordId, Vec<Value>)>, StorageError> {
         let mut all_rows = Vec::new();
         let mut bp = self
             .buffer_pool
@@ -231,18 +234,19 @@ impl TableHeap {
 
             for slot_id in 0..page.slot_count() {
                 if let Some(bytes) = page.get_tuple(slot_id) {
+                    let rid = RecordId { page_id, slot_id };
                     // If tuple contains TupleHeader (>= 28 bytes) read header & check
                     if bytes.len() >= TUPLE_HEADER_SIZE {
                         let header = TupleHeader::from_bytes(&bytes[..TUPLE_HEADER_SIZE])?;
                         if header.is_active() {
                             let values =
                                 deserialize_tuple(schema, &bytes[TUPLE_HEADER_SIZE..], interner)?;
-                            all_rows.push(values);
+                            all_rows.push((rid, values));
                         }
                     } else {
                         // Fallback for legacy raw tuples
                         let values = deserialize_tuple(schema, bytes, interner)?;
-                        all_rows.push(values);
+                        all_rows.push((rid, values));
                     }
                 }
             }
@@ -251,6 +255,15 @@ impl TableHeap {
         }
 
         Ok(all_rows)
+    }
+
+    pub fn scan(
+        &mut self,
+        schema: &[ColumnEntry],
+        interner: &Interner,
+    ) -> Result<Vec<Vec<Value>>, StorageError> {
+        let records = self.scan_records(schema, interner)?;
+        Ok(records.into_iter().map(|(_, values)| values).collect())
     }
 
     pub fn get_tuple(
@@ -292,8 +305,17 @@ impl TableHeap {
         &mut self,
         rid: RecordId,
         mut txn: Option<&mut Transaction>,
+        lock_manager: Option<&LockManager>,
         log_manager: Option<&LogManager>,
     ) -> Result<bool, StorageError> {
+        if let (Some(t), Some(lm)) = (txn.as_mut(), lock_manager) {
+            let resource = LockResource::Row {
+                file_id: self.file_id,
+                rid,
+            };
+            lm.acquire(t, resource, RowLockMode::Update)?;
+        }
+
         let mut bp = self
             .buffer_pool
             .lock()
@@ -350,8 +372,17 @@ impl TableHeap {
         interner: &Interner,
         rid: RecordId,
         mut txn: Option<&mut Transaction>,
+        lock_manager: Option<&LockManager>,
         log_manager: Option<&LogManager>,
     ) -> Result<bool, StorageError> {
+        if let (Some(t), Some(lm)) = (txn.as_mut(), lock_manager) {
+            let resource = LockResource::Row {
+                file_id: self.file_id,
+                rid,
+            };
+            lm.acquire(t, resource, RowLockMode::Update)?;
+        };
+
         let (bytes, has_toast) =
             serialize_tuple_with_toast(schema, new_values, interner, self.toast_file.as_mut())?;
 
@@ -454,5 +485,32 @@ impl TableHeap {
 
     pub fn file_id(&self) -> u32 {
         self.file_id
+    }
+
+    /// Stamp a row lock onto the tuple header of `rid`.
+    ///
+    /// Sets `header.xmax = txn_id` and flags `infomask |= TupleInfoMask::XMAX_IS_LOCK_ONLY`.
+    /// Marks the page frame as dirty.
+    pub fn stamp_row_lock(&mut self, rid: RecordId, txn_id: u64) -> Result<(), StorageError> {
+        let mut bp = self
+            .buffer_pool
+            .lock()
+            .unwrap_or_else(|err| err.into_inner());
+
+        let frame_id = bp.pin_page(self.file_id, rid.page_id)?;
+        let page = bp.get_page_mut(frame_id);
+
+        if let Some(bytes) = page.get_tuple_mut(rid.slot_id) {
+            if bytes.len() >= TUPLE_HEADER_SIZE {
+                let mut header = TupleHeader::from_bytes(&bytes[..TUPLE_HEADER_SIZE])?;
+                header.xmax = txn_id;
+                header.infomask |= TupleInfoMask::XMAX_IS_LOCK_ONLY;
+                bytes[..TUPLE_HEADER_SIZE].copy_from_slice(&header.to_bytes());
+            }
+        }
+
+        // Unpin and mark dirty so lock state persists through buffer eviction
+        bp.unpin_page(frame_id, true);
+        Ok(())
     }
 }
